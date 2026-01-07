@@ -1,0 +1,4 @@
+[Bag] with a Burger, Fries and a Soda
+The full meal. Take stuff out with [interact_key]. 
+Interact with: Hands
+Pick up with: Hands

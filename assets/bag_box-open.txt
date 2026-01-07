@@ -1,0 +1,4 @@
+[Bag Box] Open
+Bagging your order is the last step! Take a Bag with [pick_up_key]. Close open boxes with [interact_key] if you want to move them around.
+Interact with: Hands
+Pick up with: Hands

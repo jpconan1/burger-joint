@@ -1,0 +1,4 @@
+[Bag] with Soda and Fries
+What a strange order. [interact_key] takes stuff out.
+Pick up with: Hands
+Interact with: Hands

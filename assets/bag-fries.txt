@@ -1,0 +1,4 @@
+[Bag] with Fries
+Solo side. [interact_key] takes the fries out.
+Pick up with: Hands
+Interact with: Hands

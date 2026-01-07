@@ -1,0 +1,4 @@
+[Bag] with Soda
+For the thirsty. [interact_key] takes the drink out.
+Pick up with: Hands
+Interact with: Hands

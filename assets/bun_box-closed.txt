@@ -1,0 +1,4 @@
+[Bun Box] closed
+Packed buns. [interact_key] opens and closes boxes.
+Pick up with: Hands
+Interact with: Hands

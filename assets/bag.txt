@@ -1,0 +1,4 @@
+[Bag]
+Put Wrapped Burgers, sides and drinks in this! It goes to the Service Window and disappears... if your order's correct! [interact_key] takes stuff out.
+Pick up with: Hands
+Interact with: Hands
