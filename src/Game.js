@@ -130,7 +130,9 @@ export class Game {
                 let isUnlocked = isEssential;
 
                 if (!isEssential) {
-                    if (def.unlockCondition) {
+                    if (typeof def.unlocked !== 'undefined') {
+                        isUnlocked = def.unlocked;
+                    } else if (def.unlockCondition) {
                         isUnlocked = false; // Has specific condition (e.g. Appliance)
                     } else if (isRewardItem) {
                         isUnlocked = false; // LOCKED by default for Daily Reward
@@ -144,7 +146,8 @@ export class Game {
                     price: def.price, // Use price from definition
                     type: 'supply',
                     unlocked: isUnlocked, // Will be overridden by save data if present
-                    isEssential: isEssential
+                    isEssential: isEssential,
+                    isReward: isRewardItem
                 });
             }
         });
@@ -465,30 +468,35 @@ export class Game {
                 // Determine 'unlocked' status consistently with constructor
                 const isEssential = item.isEssential;
 
-                // Check if this is a Topping Provider
-                let isToppingProvider = false;
+                // Check if this is a Topping/Reward Provider
+                let isRewardItem = false;
                 if (def.produces) {
                     const prod = DEFINITIONS[def.produces];
                     if (prod) {
-                        if (prod.category === 'sauce_refill' || prod.category === 'topping' || prod.isTopping) {
-                            isToppingProvider = true;
+                        if (prod.category === 'sauce_refill' || prod.category === 'topping' || prod.isTopping ||
+                            prod.category === 'syrup' || prod.category === 'side_prep') {
+                            isRewardItem = true;
                         }
                         if (prod.slicing && prod.slicing.result) {
                             const res = DEFINITIONS[prod.slicing.result];
-                            if (res && (res.category === 'topping' || res.isTopping)) isToppingProvider = true;
+                            if (res && (res.category === 'topping' || res.isTopping)) isRewardItem = true;
                         }
                         if (prod.process && prod.process.result) {
                             const res = DEFINITIONS[prod.process.result];
-                            if (res && (res.category === 'topping' || res.isTopping)) isToppingProvider = true;
+                            if (res && (res.category === 'topping' || res.isTopping)) isRewardItem = true;
                         }
+                        // Check for variants (fryContent)
+                        if (prod.fryContent) isRewardItem = true;
                     }
                 }
 
                 let isUnlocked = isEssential;
                 if (!isEssential) {
-                    if (def.unlockCondition) {
+                    if (typeof def.unlocked !== 'undefined') {
+                        isUnlocked = def.unlocked;
+                    } else if (def.unlockCondition) {
                         isUnlocked = false;
-                    } else if (isToppingProvider) {
+                    } else if (isRewardItem) {
                         isUnlocked = false;
                     } else {
                         isUnlocked = true;
@@ -496,6 +504,7 @@ export class Game {
                 }
 
                 item.unlocked = isUnlocked;
+                item.isReward = isRewardItem;
             } else {
                 // Appliances and Actions default to unlocked
                 item.unlocked = true;
@@ -1317,6 +1326,19 @@ export class Game {
         // Menu System Integration: Use defined menu instead of raw capabilities
         const orders = this.orderSystem.generateDailyOrders(this.dayNumber, this.menuSystem.getMenu());
         this.ticketQueue = orders;
+
+        // Safeguard: Ensure queue is not empty to prevent immediate "Day Over" state
+        if (this.ticketQueue.length === 0) {
+            console.warn("Ticket Queue was empty! Forcing a fallback ticket.");
+            const fallbackTicket = this.orderSystem.createTicketFromCustomers(
+                [this.orderSystem.generateCustomerProfile(this.menuSystem.getMenu())],
+                1
+            );
+            fallbackTicket.calculateParTime();
+            fallbackTicket.arrivalTime = this.prepTime + 5;
+            this.ticketQueue.push(fallbackTicket);
+        }
+
         this.queueFinishedTime = null;
         this.activeTickets = [];
         this.activeTicketIndex = 0;

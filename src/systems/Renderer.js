@@ -454,6 +454,8 @@ export class Renderer {
         if (gameState.gameState === 'MENU_CUSTOM') {
             gameState.menuSystem.render(this);
         }
+
+        this.drawControlsHelp(gameState);
     }
 
     drawServiceTimer(gridX, gridY, percent) {
@@ -874,7 +876,7 @@ export class Renderer {
         const bindings = settings.bindings;
         const displayOrder = [
             'MOVE_UP', 'MOVE_DOWN', 'MOVE_LEFT', 'MOVE_RIGHT',
-            'INTERACT', 'PICK_UP',
+            'INTERACT', 'PICK_UP', 'VIEW_ORDERS',
             'EQUIP_1', 'EQUIP_2', 'EQUIP_3', 'EQUIP_4'
         ];
 
@@ -897,7 +899,8 @@ export class Renderer {
             }
 
             // Action Name
-            const niceName = action.replace(/_/g, ' ');
+            let niceName = action.replace(/_/g, ' ');
+            if (action === 'VIEW_ORDERS') niceName = 'SHOW TICKET';
             this.ctx.fillText(niceName, 120, y);
 
             // Key Binding
@@ -1066,6 +1069,41 @@ export class Renderer {
         this.ctx.lineTo(width * 0.7, 0);
         this.ctx.lineTo(width, height);
         this.ctx.fill();
+
+        this.ctx.restore();
+    }
+
+    drawControlsHelp(gameState) {
+        if (!gameState.grid) return;
+        // Don't show in Title or Settings (though grid is usually null there anyway)
+        if (gameState.gameState === 'TITLE' || gameState.gameState === 'SETTINGS') return;
+
+        const gridPixelHeight = gameState.grid.height * TILE_SIZE;
+        // Use the offsets calculated in render()
+        // We need to position relative to the grid, but draw in screen space (no translation needed if using calculated offsets?)
+        // The offsets this.offsetX and this.offsetY are the top-left of the grid.
+
+        const y = this.offsetY + gridPixelHeight + 35;
+        const centerX = this.canvas.width / 2;
+
+        this.ctx.save();
+        this.ctx.fillStyle = '#aaa';
+        this.ctx.font = '16px Monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+
+        if (gameState.settings) {
+            const getBind = (action) => {
+                let k = gameState.settings.getBinding(action);
+                return k ? k.replace('Key', '').replace('Digit', '') : '???';
+            };
+
+            const iKey = getBind('INTERACT');
+            const pKey = getBind('PICK_UP');
+            const vKey = getBind('VIEW_ORDERS');
+
+            this.ctx.fillText(`MOVE: WASD | INTERACT: ${iKey} | PICK UP: ${pKey} | SHOW TICKET: ${vKey}`, centerX, y);
+        }
 
         this.ctx.restore();
     }

@@ -338,6 +338,9 @@ export class ShopSystem {
 
             // Check if there is an explicit unlock condition
             if (def.unlockCondition && !item.isEssential) {
+                // Prevent re-locking if it's a Reward Item that has been unlocked
+                if (item.isReward && item.unlocked) return;
+
                 let unlocked = false;
 
                 if (def.unlockCondition.type === 'appliance') {

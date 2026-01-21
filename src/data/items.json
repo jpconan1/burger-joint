@@ -7,7 +7,8 @@
                 "id": "patty_box",
                 "maxCount": 12,
                 "price": 50,
-                "toolRequirement": "HANDS"
+                "toolRequirement": "HANDS",
+                "isEssential": true
             },
             "item": {
                 "id": "beef_patty",
@@ -49,7 +50,8 @@
             "box": {
                 "id": "bun_box",
                 "maxCount": 32,
-                "price": 30
+                "price": 30,
+                "isEssential": true
             },
             "item": {
                 "id": "plain_bun",
@@ -162,7 +164,8 @@
             "box": {
                 "id": "wrapper_box",
                 "maxCount": 100,
-                "price": 20
+                "price": 20,
+                "isEssential": true
             },
             "item": {
                 "id": "wrapper",
@@ -290,10 +293,7 @@
                 "id": "side_cup_box",
                 "maxCount": 50,
                 "price": 15,
-                "unlockCondition": {
-                    "type": "appliance",
-                    "target": "fryer"
-                }
+                "unlocked": true
             },
             "item": {
                 "id": "side_cup",
@@ -382,7 +382,8 @@
             "box": {
                 "id": "bag_box",
                 "maxCount": 50,
-                "price": 20
+                "price": 20,
+                "isEssential": true
             },
             "item": {
                 "id": "bag",
@@ -777,10 +778,7 @@
                 "maxCount": 50,
                 "price": 15,
                 "produces": "drink_cup",
-                "unlockCondition": {
-                    "type": "appliance",
-                    "target": "soda_fountain"
-                }
+                "unlocked": true
             },
             "item": {
                 "id": "drink_cup",
@@ -850,9 +848,7 @@
                 "id": "whole_wheat_bun_box",
                 "maxCount": 32,
                 "price": 40,
-                "unlockCondition": {
-                    "type": "endgame"
-                }
+                "unlocked": false
             },
             "item": {
                 "id": "whole_wheat_bun",
@@ -874,9 +870,7 @@
                 "maxCount": 30,
                 "price": 60,
                 "toolRequirement": "HANDS",
-                "unlockCondition": {
-                    "type": "endgame"
-                }
+                "unlocked": false
             },
             "item": {
                 "id": "chicken_patty",

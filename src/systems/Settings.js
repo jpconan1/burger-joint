@@ -14,7 +14,7 @@ export const DEFAULT_BINDINGS = {
     [ACTIONS.MOVE_DOWN]: 'KeyS',
     [ACTIONS.MOVE_LEFT]: 'KeyA',
     [ACTIONS.MOVE_RIGHT]: 'KeyD',
-    [ACTIONS.INTERACT]: 'KeyE',
+    [ACTIONS.INTERACT]: 'Enter',
     [ACTIONS.PICK_UP]: 'Space',
     [ACTIONS.VIEW_ORDERS]: 'ShiftLeft',
 

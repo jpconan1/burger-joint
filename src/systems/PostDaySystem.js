@@ -97,66 +97,73 @@ export class PostDaySystem {
     }
 
     handleRewardsInput({ isInteract, isUp, isDown }) {
+        const hasFryer = this.game.hasAppliance('FRYER') || (this.game.storage['fryer'] && this.game.storage['fryer'] > 0);
+        const hasFountain = this.game.hasAppliance('SODA_FOUNTAIN') || (this.game.storage['soda_fountain'] && this.game.storage['soda_fountain'] > 0);
+
+        // Determine valid indices
+        const validIndices = [0];
+        if (!hasFryer) validIndices.push(1);
+        if (!hasFountain) validIndices.push(2);
+
+        // Helper to find current index in valid list
+        let currentPos = validIndices.indexOf(this.selectedRewardIndex);
+        if (currentPos === -1) {
+            this.selectedRewardIndex = validIndices[0];
+            currentPos = 0;
+        }
+
         if (isUp) {
-            this.selectedRewardIndex--;
-            if (this.selectedRewardIndex < 0) this.selectedRewardIndex = 2;
+            currentPos--;
+            if (currentPos < 0) currentPos = validIndices.length - 1;
+            this.selectedRewardIndex = validIndices[currentPos];
         } else if (isDown) {
-            this.selectedRewardIndex++;
-            if (this.selectedRewardIndex > 2) this.selectedRewardIndex = 0;
+            currentPos++;
+            if (currentPos >= validIndices.length) currentPos = 0;
+            this.selectedRewardIndex = validIndices[currentPos];
         } else if (isInteract) {
             const index = this.selectedRewardIndex;
 
             if (index === 0) {
-                // Toppings (Always available)
+                // Main Reward Pool (Toppings + Unlocked Sides/Drinks)
                 this.generateRewardOptions(0);
                 this.state = 'ITEM_SELECTION';
                 this.rewardsPicked = 0;
                 this.selectedOptionIndex = 1;
                 return 'CONTINUE';
-            } else if (index === 1) { // Side (Fryer)
-                if (this.game.hasAppliance('FRYER')) {
-                    // Already have it
-                    return 'CONTINUE';
-                } else {
-                    // BUY FRYER
-                    const cost = 100;
-                    if (this.game.money >= cost) {
-                        this.game.money -= cost;
-                        this.waitingForBuild = true;
-                        this.pendingCategory = 1;
+            } else if (index === 1) { // Unlock Sides
+                // BUY FRYER
+                const cost = 100;
+                if (this.game.money >= cost) {
+                    this.game.money -= cost;
+                    this.waitingForBuild = true;
+                    this.pendingCategory = 1; // Still generate side options for this first time
 
-                        // Enter Build Mode with Fryer
-                        const fryerDef = this.game.shopItems.find(i => i.id === 'fryer');
-                        if (fryerDef) {
-                            this.game.constructionSystem.startPlacement(fryerDef);
-                        }
-                    } else {
-                        // Audio Feedback: Error?
-                        this.game.addFloatingText("Need $100!", this.game.player.x, this.game.player.y, '#ff0000');
+                    // Enter Build Mode with Fryer
+                    const fryerDef = this.game.shopItems.find(i => i.id === 'fryer');
+                    if (fryerDef) {
+                        this.game.constructionSystem.startPlacement(fryerDef);
                     }
-                    return 'CONTINUE';
-                }
-            } else if (index === 2) { // Drink (Fountain)
-                if (this.game.hasAppliance('SODA_FOUNTAIN')) {
-                    return 'CONTINUE';
                 } else {
-                    // BUY FOUNTAIN
-                    const cost = 200;
-                    if (this.game.money >= cost) {
-                        this.game.money -= cost;
-                        this.waitingForBuild = true;
-                        this.pendingCategory = 2;
-
-                        // Enter Build Mode with Fountain
-                        const itemDef = this.game.shopItems.find(i => i.id === 'soda_fountain');
-                        if (itemDef) {
-                            this.game.constructionSystem.startPlacement(itemDef);
-                        }
-                    } else {
-                        this.game.addFloatingText("Need $200!", this.game.player.x, this.game.player.y, '#ff0000');
-                    }
-                    return 'CONTINUE';
+                    this.game.addFloatingText("Need $100!", this.game.player.x, this.game.player.y, '#ff0000');
                 }
+                return 'CONTINUE';
+            } else if (index === 2) { // Unlock Drinks
+                // BUY FOUNTAIN
+                const cost = 200;
+                if (this.game.money >= cost) {
+                    this.game.money -= cost;
+                    this.waitingForBuild = true;
+                    this.pendingCategory = 2; // Still generate drink options for this first time
+
+                    // Enter Build Mode with Fountain
+                    const itemDef = this.game.shopItems.find(i => i.id === 'soda_fountain');
+                    if (itemDef) {
+                        this.game.constructionSystem.startPlacement(itemDef);
+                    }
+                } else {
+                    this.game.addFloatingText("Need $200!", this.game.player.x, this.game.player.y, '#ff0000');
+                }
+                return 'CONTINUE';
             }
         }
         return 'CONTINUE';
@@ -174,28 +181,56 @@ export class PostDaySystem {
             this.state = 'REWARDS';
             return 'CONTINUE';
         } else if (isInteract) {
-            // Grant Specific Reward
             const selectedItem = this.rewardOptions[this.selectedOptionIndex];
             if (selectedItem) {
-                this.grantRewardItem(selectedItem);
+                // Determine Cost
+                const cost = this.getRewardCost(selectedItem);
 
-                this.rewardsPicked++;
-                // Remove from options to prevent double picking
-                this.rewardOptions.splice(this.selectedOptionIndex, 1);
+                // Check if we can afford the slot cost
+                if ((this.rewardsPicked + cost) <= 2) {
+                    this.grantRewardItem(selectedItem);
+                    this.rewardsPicked += cost;
 
-                // Clamping selection
-                if (this.selectedOptionIndex >= this.rewardOptions.length) {
-                    this.selectedOptionIndex = Math.max(0, this.rewardOptions.length - 1);
-                }
+                    // Remove from options to prevent double picking
+                    this.rewardOptions.splice(this.selectedOptionIndex, 1);
 
-                const maxPicks = (this.currentRewardCategory === 0) ? 2 : 1;
+                    // Clamping selection
+                    if (this.selectedOptionIndex >= this.rewardOptions.length) {
+                        this.selectedOptionIndex = Math.max(0, this.rewardOptions.length - 1);
+                    }
 
-                if (this.rewardsPicked >= maxPicks || this.rewardOptions.length === 0) {
-                    // Transition to Menu Edit
-                    this.state = 'MENU_EDIT';
-                    this.arrowSelected = false;
-                    this.game.menuSystem.expandedSlotIndex = null;
-                    this.game.menuSystem.selectionMode = null;
+                    // Check for Completion or Soft-lock
+                    // 1. Fulfilled quota
+                    let isDone = (this.rewardsPicked >= 2);
+
+                    // 2. Soft-lock check: If we have slots left (e.g. 1), but NO available items cost <= slots left.
+                    if (!isDone && this.rewardOptions.length > 0) {
+                        const slotsLeft = 2 - this.rewardsPicked;
+                        const canAffordAny = this.rewardOptions.some(opt => this.getRewardCost(opt) <= slotsLeft);
+                        if (!canAffordAny) {
+                            isDone = true;
+                            // Maybe show a quick message? "No more valid picks"
+                        }
+                    } else if (!isDone && this.rewardOptions.length === 0) {
+                        isDone = true;
+                    }
+
+                    if (isDone) {
+                        // Transition to Menu Edit
+                        this.state = 'MENU_EDIT';
+                        this.arrowSelected = false;
+                        this.game.menuSystem.expandedSlotIndex = null;
+                        this.game.menuSystem.selectionMode = null;
+
+                        // If we finished early due to lack of options, maybe inform user?
+                        if (this.rewardsPicked < 2) {
+                            this.game.addFloatingText("Selections Complete", this.game.player.x, this.game.player.y, '#fff');
+                        }
+                    }
+
+                } else {
+                    // Feedback: Not enough slots
+                    this.game.addFloatingText("Takes 2 Slots!", this.game.player.x, this.game.player.y, '#e74c3c');
                 }
 
                 return 'CONTINUE';
@@ -240,6 +275,7 @@ export class PostDaySystem {
             if (isLeft) {
                 this.arrowSelected = false;
             } else if (isInteract) {
+                this.arrowSelected = false;
                 // Start Day!
                 this.game.startDay();
                 return 'DONE';
@@ -263,138 +299,182 @@ export class PostDaySystem {
     }
 
     generateRewardOptions(categoryIndex) {
-        // categoryIndex: 0=Topping, 1=Side, 2=Drink
+        // categoryIndex: 0=Reward Pool (Toppings + Unlocked Types), 1=Side (Buy), 2=Drink (Buy)
         this.currentRewardCategory = categoryIndex;
         this.rewardOptions = [];
 
+        const validCandidates = [];
+
+        // Helpers for classification
+        const isSideSource = (def) => {
+            // Explicit ID checks
+            if (def.id === 'fry_box' || def.id === 'sweet_potato_fry_box' || def.id === 'onion_box') return true;
+
+            // Check produces
+            if (def.produces) {
+                const product = DEFINITIONS[def.produces];
+                if (product) {
+                    if (product.category === 'side' || (product.orderConfig && product.orderConfig.type === 'side')) return true;
+                    // Variant Complex check
+                    if (product.fryContent) {
+                        // It produces something that goes in fryer (e.g. raw fries)
+                        return true;
+                    }
+
+                    // Check if product slices into something fryable
+                    if (product.slicing && product.slicing.result) {
+                        const slicedDef = DEFINITIONS[product.slicing.result];
+                        if (slicedDef && slicedDef.cooking && slicedDef.cooking.stages) {
+                            const isFryable = Object.values(slicedDef.cooking.stages).some(stage => stage.cookMethod === 'fry');
+                            if (isFryable) return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        };
+
+        const isDrinkSource = (def) => {
+            if (def.id === 'syrup_box') return true;
+            if (def.id.includes('syrup') || (def.produces && (def.produces.includes('syrup') || def.produces === 'soda_syrup'))) return true;
+            return false;
+        };
+
+        const isToppingSource = (def) => {
+            // General catch-all for things that aren't specific sides/drinks but are supplies
+            if (isSideSource(def) || isDrinkSource(def)) return false;
+            return true;
+        };
+
         if (categoryIndex === 0) {
-            // Special Logic for Toppings (Submenu)
-            // 1. One option MUST be a sauce.
-            // 2. The other two MUST be from: lettuce, tomato, pickle, onion, cheddar, swiss, bacon.
+            // Category 0: New Items (Toppings, + Sides/Drinks if unlocked)
+            const hasFryer = this.game.hasAppliance('FRYER') || (this.game.storage['fryer'] > 0);
+            const hasFountain = this.game.hasAppliance('SODA_FOUNTAIN') || (this.game.storage['soda_fountain'] > 0);
 
-            const sauceIds = ['ketchup_box', 'mayo_box', 'bbq_box', 'burger_sauce_box'];
-            const toppingIds = [
-                'lettuce_box', 'tomato_box', 'pickle_box', 'onion_box',
-                'cheddar_box', 'swiss_box', 'bacon_box'
-            ];
+            const potentialCandidates = this.game.shopItems.filter(item =>
+                item.type === 'supply' && !item.unlocked
+            );
 
-            // 1. Pick a Sauce
-            const availableSauces = [];
-            sauceIds.forEach(id => {
-                const def = DEFINITIONS[id];
-                if (def && def.type === 'Box') availableSauces.push(def);
+            potentialCandidates.forEach(shopItem => {
+                const def = DEFINITIONS[shopItem.id];
+                if (!def) return;
+
+                let included = false;
+                if (isToppingSource(def)) {
+                    included = true;
+                } else if (hasFryer && isSideSource(def)) {
+                    included = true;
+                } else if (hasFountain && isDrinkSource(def)) {
+                    included = true;
+                }
+
+                if (included) {
+                    validCandidates.push(def);
+                }
             });
 
-            // 2. Pick Toppings
-            const availableToppings = [];
-            toppingIds.forEach(id => {
-                const def = DEFINITIONS[id];
-                if (def && def.type === 'Box') availableToppings.push(def);
-            });
+            // Supplement with essentials if running low on new unlocks
+            if (validCandidates.length < 3) {
+                const essentialItems = this.game.shopItems.filter(item => {
+                    // Check direct property on the shop item (box) or definition
+                    const def = DEFINITIONS[item.id];
 
-            const selectedItems = [];
+                    // Essential Check
+                    if (item.isEssential || (def && def.isEssential)) return true;
 
-            // Add 1 Sauce
-            if (availableSauces.length > 0) {
-                const randomSauce = availableSauces[Math.floor(Math.random() * availableSauces.length)];
-                selectedItems.push(randomSauce);
-            }
+                    // Cup Check
+                    if (item.id === 'side_cup_box' || item.id === 'drink_cup_box') return true;
 
-            // Add 2 Toppings
-            if (availableToppings.length > 0) {
-                // Shuffle available toppings first
-                for (let i = availableToppings.length - 1; i > 0; i--) {
+                    return false;
+                });
+
+                // Filter duplicates and shuffle filler
+                const fillers = essentialItems
+                    .map(i => DEFINITIONS[i.id])
+                    .filter(d => d && !validCandidates.includes(d));
+
+                // Shuffle fillers
+                for (let i = fillers.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
-                    [availableToppings[i], availableToppings[j]] = [availableToppings[j], availableToppings[i]];
+                    [fillers[i], fillers[j]] = [fillers[j], fillers[i]];
                 }
 
-                // Take up to 2
-                for (let i = 0; i < 2 && i < availableToppings.length; i++) {
-                    selectedItems.push(availableToppings[i]);
+                // Add enough to reach 3
+                const need = 3 - validCandidates.length;
+                for (let i = 0; i < need && i < fillers.length; i++) {
+                    validCandidates.push(fillers[i]);
                 }
             }
+        } else if (categoryIndex === 1) {
+            // Category 1: Sides (Can be locked OR unlocked - e.g. Side Cups might be unlocked)
+            const sideCandidates = this.game.shopItems.filter(item => item.type === 'supply');
 
-            // Shuffle the final selection to randomize the sauce slot
-            for (let i = selectedItems.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [selectedItems[i], selectedItems[j]] = [selectedItems[j], selectedItems[i]];
-            }
+            sideCandidates.forEach(shopItem => {
+                const def = DEFINITIONS[shopItem.id];
+                if (!def) return;
+                if (isSideSource(def)) {
+                    validCandidates.push(def);
+                }
+            });
+        } else if (categoryIndex === 2) {
+            // Category 2: Drinks (Can be locked OR unlocked)
+            const drinkCandidates = this.game.shopItems.filter(item => item.type === 'supply');
 
-            this.rewardOptions = selectedItems;
+            drinkCandidates.forEach(shopItem => {
+                const def = DEFINITIONS[shopItem.id];
+                if (!def) return;
+                if (isDrinkSource(def)) {
+                    validCandidates.push(def);
+                }
+            });
+        }
+
+        if (validCandidates.length === 0) {
+            console.warn("No candidates found for reward pool.");
+            // If empty, maybe add a fallback "Bonus Money" item? Or just empty.
             return;
         }
 
-        // Generic Logic for Sides and Drinks (Indices 1 and 2)
-        const candidates = [];
-        const allDefs = Object.values(DEFINITIONS);
+        // Shuffle
+        for (let i = validCandidates.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [validCandidates[i], validCandidates[j]] = [validCandidates[j], validCandidates[i]];
+        }
 
+        // Pick 3
+        const count = Math.min(validCandidates.length, 3);
+        for (let i = 0; i < count; i++) {
+            this.rewardOptions.push(validCandidates[i]);
+        }
+    }
+
+    getRewardCost(itemDef) {
+        // Recalculate cost based on type
+        // Sides/Drinks = 2 slots
+        // Toppings = 1 slot
+
+        // Use helper logic again or check definition properties
         const isSideSource = (def) => {
             if (def.type === 'Box' && def.produces) {
                 const product = DEFINITIONS[def.produces];
-                // Check direct side 
-                if (product && product.category === 'side') return true;
-
-                // Check Variant Complex (Fries, Sweet Potato Fries)
-                // If the box produces a 'bag' (Ingredient) which has 'fryContent', we need to check the content's result.
-                if (product && product.fryContent) {
-                    const contentDef = DEFINITIONS[product.fryContent]; // e.g. raw_fries
-                    if (contentDef && contentDef.result) {
-                        const finalDef = DEFINITIONS[contentDef.result]; // e.g. fries
-                        if (finalDef && finalDef.category === 'side') return true;
-                    }
-                }
-
-                if (def.id === 'fry_box') return true;
-                if (def.id === 'sweet_potato_fry_box') return true;
-                if (def.id === 'side_cup_box') return false;
+                if (product && (product.category === 'side' || (product.orderConfig && product.orderConfig.type === 'side'))) return true;
+                if (product && product.fryContent) return true;
+                if (def.id === 'fry_box' || def.id === 'sweet_potato_fry_box') return true;
             }
             return false;
         };
 
         const isDrinkSource = (def) => {
             if (def.id === 'syrup_box') return true;
-            if (def.id === 'drink_cup_box') return false;
             if (def.id.includes('syrup') || (def.produces && def.produces.includes('syrup'))) return true;
             return false;
         };
 
-        allDefs.forEach(def => {
-            if (def.type !== 'Box') return;
-            if (def.price === undefined) return;
+        if (isSideSource(itemDef)) return 2;
+        if (isDrinkSource(itemDef)) return 2;
 
-            // Important: Filter out already unlocked items?
-            // User did not explicitly ask to hide owned items, but "selection screen" implies new things?
-            // "Unlock Toppings Daily" logic suggests these are for unlocking.
-            // If we already have it, maybe don't show it?
-            if (this.game.shopItems.some(si => si.id === def.id && si.unlocked)) {
-                // Skip if already unlocked
-                return;
-            }
-
-            if (categoryIndex === 1) { // Side
-                if (isSideSource(def)) candidates.push(def);
-            } else if (categoryIndex === 2) { // Drink
-                if (isDrinkSource(def)) candidates.push(def);
-            }
-        });
-
-        if (candidates.length === 0) {
-            console.warn("No candidates found for reward category " + categoryIndex);
-            return;
-        }
-
-        // Shuffle
-        for (let i = candidates.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
-        }
-
-        // Pick distinct items (up to 3)
-        // Do NOT repeat items if we have fewer than 3.
-        const count = Math.min(candidates.length, 3);
-        for (let i = 0; i < count; i++) {
-            this.rewardOptions.push(candidates[i]);
-        }
+        return 1;
     }
 
     grantRewardItem(itemDef) {
@@ -594,21 +674,73 @@ export class PostDaySystem {
         const startY = centerY - 100;
 
         // Draw 3 Buttons
-        this.drawRewardButton(ctx, 0, centerX, startY, ASSETS.UI.NEW_TOPPING_IDLE, ASSETS.UI.NEW_TOPPING_SELECTED, "Toppings", null, false);
-
-        // Side
+        // Draw Buttons
         const hasFryer = this.game.hasAppliance('FRYER') || (this.game.storage['fryer'] && this.game.storage['fryer'] > 0);
-        this.drawRewardButton(ctx, 1, centerX, startY + spacing,
-            hasFryer ? null : ASSETS.UI.NEW_SIDE_IDLE,
-            hasFryer ? null : ASSETS.UI.NEW_SIDE_SELECTED,
-            "Add Side", 100, hasFryer);
-
-        // Drink
         const hasFountain = this.game.hasAppliance('SODA_FOUNTAIN') || (this.game.storage['soda_fountain'] && this.game.storage['soda_fountain'] > 0);
-        this.drawRewardButton(ctx, 2, centerX, startY + spacing * 2,
-            hasFountain ? null : ASSETS.UI.NEW_DRINK_IDLE,
-            hasFountain ? null : ASSETS.UI.NEW_DRINK_SELECTED,
-            "Add Drink", 200, hasFountain);
+
+        // 1. New Items (Always Index 0)
+        this.drawRewardButton(ctx, 0, centerX, startY, ASSETS.UI.NEW_TOPPING_IDLE, ASSETS.UI.NEW_TOPPING_SELECTED, "New Items", null, false);
+
+        // 2. Unlock Sides (Index 1) - Only if !hasFryer
+        if (!hasFryer) {
+            this.drawRewardButton(ctx, 1, centerX, startY + spacing,
+                ASSETS.UI.NEW_SIDE_IDLE, // Re-use generic side asset or potentially new "UNLOCK" asset
+                ASSETS.UI.NEW_SIDE_SELECTED,
+                "Unlock Sides", 100, false);
+        }
+
+        // 3. Unlock Drinks (Index 2) - Only if !hasFountain
+        if (!hasFountain) {
+            // Use correct Y position based on whether option 1 exists? 
+            // The user prompt implies one-time buttons.
+            // If option 1 is GONE, should option 2 move up? 
+            // We kept index mapping (0, 1, 2) in logic. 
+            // So we should draw at specific slot locations (visual slots) or relative?
+            // Existing logic uses index to select. If we draw Index 2 at visual slot 2, it leaves a gap if 1 is missing.
+            // Let's draw at "available slot" positions.
+
+            let drinkY = startY + spacing * 2;
+            if (hasFryer) {
+                // If fryer is owned (Index 1 hidden), we could move Drink up.
+                // But input logic maps to index 2.
+                // Let's just keep them in their physical slots for consistency (Menu Pos 1, Menu Pos 2, Menu Pos 3).
+                // Or user might prefer them to stack. 
+                // Let's stack them for nicer aesthetics.
+                drinkY = startY + spacing; // Move into slot 2's position
+            }
+            // WAIT - Logic uses explicit indices (0,1,2). If I change Input to skip valid indices, 
+            // I should just render the valid indices in order.
+
+            // Re-eval: simpler to keep fixed positions so user knows "Bottom is Drink".
+            // But if middle is gone, a gap looks weird.
+            // Let's just draw Index 2 at the position of "next available visual row".
+
+            // Actually, keep it simple first. Fixed Y for fixed Index is easiest to understand.
+            // EXCEPT the prompt says "buttons are now one-time-only".
+            // If I hide button 1, button 2 should probably slide up.
+
+            const btn1Visible = !hasFryer;
+            const btn2Visible = !hasFountain;
+
+            // Re-calc y positions
+            const y0 = startY;
+            const y1 = y0 + spacing;
+            const y2 = btn1Visible ? (y0 + spacing * 2) : (y0 + spacing);
+
+            if (btn1Visible) {
+                this.drawRewardButton(ctx, 1, centerX, y1,
+                    ASSETS.UI.NEW_SIDE_IDLE,
+                    ASSETS.UI.NEW_SIDE_SELECTED,
+                    "Unlock Sides", 100, false);
+            }
+
+            if (btn2Visible) {
+                this.drawRewardButton(ctx, 2, centerX, y2,
+                    ASSETS.UI.NEW_DRINK_IDLE,
+                    ASSETS.UI.NEW_DRINK_SELECTED,
+                    "Unlock Drinks", 200, false);
+            }
+        }
     }
 
     drawRewardButton(ctx, index, x, y, idleAsset, selectedAsset, label, price, isHidden) {
@@ -705,9 +837,9 @@ export class PostDaySystem {
         ctx.font = 'bold 36px Arial';
         ctx.textAlign = 'center';
 
-        const maxPicks = (this.currentRewardCategory === 0) ? 2 : 1;
+        const maxPicks = 2; // Fixed at 2 for "Pick 2" pool
         const remaining = maxPicks - this.rewardsPicked;
-        const titleText = (remaining === 2) ? "Choose Two" : (remaining === 1 ? "Choose One" : "Complete");
+        const titleText = `Choose Rewards (${remaining} left)`;
         ctx.fillText(titleText, centerX, centerY - 200);
 
         const startX = centerX - 250; // Total width approx 500?
@@ -757,6 +889,14 @@ export class PostDaySystem {
             ctx.fillStyle = '#fff';
             ctx.font = '16px Arial';
             ctx.fillText(item.id.replace(/_/g, ' '), x + size / 2, y + size + 30);
+
+            // 5. Cost Indicator
+            const cost = this.getRewardCost(item);
+            if (cost > 1) {
+                ctx.fillStyle = '#ffd700';
+                ctx.font = 'bold 14px Arial';
+                ctx.fillText(`(Takes ${cost} Slots)`, x + size / 2, y + size + 50);
+            }
 
             x += size + gap;
         });

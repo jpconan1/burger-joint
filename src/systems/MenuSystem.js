@@ -73,12 +73,12 @@ export class MenuSystem {
             // Buns
             if (item.category === 'bun') {
                 this.rawBuns.push(item);
-                this.buns.push(item); // Buns always available? Or check? For now assume available.
+                // this.buns.push(item); // Logic moved to updateAvailableItems
             }
             // Patties
             else if (item.category === 'patty') {
                 this.rawPatties.push(item);
-                this.patties.push(item); // Patties always available?
+                // this.patties.push(item); // Logic moved to updateAvailableItems
             }
             // Toppings & Sauces
             else if (item.isTopping) {
@@ -109,6 +109,8 @@ export class MenuSystem {
         this.toppings = [];
         this.availableSides = [];
         this.availableDrinks = [];
+        this.buns = [];
+        this.patties = [];
         this.sauces = []; // Helper for sorting
 
         const checkUnlocked = (itemId) => {
@@ -171,6 +173,32 @@ export class MenuSystem {
                 this.availableDrinks.push(d);
             }
         });
+
+        // Filter Buns
+        this.rawBuns.forEach(b => {
+            if (checkUnlocked(b.id)) {
+                this.buns.push(b);
+            }
+        });
+
+        // Filter Patties
+        this.rawPatties.forEach(p => {
+            if (checkUnlocked(p.id)) {
+                this.patties.push(p);
+            }
+        });
+
+        // Ensure defaults if lists are empty (prevent soft-lock if base items are somehow locked?)
+        if (this.buns.length === 0 && this.rawBuns.length > 0) {
+            // Fallback: Add plain bun if nothing else
+            const plain = this.rawBuns.find(b => b.id === 'plain_bun');
+            if (plain) this.buns.push(plain);
+        }
+        if (this.patties.length === 0 && this.rawPatties.length > 0) {
+            // Fallback: Add beef patty if nothing else
+            const beef = this.rawPatties.find(p => p.id === 'beef_patty');
+            if (beef) this.patties.push(beef);
+        }
 
         console.log(`[MenuSystem] Updated Available Items. Toppings: ${this.toppings.length}, Sides: ${this.availableSides.length}, Drinks: ${this.availableDrinks.length}`);
     }
