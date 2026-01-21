@@ -6,7 +6,7 @@ export const ACTIONS = {
     MOVE_RIGHT: 'MOVE_RIGHT',
     INTERACT: 'INTERACT',
     PICK_UP: 'PICK_UP',
-
+    VIEW_ORDERS: 'VIEW_ORDERS',
 };
 
 export const DEFAULT_BINDINGS = {
@@ -16,6 +16,7 @@ export const DEFAULT_BINDINGS = {
     [ACTIONS.MOVE_RIGHT]: 'KeyD',
     [ACTIONS.INTERACT]: 'KeyE',
     [ACTIONS.PICK_UP]: 'Space',
+    [ACTIONS.VIEW_ORDERS]: 'ShiftLeft',
 
 };
 

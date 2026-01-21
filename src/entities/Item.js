@@ -22,12 +22,22 @@ export class ItemInstance {
         return this.definition.type;
     }
 
+    get category() {
+        return this.definition.category;
+    }
+
     _initializeState() {
         const def = this.definition;
 
         // 1. Load data-driven initial state if available
         if (def.initialState) {
             this.state = { ...def.initialState };
+        }
+
+        // 1b. Auto-init cooking state if applicable
+        if (def.cooking) {
+            if (!this.state.cook_level) this.state.cook_level = 'raw';
+            if (this.state.cookingProgress === undefined) this.state.cookingProgress = 0;
         }
 
         // 2. Apply type-specific default logic (legacy/fallback)
@@ -42,12 +52,39 @@ export class ItemInstance {
 
             case ItemType.Composite:
                 this.state = {
-                    ...this.state,
                     bun: null,
                     patty: null,
                     toppings: [],
-                    sauces: []
+                    sauces: [],
+                    ...this.state
                 };
+
+                // Auto-populate defaults for burgers if empty
+                // Exclude burger_old effectively
+                if (this.definitionId.includes('burger') && this.definitionId !== 'burger_old') {
+                    if (!this.state.bun) this.state.bun = new ItemInstance('plain_bun');
+                    if (!this.state.patty) {
+                        const p = new ItemInstance('beef_patty');
+                        p.state.cook_level = 'cooked';
+                        this.state.patty = p;
+                    }
+                    // Simple heuristic for legacy items
+                    if (this.state.toppings.length === 0) {
+                        // Check logic: if it has tomato and mayo, which one is bottom?
+                        // Assuming standard build: Top Bun <- Mayo <- Tomato <- Patty <- Bottom Bun
+                        // So Mayo is last (top).
+
+                        // We push in order: Bottom -> Top
+
+                        if (this.definitionId.includes('tomato')) {
+                            this.state.toppings.push(new ItemInstance('tomato_slice'));
+                        }
+
+                        if (this.definitionId.includes('mayo')) {
+                            this.state.toppings.push('mayo');
+                        }
+                    }
+                }
                 break;
 
             case ItemType.Container:
@@ -71,19 +108,76 @@ export class ItemInstance {
 
             if (rules) {
                 for (const rule of rules) {
-                    if (this.state[rule.stateKey] === rule.value) {
-                        return rule.texture;
+                    // Normalize standard rule to a list of conditions
+                    let conditions = rule.conditions || [];
+
+                    // Backward compatibility for simple "stateKey/value" rules
+                    if (rule.stateKey) {
+                        conditions = [
+                            ...conditions,
+                            {
+                                stateKey: rule.stateKey,
+                                value: rule.value,
+                                comparator: rule.comparator || 'eq'
+                            }
+                        ];
                     }
+
+                    // Evaluate all conditions
+                    const match = conditions.every(cond => {
+                        const currentVal = this.state[cond.stateKey];
+                        const targetVal = cond.value;
+
+                        switch (cond.comparator || 'eq') {
+                            case 'eq': return currentVal === targetVal;
+                            case 'neq': return currentVal !== targetVal;
+                            case 'gt': return currentVal > targetVal;
+                            case 'gte': return currentVal >= targetVal;
+                            case 'lt': return currentVal < targetVal;
+                            case 'lte': return currentVal <= targetVal;
+                            default: return false;
+                        }
+                    });
+
+                    if (match) return rule.texture;
                 }
             }
             return base;
+        }
+
+        // 1.5 Aging Texture Logic
+        if (this.definition.aging && this.definition.aging.stages && this.state.age) {
+            const stages = this.definition.aging.stages;
+            // Find the highest stage <= current age
+            let matchedTexture = null;
+            let maxStageDay = -1;
+
+            for (const [day, texture] of Object.entries(stages)) {
+                const dayNum = parseInt(day);
+                if (this.state.age >= dayNum && dayNum > maxStageDay) {
+                    maxStageDay = dayNum;
+                    matchedTexture = texture;
+                }
+            }
+
+            if (matchedTexture) return matchedTexture;
         }
 
         // 2. Legacy/Hardcoded Logic (Preserved for items not yet refactored)
         // Box Logic
         if (this.type === ItemType.Box) {
             if (this.state.count <= 0) return 'empty-box.png';
-            return this.state.isOpen ? `${this.definitionId}-open.png` : `${this.definitionId}-closed.png`;
+
+            if (this.state.isOpen) {
+                return `${this.definitionId}-open.png`;
+            }
+
+            // Custom Closed Texture Support
+            if (this.definition.texture) {
+                return this.definition.texture;
+            }
+
+            return `${this.definitionId}-closed.png`;
         }
 
         // Composite / Burger Logic
@@ -94,23 +188,8 @@ export class ItemInstance {
         if (this.definitionId === 'bag') {
             const contents = this.state.contents || [];
             if (contents.length === 0) return 'bag-empty.png';
-
-            // Map contents to tags
-            const tags = contents.map(item => {
-                if (item.type === ItemType.Composite || item.definitionId.includes('burger')) return 'burger';
-                if (item.definitionId === 'fries') return 'fries';
-                if (item.definitionId === 'soda') return 'soda';
-                return '';
-            }).filter(t => t);
-
-            // Unique tags
-            const uniqueTags = [...new Set(tags)];
-
-            // Sort Order: Burger, Soda, Fries
-            const weight = { 'burger': 1, 'soda': 2, 'fries': 3 };
-            uniqueTags.sort((a, b) => (weight[a] || 99) - (weight[b] || 99));
-
-            return `bag-${uniqueTags.join('-')}.png`;
+            // Per user request: any content = bag-burger.png for now
+            return 'bag-burger.png';
         }
 
         if (this.definition.texture) {

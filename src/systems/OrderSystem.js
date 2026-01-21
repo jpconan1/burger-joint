@@ -1,113 +1,254 @@
-import { ORDER_TEMPLATES } from '../data/orderTemplates.js';
+import { generateMealConfig } from '../data/orderTemplates.js';
 import { SCORING_CONFIG } from '../data/scoringConfig.js';
+import { CAPABILITY, DEFINITIONS } from '../data/definitions.js';
+
+const INGREDIENT_COSTS = {
+    // Patties
+    beef_patty: 4.17,
+    chicken_patty: 2.00,
+
+    // Buns
+    plain_bun: 0.94,
+    whole_wheat_bun: 1.25,
+
+    // Cheese
+    cheddar_slice: 0.56,
+    swiss_slice: 0.56,
+    cheddar_cheese: 0.56,
+    swiss_cheese: 0.56,
+
+    // Produce
+    lettuce_leaf: 0.52,
+    tomato_slice: 0.80,
+    onion_slice: 0.80,
+    pickle_slice: 0.50,
+    fried_onion: 0.80,
+
+    // Meat
+    bacon: 2.92,
+
+    // Sauces (per squirt estimate)
+    mayo: 0.25,
+    ketchup: 0.25,
+    bbq: 0.25,
+    burger_sauce: 0.25,
+
+    // Sides/Drinks (Base Cost)
+    fries: 1.41,
+    sweet_potato_fries: 1.41,
+    onion_rings: 1.10,
+    soda: 0.50,
+    drink: 0.50
+};
 
 export class OrderSystem {
     constructor() {
         // Difficulty settings or state can go here
     }
 
-    generateDailyOrders(dayNumber, playerCapabilities = []) {
+    generateDailyOrders(dayNumber, menuConfig) {
         const orders = [];
 
-        // 1. Calculate Day Parameters
-        // Max Difficulty increases with days.
-        const maxDifficulty = Math.min(5, Math.ceil(dayNumber / 3) + 1);
+        // 1. Calculate Day Parameters & Customer Count
+        // Stars Logic: 0 stars (day 1), then scales.
+        const stars = Math.min(5, Math.floor((dayNumber - 1) / 3));
+        const baseMin = 4;
+        const baseMax = 6;
+        const customerCount = Math.floor(Math.random() * (baseMax - baseMin + 1)) + baseMin + (stars * 2);
 
-        // Ticket Count: Random number between 3 and 6
-        const ticketCount = Math.floor(Math.random() * 4) + 3; // 3 to 6
+        console.log(`Generating Day ${dayNumber} (Stars: ${stars}): ${customerCount} Customers.`);
 
-        // Combo Chance increases with days
-        const comboChance = Math.min(0.8, (dayNumber - 1) * 0.1);
-
-        console.log(`Generating ${ticketCount} Tickets for Day ${dayNumber}. MaxDiff: ${maxDifficulty}`);
-
-        // 2. Filter Valid Templates
-        let validTemplates = ORDER_TEMPLATES.filter(template => {
-            // A. Check Capability Requirement (Strict Subset)
-            const hasCaps = template.requiresCapabilities.every(cap => playerCapabilities.includes(cap));
-
-            // B. Check Difficulty Constraint
-            const diffValid = template.difficulty <= maxDifficulty;
-
-            return hasCaps && diffValid;
-        });
-
-        if (validTemplates.length === 0) {
-            console.warn("No valid order templates found! Relaxing difficulty constraint as fallback.");
-            // Soft failure: Ignore difficulty, check capabilities only
-            validTemplates = ORDER_TEMPLATES.filter(template =>
-                template.requiresCapabilities.every(cap => playerCapabilities.includes(cap))
-            );
-
-            if (validTemplates.length === 0) {
-                console.error("CRITICAL: Player has NO valid capabilities to fulfill ANY orders.");
-                return orders;
-            }
+        // 2. Generate Base Customers
+        const customers = [];
+        for (let i = 0; i < customerCount; i++) {
+            customers.push(this.generateCustomerProfile(menuConfig));
         }
 
-        // 3. Split into Singles vs Combos (Multi-item)
-        const singleItemTemplates = validTemplates.filter(t => t.components.length === 1);
-        const comboTemplates = validTemplates.filter(t => t.components.length > 1);
-
-        // 4. Generate Tickets
-        for (let i = 0; i < ticketCount; i++) {
-            const ticket = new Ticket(i + 1); // ID starts at 1
-            let selectedTemplate = null;
-
-            // Roll for Random Template
-            if (Math.random() < comboChance && comboTemplates.length > 0) {
-                selectedTemplate = comboTemplates[Math.floor(Math.random() * comboTemplates.length)];
-            } else {
-                if (singleItemTemplates.length > 0) {
-                    selectedTemplate = singleItemTemplates[Math.floor(Math.random() * singleItemTemplates.length)];
-                } else if (comboTemplates.length > 0) {
-                    selectedTemplate = comboTemplates[Math.floor(Math.random() * comboTemplates.length)];
-                }
+        // 3. Grouping (The Merge)
+        const tickets = [];
+        let i = 0;
+        while (i < customers.length) {
+            const ticketCustomers = [customers[i]];
+            i++;
+            // 33% chance to merge next customer if exists
+            // "one in three chance to be combined with another customer OR group"
+            // We treat the current accumulation as the group.
+            while (i < customers.length && Math.random() < 0.33) {
+                ticketCustomers.push(customers[i]);
+                i++;
             }
+            // Create a Ticket with a SINGLE Bag containing all these orders
+            tickets.push(this.createTicketFromCustomers(ticketCustomers, tickets.length + 1));
+        }
 
-            if (!selectedTemplate) {
-                selectedTemplate = validTemplates[Math.floor(Math.random() * validTemplates.length)];
-            }
+        // 4. Shuffle Ticket Queue
+        for (let j = tickets.length - 1; j > 0; j--) {
+            const k = Math.floor(Math.random() * (j + 1));
+            [tickets[j], tickets[k]] = [tickets[k], tickets[j]]; // Swap
+        }
 
-            // Create ONE bag (order) per ticket for now, as per standard ticket flow
-            // If we want "large orders" we could add multiple bags to a ticket, 
-            // but usually 1 ticket = 1 unified order in this style.
-            const bag = this.createBagFromTemplate(selectedTemplate);
-            ticket.addBag(bag);
+        // Re-assign IDs after shuffle for clean UI ordering? 
+        // Or keep internal IDs random? Let's re-assign for neatness if IDs are just labels.
+        tickets.forEach((t, idx) => t.id = idx + 1);
 
-            // Calculate Par Time for this individual ticket
+        // 5. Calculate Par Times and Day Arc
+        let totalParTime = 0;
+        tickets.forEach(ticket => {
             ticket.calculateParTime();
-
-            orders.push(ticket);
-        }
-
-        return orders;
-    }
-
-    createBagFromTemplate(template) {
-        const bag = new Bag();
-
-        template.components.forEach(comp => {
-            if (comp.type === 'burger') {
-                bag.setBurger({
-                    base: 'Burger',
-                    modifications: [...comp.mods] // Clone array
-                });
-            } else if (comp.type === 'fries') {
-                bag.setFries(true);
-            } else if (comp.type === 'soda') {
-                bag.setSoda(true);
-            }
+            totalParTime += ticket.parTime;
         });
 
-        // Store template ID for reference/scoring if needed
-        bag.templateId = template.id;
-        bag.payout = template.payout;
+        const prepTime = 30; // 30s prep
+        const dayLength = totalParTime; // The "Day Arc"
 
-        return bag;
+        console.log(`Day Arc: ${dayLength}s, Total Tickets: ${tickets.length}`);
+
+        // 6. Sequential Arrival with Buffer
+        // "Orders come in too fast. After every ticket prints, check it's par time.
+        // Wait an additional 50% of the tickets par time before printing the next ticket."
+        let currentArrivalTime = prepTime;
+
+        tickets.forEach((ticket) => {
+            ticket.arrivalTime = currentArrivalTime;
+            // Spacing = Par Time + 50% Buffer
+            currentArrivalTime += (ticket.parTime * 1.5);
+        });
+
+        return tickets;
     }
 
-    // Removed generateBag and generateBurger (procedural logic replaced by templates)
+    generateCustomerProfile(menuConfig) {
+        const order = {
+            burger: null,
+            items: []
+        };
+
+        if (!menuConfig || !menuConfig.burgers || menuConfig.burgers.length === 0) {
+            console.error("Invalid Menu Config!");
+            // Fallback
+            order.burger = { base: 'Burger', bun: 'plain_bun', patty: 'beef_patty', modifications: [] };
+            return order;
+        }
+
+        // 1. Pick a Burger from Menu
+        const burgerDef = menuConfig.burgers[Math.floor(Math.random() * menuConfig.burgers.length)];
+
+        // 2. Build Mods (Standard vs Optional)
+        const mods = [];
+        if (burgerDef.toppings) {
+            Object.keys(burgerDef.toppings).forEach(toppingId => {
+                const type = burgerDef.toppings[toppingId];
+
+                if (type === 'standard') {
+                    // Always KEEP standard toppings (exactly from menu)
+                    mods.push(toppingId);
+                } else if (type === 'optional') {
+                    // 50% chance to include optional toppings
+                    if (Math.random() < 0.5) {
+                        mods.push(toppingId);
+                    }
+                }
+            });
+        }
+
+        order.burger = {
+            base: burgerDef.name || 'Burger',
+            bun: burgerDef.bun || 'plain_bun',
+            patty: burgerDef.patty || 'beef_patty',
+            modifications: mods
+        };
+
+        // 3. Sides
+        if (menuConfig.sides && menuConfig.sides.length > 0) {
+            if (Math.random() < 0.50) {
+                const choice = menuConfig.sides[Math.floor(Math.random() * menuConfig.sides.length)];
+                order.items.push(choice);
+            }
+        }
+
+        // 4. Drinks
+        if (menuConfig.drinks && menuConfig.drinks.length > 0) {
+            if (Math.random() < 0.66) {
+                const choice = menuConfig.drinks[Math.floor(Math.random() * menuConfig.drinks.length)];
+                order.items.push(choice);
+            }
+        }
+
+        return order;
+    }
+
+    createTicketFromCustomers(customerGroup, id) {
+        const ticket = new Ticket(id);
+        const bag = new Bag(); // One Bag Rule
+
+        customerGroup.forEach(cust => {
+            // Add Burger
+            if (cust.burger) {
+                bag.addBurger(cust.burger);
+            }
+            // Add Items
+            cust.items.forEach(itm => bag.addItem(itm));
+        });
+
+        // Calculate Dynamic Payout
+        bag.payout = this.calculateBagPayout(bag);
+
+        ticket.addBag(bag);
+        return ticket;
+    }
+
+    calculateBagPayout(bag) {
+        let total = 0;
+
+        // Burgers
+        bag.burgers.forEach(burger => {
+            total += this.calculateBurgerPrice(burger);
+        });
+
+        // Items
+        bag.items.forEach(itemId => {
+            total += this.calculateItemPrice(itemId);
+        });
+
+        return Math.ceil(total);
+    }
+
+    calculateBurgerPrice(burger) {
+        let cost = 0;
+        let complexity = 1; // Base
+
+        // Bun & Patty
+        cost += INGREDIENT_COSTS[burger.bun] || 1.0;
+        cost += INGREDIENT_COSTS[burger.patty] || 3.0;
+
+        // Toppings
+        if (burger.modifications) {
+            burger.modifications.forEach(mod => {
+                cost += INGREDIENT_COSTS[mod] || 0.5;
+
+                // Complexity Scoring
+                if (['bacon', 'fried_onion', 'chicken_patty'].includes(mod)) {
+                    complexity += 2;
+                } else if (['mayo', 'ketchup', 'bbq', 'burger_sauce'].includes(mod)) {
+                    complexity += 1; // Sauce is simple
+                } else {
+                    complexity += 1.5; // Sliced/Prep items
+                }
+            });
+        }
+
+        // Pricing Formula: Base + (Cost * 2) + (Complexity * 5)
+        // Base Price for a served burger
+        const basePrice = 15;
+
+        return basePrice + (cost * 2) + (complexity * 5);
+    }
+
+    calculateItemPrice(itemId) {
+        const cost = INGREDIENT_COSTS[itemId] || 1.0;
+        // 3x Markup for sides/drinks
+        return Math.ceil(cost * 3);
+    }
 }
 
 export class Ticket {
@@ -123,28 +264,45 @@ export class Ticket {
         const TIMES = SCORING_CONFIG.PAR_TIMES;
 
         this.bags.forEach(bag => {
-            // Burger
-            if (bag.burger) {
+            // Burgers
+            bag.burgers.forEach(burger => {
                 totalTime += TIMES.burger;
-                if (bag.burger.modifications) {
-                    bag.burger.modifications.forEach(mod => {
-                        if (mod === 'tomato') totalTime += TIMES.topping_tomato;
-                        if (mod === 'mayo') totalTime += TIMES.sauce;
+                if (burger.modifications) {
+                    burger.modifications.forEach(mod => {
+                        let def = DEFINITIONS[mod];
+                        // Fallback: If item is raw produce (e.g. 'tomato'), check its slice/process result
+                        if (def && !def.orderConfig && !def.isSlice) {
+                            if (def.slicing && def.slicing.result) def = DEFINITIONS[def.slicing.result];
+                            else if (def.process && def.process.result) def = DEFINITIONS[def.process.result];
+                        }
+
+                        if (def) {
+                            if (def.isSlice || (def.orderConfig && def.orderConfig.capability === CAPABILITY.CUT_TOPPINGS)) {
+                                totalTime += TIMES.sliced_topping;
+                            } else if (def.orderConfig && def.orderConfig.capability === CAPABILITY.ADD_COLD_SAUCE) {
+                                totalTime += TIMES.sauce;
+                            }
+                        }
                     });
                 }
-            }
-            // Fries
-            if (bag.fries) {
-                totalTime += TIMES.fries;
-            }
-            // Soda
-            if (bag.soda) {
-                totalTime += TIMES.soda;
-            }
+            });
+            // Generic Items (Fries, Soda, etc.)
+            bag.items.forEach(itemId => {
+                const def = DEFINITIONS[itemId];
+                if (def && def.orderConfig) {
+                    if (def.orderConfig.type === 'side') {
+                        totalTime += TIMES.side;
+                    } else if (def.orderConfig.type === 'drink') {
+                        totalTime += TIMES.drink;
+                    } else {
+                        totalTime += 20;
+                    }
+                }
+            });
         });
 
         this.parTime = totalTime;
-        console.log(`Ticket #${this.id} Par Time: ${this.parTime}s`);
+        // console.log(`Ticket #${this.id} Par Time: ${this.parTime}s`);
     }
 
     addBag(bag) {
@@ -155,33 +313,33 @@ export class Ticket {
     toDisplayFormat() {
         const lines = [];
         this.bags.forEach((bag, index) => {
-            const prefix = bag.completed ? '[DONE] ' : '';
-            lines.push(`${prefix}BAG ${index + 1}`);
+            // Assuming 1 bag per ticket now, but looping safely
+            // const prefix = bag.completed ? '[DONE] ' : ''; 
+            // Actually, we usually display the Ticket contents.
+            const prefix = '';
 
-            if (bag.burger) {
-                lines.push(`${prefix}Burger`);
-                bag.burger.modifications.forEach(mod => {
-                    lines.push(`${prefix}  - add ${mod}`);
+            // Render Burgers
+            bag.burgers.forEach((burger, bIdx) => {
+                const displayName = (burger.base && burger.base !== 'Burger') ? `${burger.base} Burger` : `Burger ${bIdx + 1}`;
+                lines.push(`${prefix}${displayName}`);
+                burger.modifications.forEach(mod => {
+                    lines.push(`${prefix}  + ${mod}`);
                 });
-            }
+            });
 
-            if (bag.fries) {
-                lines.push(`${prefix}Fries`);
-            }
-
-            if (bag.soda) {
-                lines.push(`${prefix}Soda`);
-            }
-
-            // Add empty line between bags if not the last one
-            if (index < this.bags.length - 1) {
-                lines.push('');
-            }
+            // Generic Items
+            bag.items.forEach(itemId => {
+                const displayName = itemId.charAt(0).toUpperCase() + itemId.slice(1);
+                lines.push(`${prefix}${displayName}`);
+            });
         });
+
+        lines.push(`-- Par: ${this.parTime}s --`);
 
         return {
             id: this.id,
-            items: lines
+            items: lines,
+            arrivalTime: this.arrivalTime // Pass this so Renderer/Game can see it if needed
         };
     }
 
@@ -209,80 +367,117 @@ export class Ticket {
 
 export class Bag {
     constructor() {
-        this.burger = null;
-        this.fries = false;
-        this.soda = false;
+        this.burgers = []; // List of burger configs
+        this.items = []; // List of item IDs required (fries, soda)
         this.completed = false;
         this.payout = 0;
     }
 
+    addBurger(burgerConfig) {
+        this.burgers.push(burgerConfig);
+    }
+
     setBurger(burgerConfig) {
-        this.burger = burgerConfig;
+        // Legacy support shim if needed, or just redirect
+        this.addBurger(burgerConfig);
     }
 
-    setFries(hasFries) {
-        this.fries = hasFries;
-    }
-
-    setSoda(hasSoda) {
-        this.soda = hasSoda;
+    addItem(itemId) {
+        this.items.push(itemId);
     }
 
     matches(itemInstance) {
         // 1. Analyze Contents of the submitted bag
-        const contents = itemInstance.state.contents || [];
+        const contents = [...(itemInstance.state.contents || [])]; // Shallow copy for consumption
 
-        // Find Burger
-        const burgerItem = contents.find(i => i.definitionId.includes('burger'));
-        // Find Fries
-        const friesItem = contents.find(i => i.definitionId === 'fries' || i.definitionId === 'fry_bag');
-        // Find Soda
-        const sodaItem = contents.find(i => i.definitionId === 'soda' || i.definitionId === 'drink_cup'); // Assuming soda maps to soda or drink_cup with soda?
+        // 2. Check Generic Requirements (Sides, Drinks)
+        for (const reqId of this.items) {
+            // Find match
+            const matchIndex = contents.findIndex(i => {
+                const defId = i.definitionId;
+                // Aliases for legacy items
+                if (reqId === 'fries' && (defId === 'fries' || defId === 'fry_bag')) return true;
+                if (reqId === 'soda' && (defId === 'soda' || defId === 'drink_cup')) return true;
+                // Default exact match
+                return defId === reqId;
+            });
 
-        // 2. Check Requirement: Fries
-        if (this.fries) {
-            if (!friesItem) return false;
-        } else {
-            // Strict? If we didn't ask for fries but got them, is it wrong? 
-            // Usually yes for specific orders.
-            if (friesItem) return false;
+            if (matchIndex === -1) return false;
+
+            // Consume the item match
+            contents.splice(matchIndex, 1);
         }
 
-        // 3. Check Requirement: Soda
-        if (this.soda) {
-            if (!sodaItem) return false;
-            // TODO: Check if soda is full?
-        } else {
-            if (sodaItem) return false;
+        // 3. Check Burger Requirements
+        // We have a list of required burgers. We need to find a match for EACH one in the contents.
+        const requiredBurgers = [...this.burgers];
+
+        for (const reqBurger of requiredBurgers) {
+            const burgerIndex = contents.findIndex(item => {
+                if (!item.definitionId.includes('burger')) return false;
+
+                // A. Check Bun Type
+                const itemBun = (item.state.bun && item.state.bun.definitionId) || 'plain_bun';
+                const reqBun = reqBurger.bun || 'plain_bun';
+                if (itemBun !== reqBun) return false;
+
+                // B. Check Patty Type
+                const itemPatty = (item.state.patty && item.state.patty.definitionId) || 'beef_patty';
+                const reqPatty = reqBurger.patty || 'beef_patty';
+                if (itemPatty !== reqPatty) return false;
+
+                // C. Compare modifications
+                const requestedMods = reqBurger.modifications || [];
+                const actualToppings = (item.state.toppings || []).map(t => {
+                    if (typeof t === 'string') {
+                        if (t === 'mayo') return 'mayo';
+                        return t;
+                    }
+                    return t.definitionId;
+                });
+
+                // Check for missing required mods
+                const missingMod = requestedMods.find(req => {
+                    // Check direct match
+                    if (actualToppings.includes(req)) return false;
+
+                    // Check if req defines a slice result that matches
+                    const def = DEFINITIONS[req];
+                    if (def && def.slicing && def.slicing.result) {
+                        if (actualToppings.includes(def.slicing.result)) return false;
+                    }
+
+                    return true; // Missing
+                });
+                if (missingMod) return false;
+
+                // Check for unauthorized extra toppings
+                // Expand valid toppings to include slices
+                const validToppings = new Set(requestedMods);
+                requestedMods.forEach(req => {
+                    const def = DEFINITIONS[req];
+                    if (def && def.slicing && def.slicing.result) {
+                        validToppings.add(def.slicing.result);
+                    }
+                });
+                // Also Base Ingredients are valid? (Bun/Patty are separate)
+                // What about 'tomato_slice' vs 'tomato'? handled above.
+
+                const extraTop = actualToppings.find(act => !validToppings.has(act));
+                if (extraTop) return false;
+
+                return true;
+            });
+
+            if (burgerIndex === -1) return false;
+
+            // Consume matched burger
+            contents.splice(burgerIndex, 1);
         }
 
-        // 4. Check Requirement: Burger
-        if (this.burger) {
-            if (!burgerItem) return false;
-
-            // Check Modifications
-            const mods = this.burger.modifications;
-            const hasMayo = mods.includes('mayo');
-            const hasTomato = mods.includes('tomato');
-
-            // Construct expected ID based on logic
-            // plain_burger
-            // burger_tomato
-            // burger_mayo
-            // burger_tomato_mayo
-
-            let expectedId = 'plain_burger';
-            if (hasTomato && hasMayo) expectedId = 'burger_tomato_mayo';
-            else if (hasTomato) expectedId = 'burger_tomato';
-            else if (hasMayo) expectedId = 'burger_mayo';
-
-            // Allow 'burger' to match 'plain_burger'
-            const actualId = burgerItem.definitionId === 'burger' ? 'plain_burger' : burgerItem.definitionId;
-
-            if (actualId !== expectedId) return false;
-
-        } else {
-            if (burgerItem) return false;
+        // 4. Strict check for extra items?
+        if (contents.length > 0) {
+            return false;
         }
 
         return true;

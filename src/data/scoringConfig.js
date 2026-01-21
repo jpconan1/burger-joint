@@ -1,11 +1,12 @@
 export const SCORING_CONFIG = {
     // Time added to the "Par Time" for each component (in seconds)
+    DAILY_RENT: 100,
     PAR_TIMES: {
         burger: 30,
-        topping_tomato: 20,
-        sauce: 12, // mayo
-        fries: 25,
-        soda: 15
+        sliced_topping: 15,
+        sauce: 12,
+        side: 25,
+        drink: 15
     },
 
     // Thresholds (Seconds faster than Par)
@@ -30,7 +31,7 @@ export const SCORING_CONFIG = {
         tomato_box: 30,
         mayo_box: 20,
         fry_box: 20,
-        drink_cup_box: 25,
+        drink_cup_box: 15,
         syrup_box: 40,
         side_cup_box: 15,
 
@@ -38,12 +39,12 @@ export const SCORING_CONFIG = {
         counter: 10,
         floor: 5,
         cutting_board: 30,
-        dispenser: 75,
-        fryer: 200,
-        soda_fountain: 300,
+        dispenser: 125,
+        fryer: 100,
+        soda_fountain: 200,
         stove: 100,
 
         // Actions
-        expansion: 100
+        expansion: 50
     }
 };

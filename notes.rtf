@@ -9,7 +9,76 @@
 \
 lets add a new tile & a big expansion: the door. assets/door_tile-outside.png.  when the player walks into the door, the scene should change to a new room with its own layout and items. rooms and everything in them should persist as the player changes rooms. each door needs a connecting door in the ajacent room; thats where the player spawns in the new room. each door has its own asset & definition and will only ever connect two rooms. our first door is door_tile-outside.png and it leads to a new 8h 4w room. this room represents a delivery truck. its where boxes will spawn at the begining of the day. the door needs a \
 \
-\
+\{\
+    "id": "pickles",\
+    "type": "produce",\
+    "box": \{\
+        "id": "pickle_jar",\
+        "maxCount": 20,\
+        "price": 25,\
+        "item": "pickle_slice",\
+        "textures": \{\
+            "base": "pickle-jar.png",\
+            "rules": [\
+                \{\
+                    "//": "If it is closed but empty (if possible)",\
+                    "conditions": [\
+                        \{\
+                            "stateKey": "isOpen",\
+                            "value": false\
+                        \},\
+                        \{\
+                            "stateKey": "count",\
+                            "value": 0\
+                        \}\
+                    ],\
+                    "texture": "pickle-jar-empty.png"\
+                \},\
+                \{\
+                    "//": "Open and completely empty",\
+                    "conditions": [\
+                        \{\
+                            "stateKey": "isOpen",\
+                            "value": true\
+                        \},\
+                        \{\
+                            "stateKey": "count",\
+                            "value": 0\
+                        \}\
+                    ],\
+                    "texture": "pickle-jar-open-empty.png"\
+                \},\
+                \{\
+                    "//": "Open and less than 5 pickles left (Partial)",\
+                    "conditions": [\
+                        \{\
+                            "stateKey": "isOpen",\
+                            "value": true\
+                        \},\
+                        \{\
+                            "stateKey": "count",\
+                            "comparator": "lt",\
+                            "value": 5\
+                        \},\
+                        \{\
+                            "stateKey": "count",\
+                            "comparator": "gt",\
+                            "value": 0\
+                        \}\
+                    ],\
+                    "texture": "pickle-jar-open-partial.png"\
+                \},\
+                \{\
+                    "//": "Fully Open and Full (Default Open state)",\
+                    "stateKey": "isOpen",\
+                    "value": true,\
+                    "texture": "pickle-jar-open.png"\
+                \}\
+            ]\
+        \},\
+        "produces": "pickle"\
+    \}\
+\}\
 \
 day 1:\
 burgers \

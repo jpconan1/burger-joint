@@ -33,18 +33,26 @@ export class Grid {
             if (tileType.id === 'STOVE') {
                 cell.state = {
                     isOn: false,
+                    isOn: false,
                     cookingSpeed: 2000, // ms to cook
+                    facing: 0,
                 };
             } else if (tileType.id === 'FRYER') {
                 cell.state = {
                     status: 'empty',
+                    status: 'empty',
                     cookingSpeed: 2000, // ms to fry
+                    facing: 0,
                 };
             } else if (tileType.id === 'PRINTER') {
                 cell.state = {
                     printing: true,
                     frameDuration: 750,
                     loopDelay: 5000
+                };
+            } else if (['COUNTER', 'CUTTING_BOARD', 'DELIVERY_TILE'].includes(tileType.id)) {
+                cell.state = {
+                    facing: 0
                 };
             } else {
                 cell.state = {};

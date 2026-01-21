@@ -1,0 +1,1334 @@
+{
+    "groups": [
+        {
+            "id": "patty",
+            "type": "supply_chain",
+            "box": {
+                "id": "patty_box",
+                "maxCount": 12,
+                "price": 50,
+                "toolRequirement": "HANDS"
+            },
+            "item": {
+                "id": "beef_patty",
+                "category": "patty",
+                "toolRequirement": "HANDS",
+                "nudge": 5,
+                "partTexture": "beef_patty-part.png",
+                "initialState": {
+                    "cook_level": "raw",
+                    "cookingProgress": 0
+                },
+                "cooking": {
+                    "stages": {
+                        "raw": {
+                            "next": "cooked",
+                            "duration": 6000
+                        }
+                    }
+                },
+                "textures": {
+                    "base": "patty-raw.png",
+                    "rules": [
+                        {
+                            "stateKey": "cook_level",
+                            "value": "cooked",
+                            "texture": "patty-cooked.png"
+                        }
+                    ]
+                }
+            },
+            "spoilage": {
+                "id": "patty_old",
+                "texture": "patty-old.png"
+            }
+        },
+        {
+            "id": "bun",
+            "type": "supply_chain",
+            "box": {
+                "id": "bun_box",
+                "maxCount": 32,
+                "price": 30
+            },
+            "item": {
+                "id": "plain_bun",
+                "category": "bun",
+                "texture": "bun.png"
+            },
+            "spoilage": {
+                "id": "bun_old",
+                "texture": "bun-old.png"
+            }
+        },
+        {
+            "id": "tomato",
+            "type": "produce",
+            "box": {
+                "id": "tomato_box",
+                "maxCount": 25,
+                "price": 20,
+                "ages": true
+            },
+            "item": {
+                "id": "tomato",
+                "category": "ingredient",
+                "texture": "tomato.png",
+                "slicing": {
+                    "result": "tomato_slice"
+                },
+                "aging": {
+                    "spoilAge": 6,
+                    "spoiledItem": "tomato_old",
+                    "stages": {
+                        "2": "tomato-wilt1.png",
+                        "4": "tomato-wilt2.png"
+                    }
+                }
+            },
+            "slice": {
+                "id": "tomato_slice",
+                "category": "topping",
+                "orderConfig": {
+                    "type": "topping",
+                    "value": 1.5,
+                    "capability": "CUT_TOPPINGS"
+                },
+                "texture": "tomato-slice.png",
+                "partTexture": "tomato-part.png",
+                "nudge": 2,
+                "isTopping": true,
+                "isSlice": true,
+                "spoilable": true
+            },
+            "spoilage": {
+                "id": "tomato_old",
+                "texture": "tomato-old.png"
+            }
+        },
+        {
+            "id": "lettuce",
+            "type": "produce",
+            "box": {
+                "id": "lettuce_box",
+                "maxCount": 6,
+                "price": 25,
+                "ages": true
+            },
+            "item": {
+                "id": "lettuce_head",
+                "category": "ingredient",
+                "texture": "lettuce-head.png",
+                "initialState": {
+                    "charges": 8
+                },
+                "process": {
+                    "tool": "HANDS",
+                    "result": "lettuce_leaf",
+                    "charges": 1
+                },
+                "aging": {
+                    "spoilAge": 3,
+                    "spoiledItem": "lettuce_head_old",
+                    "stages": {
+                        "1": "lettuce-head-wilt1.png",
+                        "2": "lettuce-head-wilt2.png"
+                    }
+                }
+            },
+            "slice": {
+                "id": "lettuce_leaf",
+                "category": "topping",
+                "orderConfig": {
+                    "type": "topping",
+                    "value": 1.5,
+                    "capability": "ADD_LETTUCE"
+                },
+                "texture": "lettuce-leaf.png",
+                "partTexture": "lettuce-part.png",
+                "nudge": 2,
+                "isTopping": true,
+                "isSlice": true,
+                "spoilable": true
+            },
+            "spoilage": {
+                "id": "lettuce_head_old",
+                "texture": "lettuce-head-old.png"
+            }
+        },
+        {
+            "id": "wrapper",
+            "type": "supply_chain",
+            "box": {
+                "id": "wrapper_box",
+                "maxCount": 100,
+                "price": 20
+            },
+            "item": {
+                "id": "wrapper",
+                "type": "Container",
+                "category": "tool",
+                "texture": "wrapper.png"
+            }
+        },
+        {
+            "id": "fry",
+            "type": "variant_complex",
+            "items": [
+                {
+                    "id": "fry_box",
+                    "type": "Box",
+                    "maxCount": 3,
+                    "price": 20,
+                    "produces": "fry_bag"
+                },
+                {
+                    "id": "fry_bag",
+                    "type": "Ingredient",
+                    "texture": "fry_bag.png",
+                    "fryContent": "raw_fries"
+                },
+                {
+                    "id": "fry_bag_open",
+                    "type": "Ingredient",
+                    "initialState": {
+                        "charges": 6
+                    },
+                    "fryContent": "raw_fries",
+                    "textures": {
+                        "base": "fry_bag-open-full.png",
+                        "rules": [
+                            {
+                                "stateKey": "charges",
+                                "value": 6,
+                                "texture": "fry_bag-open-full.png"
+                            },
+                            {
+                                "stateKey": "charges",
+                                "value": 5,
+                                "texture": "fry_bag-open-full.png"
+                            },
+                            {
+                                "stateKey": "charges",
+                                "value": 4,
+                                "texture": "fry_bag-open-partial1.png"
+                            },
+                            {
+                                "stateKey": "charges",
+                                "value": 3,
+                                "texture": "fry_bag-open-partial1.png"
+                            },
+                            {
+                                "stateKey": "charges",
+                                "value": 2,
+                                "texture": "fry_bag-open-partial2.png"
+                            },
+                            {
+                                "stateKey": "charges",
+                                "value": 1,
+                                "texture": "fry_bag-open-partial2.png"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "id": "fry_bag_empty",
+                    "type": "Ingredient",
+                    "texture": "fry_bag-empty.png",
+                    "trashOnly": true
+                },
+                {
+                    "id": "fries",
+                    "type": "Ingredient",
+                    "category": "side",
+                    "orderConfig": {
+                        "type": "side",
+                        "value": 6,
+                        "capability": "SERVE_FRIES"
+                    },
+                    "texture": "fries.png",
+                    "spoilable": true
+                },
+                {
+                    "id": "fries_old",
+                    "type": "Ingredient",
+                    "texture": "fries-old.png",
+                    "trashOnly": true
+                },
+                {
+                    "id": "raw_fries",
+                    "type": "Ingredient",
+                    "category": "side_prep",
+                    "cooking": {
+                        "stages": {
+                            "raw": {
+                                "next": "cooked",
+                                "duration": 4000,
+                                "cookMethod": "fry"
+                            }
+                        }
+                    },
+                    "result": "fries",
+                    "texture": "missing.png",
+                    "textures": {
+                        "base": "missing.png",
+                        "rules": [
+                            {
+                                "stateKey": "cook_level",
+                                "value": "cooked",
+                                "texture": "fries-done.png"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "side_cup",
+            "type": "supply_chain",
+            "box": {
+                "id": "side_cup_box",
+                "maxCount": 50,
+                "price": 15,
+                "unlockCondition": {
+                    "type": "appliance",
+                    "target": "fryer"
+                }
+            },
+            "item": {
+                "id": "side_cup",
+                "type": "Container",
+                "texture": "side_cup.png"
+            }
+        },
+        {
+            "id": "drink",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "syrup_box",
+                    "type": "Box",
+                    "maxCount": 1,
+                    "price": 40,
+                    "produces": "soda_syrup"
+                },
+                {
+                    "id": "soda_syrup",
+                    "type": "Ingredient",
+                    "category": "syrup",
+                    "result": "soda",
+                    "texture": "soda_syrup.png"
+                },
+                {
+                    "id": "soda",
+                    "type": "Container",
+                    "category": "drink",
+                    "orderConfig": {
+                        "type": "drink",
+                        "value": 4,
+                        "capability": "SERVE_DRINKS"
+                    },
+                    "sign": "soda-sign.png",
+                    "texture": "soda.png",
+                    "spoilable": true
+                },
+                {
+                    "id": "soda_old",
+                    "type": "Container",
+                    "texture": "soda-old.png",
+                    "trashOnly": true
+                }
+            ]
+        },
+        {
+            "id": "mayo",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "mayo_box",
+                    "type": "Box",
+                    "maxCount": 3,
+                    "price": 10,
+                    "produces": "mayo_bag",
+                    "unlockCondition": {
+                        "type": "appliance",
+                        "target": "dispenser"
+                    }
+                },
+                {
+                    "id": "mayo_bag",
+                    "type": "SauceContainer",
+                    "category": "sauce_refill",
+                    "texture": "mayo-bag.png"
+                },
+                {
+                    "id": "mayo",
+                    "type": "Ingredient",
+                    "category": "topping",
+                    "orderConfig": {
+                        "type": "topping",
+                        "value": 1.5,
+                        "capability": "ADD_COLD_SAUCE"
+                    },
+                    "partTexture": "mayo-part.png",
+                    "texture": "mayo-part.png",
+                    "isTopping": true
+                }
+            ]
+        },
+        {
+            "id": "bag",
+            "type": "supply_chain",
+            "box": {
+                "id": "bag_box",
+                "maxCount": 50,
+                "price": 20
+            },
+            "item": {
+                "id": "bag",
+                "type": "Container",
+                "category": "packaging",
+                "texture": "bag-empty.png",
+                "spoilable": true
+            },
+            "spoilage": {
+                "id": "bag_old",
+                "type": "Container",
+                "texture": "bag-old.png"
+            }
+        },
+        {
+            "id": "burgers",
+            "type": "complex_group",
+            "comment": "Composites are usually hardcoded but we define them here for completeness if needed.",
+            "items": [
+                {
+                    "id": "plain_burger",
+                    "type": "Composite",
+                    "category": "burger",
+                    "texture": "burger.png",
+                    "spoilable": true
+                },
+                {
+                    "id": "burger_old",
+                    "type": "Composite",
+                    "category": "burger",
+                    "texture": "burger-old.png",
+                    "trashOnly": true
+                },
+                {
+                    "id": "burger_tomato",
+                    "type": "Composite",
+                    "category": "burger",
+                    "texture": "burger-tomato.png",
+                    "spoilable": true
+                },
+                {
+                    "id": "burger_mayo",
+                    "type": "Composite",
+                    "category": "burger",
+                    "texture": "burger-mayo.png",
+                    "spoilable": true
+                },
+                {
+                    "id": "burger_tomato_mayo",
+                    "type": "Composite",
+                    "category": "burger",
+                    "texture": "burger-tomato-mayo.png",
+                    "spoilable": true
+                }
+            ]
+        },
+        {
+            "id": "spoil",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "generic_spoil",
+                    "type": "Ingredient",
+                    "texture": "spoil.png",
+                    "trashOnly": true
+                }
+            ]
+        },
+        {
+            "id": "onion",
+            "type": "produce",
+            "box": {
+                "id": "onion_box",
+                "maxCount": 25,
+                "price": 20,
+                "ages": false
+            },
+            "item": {
+                "id": "onion",
+                "category": "ingredient",
+                "texture": "onion.png",
+                "slicing": {
+                    "result": "onion_slice"
+                },
+                "aging": {
+                    "spoilAge": 6,
+                    "spoiledItem": "onion_old",
+                    "stages": {
+                        "2": "onion-wilt1.png",
+                        "4": "onion-wilt2.png"
+                    }
+                }
+            },
+            "slice": {
+                "id": "onion_slice",
+                "category": "topping",
+                "orderConfig": {
+                    "type": "topping",
+                    "value": 1.5,
+                    "capability": "CUT_TOPPINGS"
+                },
+                "texture": "onion-slice.png",
+                "cooking": {
+                    "stages": {
+                        "raw": {
+                            "next": "cooked",
+                            "duration": 1500,
+                            "cookMethod": "fry"
+                        }
+                    }
+                },
+                "textures": {
+                    "base": "onion-slice.png",
+                    "rules": [
+                        {
+                            "stateKey": "cook_level",
+                            "value": "cooked",
+                            "texture": "fried_onion-done.png"
+                        }
+                    ]
+                },
+                "partTexture": "onion-part.png",
+                "nudge": 2,
+                "isTopping": true,
+                "isSlice": true,
+                "spoilable": true
+            },
+            "spoilage": {
+                "id": "onion_old",
+                "texture": "onion-old.png"
+            }
+        },
+        {
+            "id": "cheddar",
+            "type": "produce",
+            "box": {
+                "id": "cheddar_box",
+                "maxCount": 4,
+                "price": 40,
+                "produces": "cheddar_block"
+            },
+            "item": {
+                "id": "cheddar_block",
+                "category": "ingredient",
+                "texture": "cheddar_block.png",
+                "initialState": {
+                    "charges": 18
+                },
+                "slicing": {
+                    "result": "cheddar_cheese",
+                    "mode": "dispense"
+                },
+                "textures": {
+                    "base": "cheddar_block.png",
+                    "rules": [
+                        {
+                            "stateKey": "charges",
+                            "comparator": "lte",
+                            "value": 6,
+                            "texture": "cheddar_block-partial2.png"
+                        },
+                        {
+                            "stateKey": "charges",
+                            "comparator": "lte",
+                            "value": 12,
+                            "texture": "cheddar_block-partial1.png"
+                        }
+                    ]
+                }
+            },
+            "slice": {
+                "id": "cheddar_cheese",
+                "category": "topping",
+                "orderConfig": {
+                    "type": "topping",
+                    "value": 1.5,
+                    "capability": "CUT_TOPPINGS"
+                },
+                "texture": "cheddar_slice.png",
+                "partTexture": "cheddar_slice-part.png",
+                "nudge": 2,
+                "isTopping": true,
+                "isSlice": true,
+                "spoilable": true
+            }
+        },
+        {
+            "id": "pickle",
+            "type": "produce",
+            "box": {
+                "id": "pickle_box",
+                "maxCount": 30,
+                "price": 15,
+                "ages": false,
+                "textures": {
+                    "base": "pickle_box-closed.png",
+                    "rules": [
+                        {
+                            "//": "If it is closed but empty (if possible)",
+                            "conditions": [
+                                {
+                                    "stateKey": "isOpen",
+                                    "value": false
+                                },
+                                {
+                                    "stateKey": "count",
+                                    "value": 0
+                                }
+                            ],
+                            "texture": "pickle-jar-empty.png"
+                        },
+                        {
+                            "//": "Open and completely empty",
+                            "conditions": [
+                                {
+                                    "stateKey": "isOpen",
+                                    "value": true
+                                },
+                                {
+                                    "stateKey": "count",
+                                    "value": 0
+                                }
+                            ],
+                            "texture": "pickle-jar-open-empty.png"
+                        },
+                        {
+                            "//": "Open and less than 5 pickles left (Partial)",
+                            "conditions": [
+                                {
+                                    "stateKey": "isOpen",
+                                    "value": true
+                                },
+                                {
+                                    "stateKey": "count",
+                                    "comparator": "lt",
+                                    "value": 5
+                                },
+                                {
+                                    "stateKey": "count",
+                                    "comparator": "gt",
+                                    "value": 0
+                                }
+                            ],
+                            "texture": "pickle-jar-open-partial.png"
+                        },
+                        {
+                            "//": "Fully Open and Full (Default Open state)",
+                            "stateKey": "isOpen",
+                            "value": true,
+                            "texture": "pickle_box-open.png"
+                        }
+                    ]
+                }
+            },
+            "item": {
+                "id": "pickle",
+                "category": "ingredient",
+                "texture": "pickle.png",
+                "slicing": {
+                    "result": "pickle_slice"
+                }
+            },
+            "slice": {
+                "id": "pickle_slice",
+                "category": "topping",
+                "orderConfig": {
+                    "type": "topping",
+                    "value": 1.5,
+                    "capability": "CUT_TOPPINGS"
+                },
+                "texture": "pickle-slice.png",
+                "partTexture": "pickle-part.png",
+                "nudge": 2,
+                "isTopping": true,
+                "isSlice": true,
+                "spoilable": true
+            }
+        },
+        {
+            "id": "bbq",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "bbq_box",
+                    "type": "Box",
+                    "maxCount": 3,
+                    "price": 10,
+                    "produces": "bbq_bag",
+                    "unlockCondition": {
+                        "type": "appliance",
+                        "target": "dispenser"
+                    }
+                },
+                {
+                    "id": "bbq_bag",
+                    "type": "SauceContainer",
+                    "category": "sauce_refill",
+                    "texture": "bbq-bag.png"
+                },
+                {
+                    "id": "bbq",
+                    "type": "Ingredient",
+                    "category": "topping",
+                    "orderConfig": {
+                        "type": "topping",
+                        "value": 1.5,
+                        "capability": "ADD_COLD_SAUCE"
+                    },
+                    "partTexture": "bbq-part.png",
+                    "texture": "bbq-part.png",
+                    "isTopping": true
+                }
+            ]
+        },
+        {
+            "id": "burger_sauce",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "burger_sauce_box",
+                    "type": "Box",
+                    "maxCount": 3,
+                    "price": 10,
+                    "produces": "burger_sauce_bag",
+                    "unlockCondition": {
+                        "type": "appliance",
+                        "target": "dispenser"
+                    }
+                },
+                {
+                    "id": "burger_sauce_bag",
+                    "type": "SauceContainer",
+                    "category": "sauce_refill",
+                    "texture": "burger_sauce-bag.png"
+                },
+                {
+                    "id": "burger_sauce",
+                    "type": "Ingredient",
+                    "category": "topping",
+                    "orderConfig": {
+                        "type": "topping",
+                        "value": 1.5,
+                        "capability": "ADD_COLD_SAUCE"
+                    },
+                    "partTexture": "burger_sauce-part.png",
+                    "texture": "burger_sauce-part.png",
+                    "isTopping": true
+                }
+            ]
+        },
+        {
+            "id": "ketchup",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "ketchup_box",
+                    "type": "Box",
+                    "maxCount": 3,
+                    "price": 10,
+                    "produces": "ketchup_bag",
+                    "unlockCondition": {
+                        "type": "appliance",
+                        "target": "dispenser"
+                    }
+                },
+                {
+                    "id": "ketchup_bag",
+                    "type": "SauceContainer",
+                    "category": "sauce_refill",
+                    "texture": "ketchup-bag.png"
+                },
+                {
+                    "id": "ketchup",
+                    "type": "Ingredient",
+                    "category": "topping",
+                    "orderConfig": {
+                        "type": "topping",
+                        "value": 1.5,
+                        "capability": "ADD_COLD_SAUCE"
+                    },
+                    "partTexture": "ketchup-part.png",
+                    "texture": "ketchup-part.png",
+                    "isTopping": true
+                }
+            ]
+        },
+        {
+            "id": "drink_supplies",
+            "type": "supply_chain",
+            "box": {
+                "id": "drink_cup_box",
+                "maxCount": 50,
+                "price": 15,
+                "produces": "drink_cup",
+                "unlockCondition": {
+                    "type": "appliance",
+                    "target": "soda_fountain"
+                }
+            },
+            "item": {
+                "id": "drink_cup",
+                "type": "Container",
+                "texture": "drink_cup.png"
+            }
+        },
+        {
+            "id": "hetap",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "hetap_box",
+                    "type": "Box",
+                    "maxCount": 1,
+                    "price": 40,
+                    "produces": "hetap_syrup",
+                    "unlockCondition": {
+                        "type": "appliance",
+                        "target": "soda_fountain"
+                    }
+                },
+                {
+                    "id": "hetap_syrup",
+                    "type": "Ingredient",
+                    "category": "syrup",
+                    "result": "hetap",
+                    "texture": "hetap_syrup.png"
+                },
+                {
+                    "id": "hetap",
+                    "type": "Container",
+                    "category": "hetap",
+                    "orderConfig": {
+                        "type": "drink",
+                        "value": 4,
+                        "capability": "SERVE_DRINKS"
+                    },
+                    "sign": "hetap-sign.png",
+                    "texture": "soda.png",
+                    "spoilable": true
+                },
+                {
+                    "id": "soda_old",
+                    "type": "Container",
+                    "texture": "soda-old.png",
+                    "trashOnly": true
+                }
+            ]
+        },
+        {
+            "id": "insert_group",
+            "type": "tool_supply",
+            "item": {
+                "id": "insert",
+                "type": "Ingredient",
+                "category": "tool",
+                "texture": "insert.png",
+                "partTexture": "insert-part.png",
+                "price": 20
+            }
+        },
+        {
+            "id": "whole_wheat_bun",
+            "type": "supply_chain",
+            "box": {
+                "id": "whole_wheat_bun_box",
+                "maxCount": 32,
+                "price": 40,
+                "unlockCondition": {
+                    "type": "endgame"
+                }
+            },
+            "item": {
+                "id": "whole_wheat_bun",
+                "category": "bun",
+                "texture": "whole_wheat_bun.png",
+                "bottomTexture": "whole_wheat_bun_bottom.png",
+                "topTexture": "whole_wheat_bun_top.png"
+            },
+            "spoilage": {
+                "id": "bun_old",
+                "texture": "bun-old.png"
+            }
+        },
+        {
+            "id": "chicken_patty",
+            "type": "supply_chain",
+            "box": {
+                "id": "chicken_patty_box",
+                "maxCount": 30,
+                "price": 60,
+                "toolRequirement": "HANDS",
+                "unlockCondition": {
+                    "type": "endgame"
+                }
+            },
+            "item": {
+                "id": "chicken_patty",
+                "category": "patty",
+                "toolRequirement": "HANDS",
+                "nudge": 5,
+                "partTexture": "chicken_patty-part.png",
+                "initialState": {
+                    "cook_level": "raw",
+                    "cookingProgress": 0
+                },
+                "cooking": {
+                    "stages": {
+                        "raw": {
+                            "next": "cooked",
+                            "duration": 5000,
+                            "cookMethod": "fry"
+                        }
+                    }
+                },
+                "textures": {
+                    "base": "chicken_patty-raw.png",
+                    "rules": [
+                        {
+                            "stateKey": "cook_level",
+                            "value": "cooked",
+                            "texture": "chicken_patty-cooked.png"
+                        }
+                    ]
+                }
+            },
+            "spoilage": {
+                "id": "patty_old",
+                "texture": "patty-old.png"
+            }
+        },
+        {
+            "id": "sweet_potato_fry",
+            "type": "variant_complex",
+            "items": [
+                {
+                    "id": "sweet_potato_fry_box",
+                    "type": "Box",
+                    "maxCount": 3,
+                    "price": 20,
+                    "produces": "sweet_potato_fry_bag",
+                    "unlockCondition": {
+                        "type": "appliance",
+                        "target": "fryer"
+                    }
+                },
+                {
+                    "id": "sweet_potato_fry_bag",
+                    "type": "Ingredient",
+                    "texture": "sweet_potato_fry_bag.png",
+                    "fryContent": "raw_sweet_potato_fries"
+                },
+                {
+                    "id": "sweet_potato_fry_bag_open",
+                    "type": "Ingredient",
+                    "initialState": {
+                        "charges": 6
+                    },
+                    "fryContent": "raw_sweet_potato_fries",
+                    "textures": {
+                        "base": "sweet_potato_fry_bag-open-full.png",
+                        "rules": [
+                            {
+                                "stateKey": "charges",
+                                "value": 6,
+                                "texture": "sweet_potato_fry_bag-open-full.png"
+                            },
+                            {
+                                "stateKey": "charges",
+                                "value": 5,
+                                "texture": "sweet_potato_fry_bag-open-full.png"
+                            },
+                            {
+                                "stateKey": "charges",
+                                "value": 4,
+                                "texture": "sweet_potato_fry_bag-open-partial1.png"
+                            },
+                            {
+                                "stateKey": "charges",
+                                "value": 3,
+                                "texture": "sweet_potato_fry_bag-open-partial1.png"
+                            },
+                            {
+                                "stateKey": "charges",
+                                "value": 2,
+                                "texture": "sweet_potato_fry_bag-open-partial2.png"
+                            },
+                            {
+                                "stateKey": "charges",
+                                "value": 1,
+                                "texture": "sweet_potato_fry_bag-open-partial2.png"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "id": "fry_bag_empty",
+                    "type": "Ingredient",
+                    "texture": "fry_bag-empty.png",
+                    "trashOnly": true
+                },
+                {
+                    "id": "sweet_potato_fries",
+                    "type": "Ingredient",
+                    "category": "side",
+                    "orderConfig": {
+                        "type": "side",
+                        "value": 6,
+                        "capability": "SERVE_FRIES"
+                    },
+                    "texture": "sweet_potato_fries.png",
+                    "spoilable": true
+                },
+                {
+                    "id": "fries_old",
+                    "type": "Ingredient",
+                    "texture": "fries-old.png",
+                    "trashOnly": true
+                },
+                {
+                    "id": "raw_sweet_potato_fries",
+                    "type": "Ingredient",
+                    "category": "side_prep",
+                    "result": "sweet_potato_fries",
+                    "cooking": {
+                        "stages": {
+                            "raw": {
+                                "next": "cooked",
+                                "duration": 3000,
+                                "cookMethod": "fry"
+                            }
+                        }
+                    },
+                    "texture": "missing.png",
+                    "textures": {
+                        "base": "missing.png",
+                        "rules": [
+                            {
+                                "stateKey": "cook_level",
+                                "value": "cooked",
+                                "texture": "sweet_potato_fries-done.png"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "bacon",
+            "type": "supply_chain",
+            "box": {
+                "id": "bacon_box",
+                "maxCount": 12,
+                "price": 35,
+                "ages": false,
+                "texture": "bacon_box-closed.png"
+            },
+            "item": {
+                "id": "bacon",
+                "category": "ingredient",
+                "isTopping": true,
+                "texture": "bacon-raw.png",
+                "partTexture": "bacon-part.png",
+                "nudge": 2,
+                "initialState": {
+                    "cook_level": "raw",
+                    "cookingProgress": 0
+                },
+                "cooking": {
+                    "stages": {
+                        "raw": {
+                            "next": "cooked",
+                            "duration": 2000
+                        }
+                    }
+                },
+                "textures": {
+                    "base": "bacon-raw.png",
+                    "rules": [
+                        {
+                            "stateKey": "cook_level",
+                            "value": "cooked",
+                            "texture": "bacon-cooked.png"
+                        }
+                    ]
+                }
+            },
+            "spoilage": {
+                "id": "bacon_old",
+                "texture": "spoil.png"
+            }
+        },
+        {
+            "id": "swiss",
+            "type": "produce",
+            "box": {
+                "id": "swiss_box",
+                "maxCount": 4,
+                "price": 40,
+                "produces": "swiss_block"
+            },
+            "item": {
+                "id": "swiss_block",
+                "category": "ingredient",
+                "texture": "swiss_block.png",
+                "initialState": {
+                    "charges": 18
+                },
+                "slicing": {
+                    "result": "swiss_cheese",
+                    "mode": "dispense"
+                },
+                "textures": {
+                    "base": "swiss_block.png",
+                    "rules": [
+                        {
+                            "stateKey": "charges",
+                            "comparator": "lte",
+                            "value": 6,
+                            "texture": "swiss_block-partial2.png"
+                        },
+                        {
+                            "stateKey": "charges",
+                            "comparator": "lte",
+                            "value": 12,
+                            "texture": "swiss_block-partial1.png"
+                        }
+                    ]
+                }
+            },
+            "slice": {
+                "id": "swiss_cheese",
+                "category": "topping",
+                "orderConfig": {
+                    "type": "topping",
+                    "value": 1.5,
+                    "capability": "CUT_TOPPINGS"
+                },
+                "texture": "swiss_slice.png",
+                "partTexture": "swiss_slice-part.png",
+                "nudge": 2,
+                "isTopping": true,
+                "isSlice": true,
+                "spoilable": true
+            }
+        },
+        {
+            "id": "orange",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "orange_box",
+                    "type": "Box",
+                    "maxCount": 1,
+                    "price": 40,
+                    "produces": "orange_syrup",
+                    "unlockCondition": {
+                        "type": "appliance",
+                        "target": "soda_fountain"
+                    }
+                },
+                {
+                    "id": "orange_syrup",
+                    "type": "Ingredient",
+                    "category": "syrup",
+                    "result": "orange",
+                    "texture": "orange_syrup.png"
+                },
+                {
+                    "id": "orange",
+                    "type": "Container",
+                    "category": "orange",
+                    "orderConfig": {
+                        "type": "drink",
+                        "value": 4,
+                        "capability": "SERVE_DRINKS"
+                    },
+                    "sign": "orange-sign.png",
+                    "texture": "soda.png",
+                    "spoilable": true
+                },
+                {
+                    "id": "soda_old",
+                    "type": "Container",
+                    "texture": "soda-old.png",
+                    "trashOnly": true
+                }
+            ]
+        },
+        {
+            "id": "dr_matt",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "dr_matt_box",
+                    "type": "Box",
+                    "maxCount": 1,
+                    "price": 40,
+                    "produces": "dr_matt_syrup",
+                    "unlockCondition": {
+                        "type": "appliance",
+                        "target": "soda_fountain"
+                    }
+                },
+                {
+                    "id": "dr_matt_syrup",
+                    "type": "Ingredient",
+                    "category": "syrup",
+                    "result": "dr_matt",
+                    "texture": "dr_matt_syrup.png"
+                },
+                {
+                    "id": "dr_matt",
+                    "type": "Container",
+                    "category": "dr_matt",
+                    "orderConfig": {
+                        "type": "drink",
+                        "value": 4,
+                        "capability": "SERVE_DRINKS"
+                    },
+                    "sign": "dr_matt-sign.png",
+                    "texture": "soda.png",
+                    "spoilable": true
+                },
+                {
+                    "id": "soda_old",
+                    "type": "Container",
+                    "texture": "soda-old.png",
+                    "trashOnly": true
+                }
+            ]
+        },
+        {
+            "id": "grape",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "grape_box",
+                    "type": "Box",
+                    "maxCount": 1,
+                    "price": 40,
+                    "produces": "grape_syrup",
+                    "unlockCondition": {
+                        "type": "appliance",
+                        "target": "soda_fountain"
+                    }
+                },
+                {
+                    "id": "grape_syrup",
+                    "type": "Ingredient",
+                    "category": "syrup",
+                    "result": "grape",
+                    "texture": "grape_syrup.png"
+                },
+                {
+                    "id": "grape",
+                    "type": "Container",
+                    "category": "grape",
+                    "orderConfig": {
+                        "type": "drink",
+                        "value": 4,
+                        "capability": "SERVE_DRINKS"
+                    },
+                    "sign": "grape-sign.png",
+                    "texture": "soda.png",
+                    "spoilable": true
+                },
+                {
+                    "id": "soda_old",
+                    "type": "Container",
+                    "texture": "soda-old.png",
+                    "trashOnly": true
+                }
+            ]
+        },
+        {
+            "id": "gingie",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "gingie_box",
+                    "type": "Box",
+                    "maxCount": 1,
+                    "price": 40,
+                    "produces": "gingie_syrup",
+                    "unlockCondition": {
+                        "type": "appliance",
+                        "target": "soda_fountain"
+                    }
+                },
+                {
+                    "id": "gingie_syrup",
+                    "type": "Ingredient",
+                    "category": "syrup",
+                    "result": "gingie",
+                    "texture": "gingie_syrup.png"
+                },
+                {
+                    "id": "gingie",
+                    "type": "Container",
+                    "category": "gingie",
+                    "orderConfig": {
+                        "type": "drink",
+                        "value": 4,
+                        "capability": "SERVE_DRINKS"
+                    },
+                    "sign": "gingie-sign.png",
+                    "texture": "soda.png",
+                    "spoilable": true
+                },
+                {
+                    "id": "soda_old",
+                    "type": "Container",
+                    "texture": "soda-old.png",
+                    "trashOnly": true
+                }
+            ]
+        },
+        {
+            "id": "onion_products",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "fried_onion",
+                    "type": "Ingredient",
+                    "category": "topping",
+                    "texture": "fried_onion.png",
+                    "partTexture": "fried_onion-part.png",
+                    "isTopping": true,
+                    "orderConfig": {
+                        "type": "topping",
+                        "value": 2.0,
+                        "capability": "ADD_FRIED_ONION"
+                    }
+                },
+                {
+                    "id": "onion_rings",
+                    "type": "Ingredient",
+                    "category": "side",
+                    "orderConfig": {
+                        "type": "side",
+                        "value": 5,
+                        "capability": "SERVE_ONION_RINGS"
+                    },
+                    "texture": "onion_rings.png"
+                }
+            ]
+        }
+    ]
+}

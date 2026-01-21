@@ -1,0 +1,16 @@
+33:    render(gameState) {
+34:        // Ensure canvas fills window (rendering loop handling for robust resizing)
+410:            this.renderComputerScreen(gameState);
+413:            // console.log("Renderer: Calling renderRenoScreen");
+414:            this.renderRenoScreen(gameState);
+728:    renderTitleScreen(selection = 0) {
+768:    renderSettingsMenu(state, settings) {
+1087:    renderPlacementCursor(state) {
+1090:        // This method renders the cursor which belongs to the GRID coordinates.
+1127:    renderBuildMenu(menu) {
+1132:        // We can reuse this.offsetX/Y from the last render pass?
+1133:        // Yes, render() sets them.
+1179:    renderOrderScreen(data) {
+1278:    renderComputerScreen(gameState) {
+1344:        // We render slightly past visible to catch partials if we wanted, 
+1488:    renderRenoScreen(gameState) {

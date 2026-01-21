@@ -1,5 +1,5 @@
 import { ASSETS, TILE_TYPES, GRID_WIDTH, GRID_HEIGHT } from './constants.js';
-import { CAPABILITY } from './data/definitions.js';
+import { CAPABILITY, DEFINITIONS } from './data/definitions.js';
 import { SCORING_CONFIG } from './data/scoringConfig.js';
 import { AssetLoader } from './systems/AssetLoader.js';
 import { Renderer } from './systems/Renderer.js';
@@ -9,8 +9,15 @@ import { ItemInstance } from './entities/Item.js';
 import { Editor } from './systems/Editor.js';
 import { DEFAULT_LEVEL } from './data/defaultLevel.js';
 import { OrderSystem } from './systems/OrderSystem.js';
+import { getMenuForCapabilities } from './data/orderTemplates.js';
 import { Settings, ACTIONS } from './systems/Settings.js';
 import { AudioSystem } from './systems/AudioSystem.js';
+import { ShopSystem } from './systems/ShopSystem.js';
+import { ConstructionSystem } from './systems/ConstructionSystem.js';
+import { MenuSystem } from './systems/MenuSystem.js';
+import { PostDaySystem } from './systems/PostDaySystem.js';
+
+import { RatingPopup } from './ui/RatingPopup.js';
 
 export class Game {
     constructor() {
@@ -19,8 +26,16 @@ export class Game {
         this.renderer = null;
         this.player = new Player(4, 4);
         this.editor = new Editor(this);
+        this.postDaySystem = new PostDaySystem(this);
+        this.ratingPopup = new RatingPopup(this);
         this.settings = new Settings();
         this.audioSystem = new AudioSystem(this.settings);
+
+        // Systems
+        this.shopSystem = new ShopSystem(this);
+        this.constructionSystem = new ConstructionSystem(this);
+        this.menuSystem = new MenuSystem(this);
+
         this.gameState = 'TITLE'; // TITLE, ORDERING, PLAYING, PLACEMENT, SETTINGS
         this.titleSelection = 0; // 0: New Game, 1: Settings
         this.settingsState = {
@@ -48,6 +63,8 @@ export class Game {
 
         this.rooms = {};
         this.currentRoomId = 'main';
+        this.ticketWheelAnimStartTime = 0;
+        this.activeTicketIndex = 0;
 
         // Economy & Day Cycle
         this.money = 0;
@@ -59,32 +76,104 @@ export class Game {
         this.floatingTexts = [];
 
         // Ordering System
-        this.shopItems = [
-            // 1. Unlocked Supplies
-            { id: 'patty_box', price: SCORING_CONFIG.PRICES.patty_box, type: 'supply', unlocked: true, isEssential: true },
-            { id: 'bun_box', price: SCORING_CONFIG.PRICES.bun_box, type: 'supply', unlocked: true, isEssential: true },
-            { id: 'wrapper_box', price: SCORING_CONFIG.PRICES.wrapper_box, type: 'supply', unlocked: true, isEssential: true },
-            { id: 'bag_box', price: SCORING_CONFIG.PRICES.bag_box, type: 'supply', unlocked: true, isEssential: true },
+        this.shopItems = [];
+        this.pendingOrders = []; // Store for items ordered at night for morning delivery
 
-            // 2. Appliances (Buttons)
-            { id: 'counter', price: SCORING_CONFIG.PRICES.counter, type: 'appliance', unlocked: true, tileType: 'COUNTER' },
-            { id: 'floor', price: SCORING_CONFIG.PRICES.floor, type: 'appliance', unlocked: true, tileType: 'FLOOR' },
-            { id: 'cutting_board', price: SCORING_CONFIG.PRICES.cutting_board, type: 'appliance', unlocked: true, tileType: 'CUTTING_BOARD' },
-            { id: 'dispenser', price: SCORING_CONFIG.PRICES.dispenser, type: 'appliance', unlocked: true, tileType: 'DISPENSER' },
-            { id: 'fryer', price: SCORING_CONFIG.PRICES.fryer, type: 'appliance', unlocked: true, tileType: 'FRYER' },
-            { id: 'soda_fountain', price: SCORING_CONFIG.PRICES.soda_fountain, type: 'appliance', unlocked: true, tileType: 'SODA_FOUNTAIN' },
+        // Daily Stats
+        this.dailyMoneyEarned = 0;
+        this.dailyBagsSold = 0;
+
+
+        // 1. Supplies (Dynamic from DEFINITIONS)
+        Object.keys(DEFINITIONS).forEach(defId => {
+            const def = DEFINITIONS[defId];
+            if (def.type === 'Box' && def.price) {
+                // Determine 'unlocked' status based on explicit flag or default
+                // Essential items are always unlocked
+                const essentialItems = ['patty_box', 'bun_box', 'wrapper_box', 'bag_box'];
+                const isEssential = essentialItems.includes(defId);
+
+                // Check if this is a Reward Item (Topping/Side/Drink Provider) that should be LOCKED by default
+                let isRewardItem = false;
+
+                // Helper to check for topping/reward nature
+                // 1. Direct check (e.g. sauce box produces sauce bag)
+                if (def.produces) {
+                    const prod = DEFINITIONS[def.produces];
+                    if (prod) {
+                        // Check if the product itself is a topping, sauce, syrup, or side prep
+                        if (prod.category === 'sauce_refill' || prod.category === 'topping' || prod.isTopping ||
+                            prod.category === 'syrup' || prod.category === 'side_prep') {
+                            isRewardItem = true;
+                        }
+
+                        // Check if it creates a topping/side via slicing/processing
+                        if (prod.slicing && prod.slicing.result) {
+                            const res = DEFINITIONS[prod.slicing.result];
+                            if (res && (res.category === 'topping' || res.isTopping)) isRewardItem = true;
+                        }
+                        if (prod.process && prod.process.result) {
+                            const res = DEFINITIONS[prod.process.result];
+                            if (res && (res.category === 'topping' || res.isTopping)) isRewardItem = true;
+                        }
+
+                        // Check for variants (fryContent)
+                        if (prod.fryContent) isRewardItem = true;
+                    }
+                }
+
+                // Logic:
+                // 1. Essential -> Unlocked
+                // 2. Reward Item -> LOCKED (unless essential)
+                // 3. Others (Cups/Bags/etc) -> Follow existing unlockCondition or Default Unlocked
+
+                let isUnlocked = isEssential;
+
+                if (!isEssential) {
+                    if (def.unlockCondition) {
+                        isUnlocked = false; // Has specific condition (e.g. Appliance)
+                    } else if (isRewardItem) {
+                        isUnlocked = false; // LOCKED by default for Daily Reward
+                    } else {
+                        isUnlocked = true; // Default unlocked (e.g. random supplies if any)
+                    }
+                }
+
+                this.shopItems.push({
+                    id: defId,
+                    price: def.price, // Use price from definition
+                    type: 'supply',
+                    unlocked: isUnlocked, // Will be overridden by save data if present
+                    isEssential: isEssential
+                });
+            }
+        });
+
+
+
+        // 2. Appliances & Actions (Hardcoded / Special Logic)
+        const appliancesAndActions = [
+            { id: 'build_mode', price: 0, type: 'action', unlocked: true, uiAsset: 'RENO_BUILD_MODE' },
+            { id: 'expansion', price: SCORING_CONFIG.PRICES.expansion, type: 'action', unlocked: true, uiAsset: 'RENO_EXPAND' },
+
+            { id: 'counter', price: SCORING_CONFIG.PRICES.counter, type: 'appliance', unlocked: true, tileType: 'COUNTER', uiAsset: 'RENO_ICON_COUNTER' },
+            { id: 'cutting_board', price: SCORING_CONFIG.PRICES.cutting_board, type: 'appliance', unlocked: true, tileType: 'CUTTING_BOARD', uiAsset: 'RENO_ICON_CUTTING_BOARD' },
+            { id: 'dispenser', price: SCORING_CONFIG.PRICES.dispenser, type: 'appliance', unlocked: true, tileType: 'DISPENSER', uiAsset: 'RENO_ICON_DISPENSER' },
+            { id: 'fryer', price: SCORING_CONFIG.PRICES.fryer, type: 'appliance', unlocked: true, tileType: 'FRYER', uiAsset: 'RENO_ICON_FRYER' },
+            { id: 'soda_fountain', price: SCORING_CONFIG.PRICES.soda_fountain, type: 'appliance', unlocked: true, tileType: 'SODA_FOUNTAIN', uiAsset: 'RENO_ICON_SODA_FOUNTAIN' },
             { id: 'stove', price: SCORING_CONFIG.PRICES.stove, type: 'appliance', unlocked: true, tileType: 'STOVE' },
-            { id: 'expansion', price: SCORING_CONFIG.PRICES.expansion, type: 'action', unlocked: true },
-            { id: 'continue', price: 0, type: 'action', unlocked: true },
-
-            // 3. Locked Supplies
-            { id: 'tomato_box', price: SCORING_CONFIG.PRICES.tomato_box, type: 'supply', unlocked: false },
-            { id: 'mayo_box', price: SCORING_CONFIG.PRICES.mayo_box, type: 'supply', unlocked: false },
-            { id: 'fry_box', price: SCORING_CONFIG.PRICES.fry_box, type: 'supply', unlocked: false },
-            { id: 'drink_cup_box', price: SCORING_CONFIG.PRICES.drink_cup_box, type: 'supply', unlocked: false },
-            { id: 'syrup_box', price: SCORING_CONFIG.PRICES.syrup_box, type: 'supply', unlocked: false },
-            { id: 'side_cup_box', price: SCORING_CONFIG.PRICES.side_cup_box, type: 'supply', unlocked: false },
         ];
+
+        // Add manual items (Inserts)
+        this.shopItems.push({
+            id: 'insert',
+            price: 20, // Manual price as it's not a box
+            type: 'supply',
+            unlocked: true,
+            isEssential: false
+        });
+
+        this.shopItems = [...this.shopItems, ...appliancesAndActions];
 
         // Cart for current order: { itemId: quantity }
         this.cart = {};
@@ -92,13 +181,9 @@ export class Game {
 
         this.selectedOrderItemIndex = 0;
 
-        // Placement State
-        this.placementState = {
-            active: false,
-            item: null, // item definition from shopItems
-            x: 0,
-            y: 0
-        };
+
+        // Placement State (Delegated to ConstructionSystem via getter)
+        // this.placementState = { ... };
 
         // Capabilities
         this.capabilities = new Set();
@@ -107,6 +192,183 @@ export class Game {
         this.earnedServiceStar = false; // Star 3 (Performance)
         this.currentDayPerfect = true;
 
+        this.storage = {}; // Store for unplaced appliances: { 'counter': 2, 'fryer': 1 }
+
+        // Dependency Map for Ingredients (Child -> Parent)
+        this.itemDependencyMap = {};
+        Object.values(DEFINITIONS).forEach(def => {
+            if (def.produces) this.itemDependencyMap[def.produces] = def.id;
+            if (def.slicing && def.slicing.result) this.itemDependencyMap[def.slicing.result] = def.id;
+            if (def.process && def.process.result) this.itemDependencyMap[def.process.result] = def.id;
+            // Generic 'result' (e.g. syrups -> drinks)
+            if (def.result) this.itemDependencyMap[def.result] = def.id;
+            // Sauce Dependencies (Bag -> Sauce)
+            if (def.sauceId) this.itemDependencyMap[def.sauceId] = def.id;
+        });
+
+        // Manual Dependencies for Complex Items (Machine assembled)
+        // 'soda' is now handled by def.result in soda_syrup
+        this.itemDependencyMap['fries'] = 'fry_bag';
+        this.itemDependencyMap['fried_onion'] = 'onion_box';
+        this.itemDependencyMap['onion_rings'] = 'onion_box';
+
+        this.allowedOrderItems = new Set();
+    }
+
+    // Proxy getters/setters for compatibility with Renderer and legacy code
+    get placementState() { return this.constructionSystem.state; }
+    set placementState(v) { this.constructionSystem.state = v; }
+
+    get selectedRenoIndex() { return this.shopSystem.selectedRenoIndex; }
+    set selectedRenoIndex(v) { this.shopSystem.selectedRenoIndex = v; }
+
+    get selectedComputerItemId() { return this.shopSystem.selectedComputerItemId; }
+    set selectedComputerItemId(v) { this.shopSystem.selectedComputerItemId = v; }
+
+    get isRushMode() {
+        // RUSH if Day is Active AND Queue is NOT finished
+        return this.isDayActive && !this.queueFinishedTime;
+    }
+
+    enterBuildMode(initialHeldItem = null, fromPurchase = false) {
+        this.constructionSystem.enterBuildMode(initialHeldItem, fromPurchase);
+    }
+
+    exitBuildMode() {
+        this.constructionSystem.exitBuildMode();
+    }
+
+    getInventoryCount(itemId) {
+        return this.shopSystem.getInventoryCount(itemId);
+    }
+
+    expandKitchen() {
+        console.log("Expanding Kitchen!");
+        const currentGrid = this.rooms['main'];
+
+        // Insert a row one from the bottom and a column one from the right
+        const colIndex = currentGrid.width - 1;
+        const rowIndex = currentGrid.height - 1;
+
+        currentGrid.expandInterior(colIndex, rowIndex);
+
+        // Visual Feedback
+        this.addFloatingText("Kitchen Expanded!", this.player.x, this.player.y, '#ffff00');
+
+        // Save
+        this.saveLevel();
+    }
+
+
+    grantDailyReward(itemDef) {
+        console.log(`Granting reward item: ${itemDef.id}`);
+
+        // 1. Find corresponding shop item to update status
+        const shopItem = this.shopItems.find(i => i.id === itemDef.id);
+
+        if (shopItem) {
+            console.log(`Unlocking/Granting Reward Item: ${shopItem.id}`);
+            shopItem.unlocked = true;
+            shopItem.justUnlocked = true;
+
+            // Give Free Box (Add to Cart + Credits)
+            this.cart[shopItem.id] = (this.cart[shopItem.id] || 0) + 1;
+            this.money += shopItem.price; // Reimburse cost effectively
+        }
+
+        // 2. Determine Category for Menu Update Logic
+        // We re-evaluate the category based on the item properties to decide how to update the menu.
+        let categoryIndex = -1; // 0=Topping, 1=Side, 2=Drink
+
+        // Resolve produced item
+        let producedDef = itemDef;
+        if (itemDef.produces) {
+            producedDef = DEFINITIONS[itemDef.produces];
+        }
+
+        if (producedDef) {
+            // Resolve Slicing/Process
+            if (producedDef.slicing && producedDef.slicing.result) {
+                producedDef = DEFINITIONS[producedDef.slicing.result];
+            } else if (producedDef.process && producedDef.process.result) {
+                producedDef = DEFINITIONS[producedDef.process.result];
+            }
+
+            if (producedDef.isTopping === true || producedDef.category === 'topping' || producedDef.type === 'SauceContainer') {
+                categoryIndex = 0;
+            } else if ((producedDef.orderConfig && producedDef.orderConfig.type === 'side') || itemDef.id === 'fry_box') {
+                // fry_box -> fry_bag -> raw_fries -> fries (side)
+                categoryIndex = 1;
+            } else if (producedDef.category === 'syrup' || (producedDef.orderConfig && producedDef.orderConfig.type === 'drink')) {
+                categoryIndex = 2;
+            }
+        }
+
+        // Update Menu (Specific to Topping -> Plain Burger)
+        if (categoryIndex === 0) {
+            // Identify the topping ID
+            let toppingId = null;
+            let pDef = itemDef.produces ? DEFINITIONS[itemDef.produces] : itemDef;
+            if (pDef.slicing && pDef.slicing.result) {
+                toppingId = pDef.slicing.result;
+            } else if (pDef.process && pDef.process.result) {
+                toppingId = pDef.process.result;
+            } else if (pDef.type === 'SauceContainer' || pDef.category === 'sauce_refill') {
+                const potentialId = pDef.id.replace('_bag', '');
+                toppingId = DEFINITIONS[potentialId] ? potentialId : pDef.id;
+            } else {
+                toppingId = pDef.id;
+            }
+
+            // Add to Plain Burger (Index 0)
+            const plainSlot = this.menuSystem.menuSlots[0];
+            if (plainSlot && toppingId) {
+                // Check if already there
+                const exists = plainSlot.state.toppings.some(t => t.definitionId === toppingId);
+                if (!exists) {
+                    plainSlot.state.toppings.push({ definitionId: toppingId, optional: true });
+                    console.log(`Added ${toppingId} to Plain Burger (Optional)`);
+                }
+            }
+        } else {
+            // For Sides and Drinks
+            let itemId = null;
+            let pDef = itemDef.produces ? DEFINITIONS[itemDef.produces] : itemDef;
+
+            // For syrup -> drink logic
+            if (pDef.category === 'syrup' && pDef.result) {
+                itemId = pDef.result;
+            } else if (pDef.process && pDef.process.result) {
+                if (pDef.result) itemId = pDef.result;
+                else itemId = pDef.id;
+            } else {
+                itemId = pDef.id;
+            }
+
+            if (categoryIndex === 1) { // Side
+                if (itemDef.id === 'fry_box') itemId = 'fries'; // Manual Override
+
+                if (itemId && !this.menuSystem.sides.some(s => s.definitionId === itemId)) {
+                    this.menuSystem.sides.push({ definitionId: itemId });
+                    console.log(`Added ${itemId} to Menu Sides`);
+                }
+            } else if (categoryIndex === 2) { // Drink
+                if (itemId && !this.menuSystem.drinks.some(d => d.definitionId === itemId)) {
+                    this.menuSystem.drinks.push({ definitionId: itemId });
+                    console.log(`Added ${itemId} to Menu Drinks`);
+                }
+            }
+        }
+
+        this.addFloatingText("Reward Unlocked!", this.player.x, this.player.y, '#ffd700');
+
+        // Transition handled by PostDaySystem
+        // this.startDay();
+
+        // Refresh Menu System to see new unlocked topping
+        if (this.menuSystem) {
+            this.menuSystem.updateAvailableItems();
+        }
     }
 
     async init() {
@@ -138,6 +400,14 @@ export class Game {
         // Try to load full game state first
         if (this.loadLevel()) {
             console.log(`Loaded game from storage. Room: ${this.currentRoomId}`);
+            // Patch Office Room to ensure Reno tile is present (handling old saves)
+            if (this.rooms['office']) {
+                this.rooms['office'].setTileType(1, 0, TILE_TYPES.RENO);
+                // Also ensure computer is there
+                this.rooms['office'].setTileType(2, 0, TILE_TYPES.COMPUTER);
+            }
+
+
             return;
         }
 
@@ -165,6 +435,10 @@ export class Game {
         const fridgeGrid = this.createFridgeRoom();
         this.rooms['fridge'] = fridgeGrid;
 
+        // 3. Setup Office Room
+        const officeGrid = this.createOfficeRoom();
+        this.rooms['office'] = officeGrid;
+
         // Set Initial Active Room
         this.currentRoomId = 'main';
         this.grid = this.rooms['main'];
@@ -177,24 +451,78 @@ export class Game {
         this.player.heldItem = null;
 
         // Reset Economy
-        this.money = 150; // Enough for supplies
+        this.money = 120;
+        this.storage = {}; // Reset Storage
         this.dayNumber = 0;
         this.earnedServiceStar = false;
 
         // Reset Shop Items (Unlocks)
-        const alwaysUnlocked = ['patty_box', 'bun_box', 'wrapper_box', 'bag_box', 'counter', 'floor', 'cutting_board', 'dispenser', 'fryer', 'soda_fountain', 'stove', 'expansion', 'continue'];
+        // Reset Shop Items (Unlocks)
         this.shopItems.forEach(item => {
-            item.unlocked = alwaysUnlocked.includes(item.id);
+            if (item.type === 'supply') {
+                const def = DEFINITIONS[item.id];
+
+                // Determine 'unlocked' status consistently with constructor
+                const isEssential = item.isEssential;
+
+                // Check if this is a Topping Provider
+                let isToppingProvider = false;
+                if (def.produces) {
+                    const prod = DEFINITIONS[def.produces];
+                    if (prod) {
+                        if (prod.category === 'sauce_refill' || prod.category === 'topping' || prod.isTopping) {
+                            isToppingProvider = true;
+                        }
+                        if (prod.slicing && prod.slicing.result) {
+                            const res = DEFINITIONS[prod.slicing.result];
+                            if (res && (res.category === 'topping' || res.isTopping)) isToppingProvider = true;
+                        }
+                        if (prod.process && prod.process.result) {
+                            const res = DEFINITIONS[prod.process.result];
+                            if (res && (res.category === 'topping' || res.isTopping)) isToppingProvider = true;
+                        }
+                    }
+                }
+
+                let isUnlocked = isEssential;
+                if (!isEssential) {
+                    if (def.unlockCondition) {
+                        isUnlocked = false;
+                    } else if (isToppingProvider) {
+                        isUnlocked = false;
+                    } else {
+                        isUnlocked = true;
+                    }
+                }
+
+                item.unlocked = isUnlocked;
+            } else {
+                // Appliances and Actions default to unlocked
+                item.unlocked = true;
+            }
         });
         this.sortShopItems();
 
+        // 4. Pre-purchase Essentials for Day 1 (Since Order Screen is now just info)
+        // Auto-buy 1 of each essential
+        this.cart['patty_box'] = 1;
+        this.cart['bun_box'] = 1;
+        this.cart['wrapper_box'] = 1;
+        this.cart['bag_box'] = 1;
+        // Deduct cost
+        const kStartCost = 50 + 30 + 20 + 20; // Hardcoded based on defaults or look up
+        this.money -= kStartCost;
+
         // Save this clean state immediately so if they refresh they get this
         this.saveLevel();
+
+        this.pendingOrders = []; // Clear pending orders on new game
 
         this.updateCapabilities();
     }
 
     updateCapabilities() {
+        this.shopSystem.checkUnlocks();
         this.capabilities.clear();
 
         // 1. Gather all unique object/item definitions present in the world (Appliances & Items)
@@ -222,36 +550,151 @@ export class Game {
         });
 
         // 2. Derive Capabilities based on Requirements
-        // CAPABILITY.BASIC_BURGER: Stove + Patty Box + Bun Box
-        if (activeTileTypes.has('STOVE') && activeDefIds.has('patty_box') && activeDefIds.has('bun_box')) {
+        // CAPABILITY.BASIC_BURGER: Stove + Patty (Box/Item) + Bun (Box/Item)
+        const hasPatty = activeDefIds.has('patty_box') || activeDefIds.has('beef_patty');
+        const hasBun = activeDefIds.has('bun_box') || activeDefIds.has('plain_bun');
+        if (activeTileTypes.has('STOVE') && hasPatty && hasBun) {
             this.capabilities.add(CAPABILITY.BASIC_BURGER);
         }
 
-        // CAPABILITY.CUT_TOPPINGS: Cutting Board + Tomato Box
-        if (activeTileTypes.has('CUTTING_BOARD') && activeDefIds.has('tomato_box')) {
-            this.capabilities.add(CAPABILITY.CUT_TOPPINGS);
+        // CAPABILITY.CUT_TOPPINGS: Cutting Board + Any Slicable Item
+        // Check for items that are sliceable or boxes that produce sliceable items
+        if (activeTileTypes.has('CUTTING_BOARD')) {
+            const hasSlicable = Array.from(activeDefIds).some(id => {
+                const def = DEFINITIONS[id];
+                if (!def) return false;
+
+                // 1. Direct slicable item (e.g., 'tomato', 'onion')
+                if (def.slicing) return true;
+
+                // 2. Box producing slicable item (e.g., 'tomato_box' -> 'tomato')
+                if (def.produces) {
+                    const product = DEFINITIONS[def.produces];
+                    if (product && product.slicing) return true;
+                }
+
+                return false;
+            });
+
+            if (hasSlicable) {
+                this.capabilities.add(CAPABILITY.CUT_TOPPINGS);
+            }
         }
 
-        // CAPABILITY.ADD_COLD_SAUCE: Dispenser + Mayo Box
-        if (activeTileTypes.has('DISPENSER') && activeDefIds.has('mayo_box')) {
+        // CAPABILITY.ADD_COLD_SAUCE: Dispenser + Mayo (Box/Bag)
+        // Note: We also should ideally check if the dispenser is loaded, but for now we check for presence of mayo source in the room.
+        const hasMayo = activeDefIds.has('mayo_box') || activeDefIds.has('mayo_bag');
+        if (activeTileTypes.has('DISPENSER') && hasMayo) {
             this.capabilities.add(CAPABILITY.ADD_COLD_SAUCE);
         }
 
-        // CAPABILITY.SERVE_FRIES: Fryer + Fry Box + Side Cup Box
-        if (activeTileTypes.has('FRYER') && activeDefIds.has('fry_box') && activeDefIds.has('side_cup_box')) {
+        // CAPABILITY.ADD_LETTUCE: Lettuce (Box/Head/Leaf)
+        // No specific appliance requirement for now (Hand chopped), but maybe imply it starts from box
+        const hasLettuce = activeDefIds.has('lettuce_box') || activeDefIds.has('lettuce_head');
+        if (hasLettuce) {
+            this.capabilities.add(CAPABILITY.ADD_LETTUCE);
+        }
+
+        // CAPABILITY.SERVE_FRIES: Fryer + Fry (Box/Bag) + Side Cup (Box/Item)
+        const hasFries = activeDefIds.has('fry_box') || activeDefIds.has('fry_bag') || activeDefIds.has('fry_bag_open');
+        const hasSideCup = activeDefIds.has('side_cup_box') || activeDefIds.has('side_cup');
+        if (activeTileTypes.has('FRYER') && hasFries && hasSideCup) {
             this.capabilities.add(CAPABILITY.SERVE_FRIES);
         }
 
-        // CAPABILITY.SERVE_DRINKS: Soda Fountain + Syrup Box + Drink Cup Box
-        if (activeTileTypes.has('SODA_FOUNTAIN') && activeDefIds.has('syrup_box') && activeDefIds.has('drink_cup_box')) {
+        // CAPABILITY.SERVE_DRINKS: Soda Fountain + Syrup (Box/Bag) + Drink Cup (Box/Item)
+        const hasSyrup = Array.from(activeDefIds).some(id => {
+            const def = DEFINITIONS[id];
+            if (!def) return false;
+            if (def.category === 'syrup') return true;
+            if (def.produces) {
+                const product = DEFINITIONS[def.produces];
+                return product && product.category === 'syrup';
+            }
+            return false;
+        });
+
+        const hasDrinkCup = activeDefIds.has('drink_cup_box') || activeDefIds.has('drink_cup');
+        if (activeTileTypes.has('SODA_FOUNTAIN') && hasSyrup && hasDrinkCup) {
             this.capabilities.add(CAPABILITY.SERVE_DRINKS);
         }
 
+
+
+        // Endgame State: Fryer + Soda Fountain
+        this.isEndgameUnlocked = activeTileTypes.has('FRYER') && activeTileTypes.has('SODA_FOUNTAIN');
+
         console.log('Capabilities updated:', Array.from(this.capabilities));
+
+        // 3. Compute Allowed Order Items (Ingredient Availability)
+        const availableIds = new Set(activeDefIds);
+        let changed = true;
+
+        // Iteratively expand available items (Production Chain)
+        while (changed) {
+            changed = false;
+            for (const id of availableIds) {
+                const def = DEFINITIONS[id];
+                if (!def) continue;
+
+                const candidates = [];
+                if (def.produces) candidates.push(def.produces);
+                if (def.slicing && def.slicing.result) candidates.push(def.slicing.result);
+                if (def.process && def.process.result) candidates.push(def.process.result);
+
+                for (const c of candidates) {
+                    if (!availableIds.has(c)) {
+                        availableIds.add(c);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        this.allowedOrderItems = new Set();
+        Object.values(DEFINITIONS).forEach(def => {
+            if (!def.orderConfig) return;
+
+            // Check if it has a dependency
+            const parentId = this.itemDependencyMap[def.id];
+            if (parentId) {
+                // Check if PARENT is available (Ingredient Check)
+                // This covers:
+                // 1. Sliced items (Tomato Slice -> Tomato (Available))
+                // 2. Machine items (Soda -> Soda Syrup (Available))
+                if (availableIds.has(parentId)) {
+                    this.allowedOrderItems.add(def.id);
+                }
+            } else {
+                // No parent dependency (e.g. Burger Base), allow by default
+                // (Capability check will handle tool/machine requirement)
+                this.allowedOrderItems.add(def.id);
+            }
+        });
+        console.log('Allowed Order Items:', Array.from(this.allowedOrderItems));
+
+        this.possibleMenu = getMenuForCapabilities(Array.from(this.capabilities), Array.from(this.allowedOrderItems));
+
+        // Ensure MenuSystem is aware of current unlocks
+        if (this.menuSystem) {
+            this.menuSystem.updateAvailableItems();
+        }
     }
 
     getPlayerCapabilities() {
         return Array.from(this.capabilities);
+    }
+
+    hasAppliance(tileTypeId) {
+        for (const room of Object.values(this.rooms)) {
+            for (let y = 0; y < room.height; y++) {
+                for (let x = 0; x < room.width; x++) {
+                    const cell = room.getCell(x, y);
+                    if (cell.type && cell.type.id === tileTypeId) return true;
+                }
+            }
+        }
+        return false;
     }
 
     createSmallKitchen() {
@@ -280,7 +723,7 @@ export class Game {
         };
 
         // Rest of Row 0
-        grid.setTileType(2, 0, TILE_TYPES.COUNTER);
+        grid.setTileType(2, 0, TILE_TYPES.CUTTING_BOARD);
         grid.setTileType(3, 0, TILE_TYPES.COUNTER);
         grid.setTileType(4, 0, TILE_TYPES.STOVE);
         grid.setTileType(5, 0, TILE_TYPES.COUNTER);
@@ -292,7 +735,15 @@ export class Game {
         for (let x = 1; x < width - 1; x++) {
             grid.setTileType(x, 1, TILE_TYPES.FLOOR);
         }
-        grid.setTileType(6, 1, TILE_TYPES.COUNTER); // Right Edge
+        // grid.setTileType(6, 1, TILE_TYPES.COUNTER); // Right Edge (Original)
+        // (6, 1) Office Door
+        grid.setTileType(6, 1, TILE_TYPES.OFFICE_DOOR);
+        grid.getCell(6, 1).state = {
+            id: 'kitchen_office_door',
+            targetRoom: 'office',
+            targetDoorId: 'office_exit',
+            isOpen: true
+        };
 
         // Row 2 (Middle 2)
         grid.setTileType(0, 2, TILE_TYPES.SERVICE); // Under Ticket Wheel
@@ -307,6 +758,7 @@ export class Game {
         // Fill bottom with Counters
         for (let x = 1; x < width - 1; x++) {
             grid.setTileType(x, 3, TILE_TYPES.COUNTER);
+            grid.getCell(x, 3).state.facing = 2; // Face UP (towards center)
         }
         grid.setTileType(6, 3, TILE_TYPES.WALL);
 
@@ -332,14 +784,18 @@ export class Game {
         // 2. Place Counters (Silver Tiles)
         // Rows 1 to 6 (STOP before bottom row 7)
         for (let y = 1; y < height - 1; y++) {
-            // Left Counter
-            grid.setTileType(1, y, TILE_TYPES.COUNTER);
-            // Right Counter
-            grid.setTileType(3, y, TILE_TYPES.COUNTER);
+            // Left Counter (Faces Right -> 3)
+            grid.setTileType(1, y, TILE_TYPES.DELIVERY_TILE);
+            grid.getCell(1, y).state.facing = 3;
+
+            // Right Counter (Faces Left -> 1)
+            grid.setTileType(3, y, TILE_TYPES.DELIVERY_TILE);
+            grid.getCell(3, y).state.facing = 1;
         }
 
         // Top Center Counter
-        grid.setTileType(2, 0, TILE_TYPES.COUNTER);
+        grid.setTileType(2, 0, TILE_TYPES.DELIVERY_TILE);
+        grid.getCell(2, 0).state.facing = 0; // Down
 
         // 3. Place Center Aisle (Floor)
         // Rows 1 to 6 (Row 7 is door)
@@ -360,9 +816,60 @@ export class Game {
         return grid;
     }
 
+    createOfficeRoom() {
+        // 4x4 Room
+        // Corners: Walls
+        // Ring: Counters
+        // Center: Floor
+        const width = 4;
+        const height = 4;
+        const grid = new Grid(width, height);
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                // Corners
+                if ((x === 0 && y === 0) || (x === width - 1 && y === 0) ||
+                    (x === 0 && y === height - 1) || (x === width - 1 && y === height - 1)) {
+                    grid.setTileType(x, y, TILE_TYPES.WALL);
+                }
+                // Ring (Edges)
+                else if (x === 0 || x === width - 1 || y === 0 || y === height - 1) {
+                    grid.setTileType(x, y, TILE_TYPES.COUNTER);
+                }
+                // Center
+                else {
+                    grid.setTileType(x, y, TILE_TYPES.FLOOR);
+                }
+            }
+        }
+
+        // Add Computer (replace a counter, e.g., top row middle-ish)
+        grid.setTileType(2, 0, TILE_TYPES.COMPUTER);
+
+        // Add Reno Tile (Appliance Shop) next to Computer
+        grid.setTileType(1, 0, TILE_TYPES.RENO);
+
+        // Add Menu Tile (Custom Menu) at top right (moved to side for access)
+        grid.setTileType(3, 1, TILE_TYPES.MENU);
+
+        // Add Door back to Kitchen (Left wall, y=1)
+        grid.setTileType(0, 1, TILE_TYPES.OFFICE_DOOR);
+        grid.getCell(0, 1).state = {
+            id: 'office_exit',
+            targetRoom: 'main',
+            targetDoorId: 'kitchen_office_door',
+            isOpen: true
+        };
+
+        // Add Exit Door (bottom row, 2nd column -> x=1, y=3)
+        grid.setTileType(1, 3, TILE_TYPES.EXIT_DOOR);
+
+        return grid;
+    }
+
     expandKitchen() {
         console.log("Expanding Kitchen!");
-        const currentGrid = this.grid;
+        const currentGrid = this.rooms['main'];
 
         // Insert a row one from the bottom and a column one from the right
         const colIndex = currentGrid.width - 1;
@@ -370,25 +877,22 @@ export class Game {
 
         currentGrid.expandInterior(colIndex, rowIndex);
 
-        // Update player position
-        // Since we inserted at specific indices, anything at or beyond those indices shifts by 1
-        if (this.player.x >= colIndex) this.player.x += 1;
-        if (this.player.y >= rowIndex) this.player.y += 1;
+        // Visual Feedback
+        this.addFloatingText("Kitchen Expanded!", this.player.x, this.player.y, '#ffff00');
 
         // Save
         this.saveLevel();
     }
 
     handleOrderInput(event) {
-        // Filter only unlocked items for navigation ?? 
-        // Or show all but skip locked?
-        // User said "everything else should be locked". Usually implies visible but grayed out.
-        // Let's navigate through all, but skip interacting with locked ones?
-        // Actually, user said: "change the order... first 4... everything else locked".
-        // Let's assume we can select them but not buy/increment.
-
+        if (event.code === 'Enter' || event.code === 'Space' || event.code === this.settings.getBinding(ACTIONS.INTERACT)) {
+            this.startDay();
+        }
+        return;
+        /*
+    
         const items = this.shopItems;
-
+    
         const moveSelection = (direction) => {
             let nextIndex = this.selectedOrderItemIndex;
             const count = items.length;
@@ -397,48 +901,53 @@ export class Game {
                 nextIndex += direction;
                 if (nextIndex >= count) nextIndex = 0;
                 if (nextIndex < 0) nextIndex = count - 1;
-
+    
                 if (items[nextIndex].unlocked) {
                     this.selectedOrderItemIndex = nextIndex;
                     return;
                 }
             }
         };
-
+    
         if (event.code === 'ArrowUp' || event.code === this.settings.getBinding(ACTIONS.MOVE_UP)) {
             moveSelection(-1);
         } else if (event.code === 'ArrowDown' || event.code === this.settings.getBinding(ACTIONS.MOVE_DOWN)) {
             moveSelection(1);
         }
-
+    
         const currentItem = items[this.selectedOrderItemIndex];
-
+    
         if (currentItem.locked || !currentItem.unlocked) {
             // Cannot modify locked items
             // Maybe skip selection? For now just return if user tries to interact
             // But we should allow confirming the order even if we are on a locked item?
         }
-
+    
         const currentQty = this.cart[currentItem.id] || 0;
-
+    
         // Count just supplies for the fridge limit
-        const fridge = this.rooms['fridge'];
+        // Count just supplies for the fridge/office limit
         let emptyCounters = 0;
-        if (fridge) {
-            for (let y = 0; y < fridge.height; y++) {
-                for (let x = 0; x < fridge.width; x++) {
-                    const c = fridge.getCell(x, y);
-                    if (c.type.id === 'COUNTER' && !c.object) {
-                        emptyCounters++;
+        ['fridge', 'office'].forEach(roomId => {
+            const room = this.rooms[roomId];
+            if (room) {
+                for (let y = 0; y < room.height; y++) {
+                    for (let x = 0; x < room.width; x++) {
+                        const c = room.getCell(x, y);
+                        // Check for empty counters (including Office Door acting as counter/walkable if we want? No, explicitly counters)
+                        // Note: Office is ringed by counters.
+                        if (c.type.id === 'COUNTER' && !c.object) {
+                            emptyCounters++;
+                        }
                     }
                 }
             }
-        }
-
+        });
+    
         const totalSuppliesInCart = this.shopItems
             .filter(i => i.type === 'supply')
             .reduce((sum, i) => sum + (this.cart[i.id] || 0), 0);
-
+    
         // Adjust Quantity / Buy Appliance
         if (event.code === 'ArrowRight' || event.code === this.settings.getBinding(ACTIONS.MOVE_RIGHT)) {
             if (currentItem.unlocked) {
@@ -461,7 +970,7 @@ export class Game {
                 this.cart[currentItem.id]--;
             }
         }
-
+    
         // Confirm / Action
         if (event.code === 'Enter') {
             if (currentItem.id === 'continue') {
@@ -469,7 +978,7 @@ export class Game {
                 // Calculate Total Cost
                 let totalCost = 0;
                 let essentialCost = 0;
-
+    
                 for (const item of this.shopItems) {
                     if (item.type === 'supply') {
                         const qty = (this.cart[item.id] || 0);
@@ -480,25 +989,25 @@ export class Game {
                         }
                     }
                 }
-
+    
                 // Logic: We must be able to afford the NON-ESSENTIAL items with current money.
                 // The ESSENTIAL items can be bought with debt (or existing money).
                 const nonEssentialCost = totalCost - essentialCost;
-
+    
                 const fundsAvailableForNonEssentials = Math.max(0, this.money);
-
+    
                 // Day 0: Essentials Check
                 if (this.dayNumber === 0) {
                     const missingEssentials = this.shopItems
                         .filter(i => i.isEssential)
                         .some(i => (this.cart[i.id] || 0) === 0);
-
+    
                     if (missingEssentials) {
                         console.log("Cannot start day: Missing essential items!");
                         return; // Prevent start
                     }
                 }
-
+    
                 if (fundsAvailableForNonEssentials >= nonEssentialCost) {
                     this.money -= totalCost;
                     this.startDay();
@@ -506,7 +1015,7 @@ export class Game {
                     console.log("Not enough money! (Cannot cover non-essential items)");
                     // Optional: Visual feedback for not enough money
                 }
-            } else if (currentItem.type === 'action' && currentItem.unlocked) {
+                } else if (currentItem.type === 'action' && currentItem.unlocked) {
                 if (currentItem.id === 'expansion') {
                     if (this.money >= currentItem.price) {
                         this.money -= currentItem.price;
@@ -515,76 +1024,36 @@ export class Game {
                     } else {
                         console.log("Not enough money for expansion");
                     }
+                } else if (currentItem.id === 'build_mode') {
+                    this.enterBuildMode();
                 }
             } else if (currentItem.type === 'appliance' && currentItem.unlocked) {
                 // Enter Build Mode
                 this.startPlacement(currentItem);
             }
         }
+        */
     }
 
-    startPlacement(applianceItem) {
-        console.log(`Starting placement for ${applianceItem.id}`);
-        // this.money -= applianceItem.price; // Spend money on placement now
-
-        this.currentRoomId = 'main'; // Ensure we are in kitchen
-        this.grid = this.rooms['main'];
-
-        // Use player position, clamped to grid bounds
-        let startX = this.player.x;
-        let startY = this.player.y;
-
-        // Safety clamp just in case player was out of bounds or in another room context
-        if (startX < 0) startX = 0;
-        if (startX >= this.grid.width) startX = this.grid.width - 1;
-        if (startY < 0) startY = 0;
-        if (startY >= this.grid.height) startY = this.grid.height - 1;
-
-        this.placementState = {
-            active: true,
-            item: applianceItem,
-            x: startX,
-            y: startY
-        };
-        this.gameState = 'BUILD_MODE';
+    handleBuildModeInput(event) {
+        this.constructionSystem.handleInput(event);
     }
 
-    handlePlacementInput(event) {
-        if (!this.placementState.active) return;
-
-        let dx = 0;
-        let dy = 0;
-
-        if (event.code === 'ArrowUp' || event.code === this.settings.getBinding(ACTIONS.MOVE_UP)) dy = -1;
-        if (event.code === 'ArrowDown' || event.code === this.settings.getBinding(ACTIONS.MOVE_DOWN)) dy = 1;
-        if (event.code === 'ArrowLeft' || event.code === this.settings.getBinding(ACTIONS.MOVE_LEFT)) dx = -1;
-        if (event.code === 'ArrowRight' || event.code === this.settings.getBinding(ACTIONS.MOVE_RIGHT)) dx = 1;
-
-        if (dx !== 0 || dy !== 0) {
-            const newX = this.placementState.x + dx;
-            const newY = this.placementState.y + dy;
-            if (newX >= 0 && newX < this.grid.width && newY >= 0 && newY < this.grid.height) {
-                this.placementState.x = newX;
-                this.placementState.y = newY;
-            }
-        }
-
-        if (event.code === 'Enter') {
-            if (this.money >= this.placementState.item.price) {
-                this.confirmPlacement();
-            } else {
-                console.log("Not enough money to place!");
-            }
-        }
+    handleMenuInput(event) {
+        const consumed = this.menuSystem.handleInput(event, this.settings);
+        if (consumed) return;
 
         if (event.code === 'Escape') {
-            this.placementState.active = false;
-            this.gameState = 'ORDERING';
-            this.saveLevel();
+            this.gameState = 'PLAYING';
+            // Optional: this.menuSystem.close() if needed
+            return;
         }
     }
 
+
+    // Deprecated but kept for reference if needed (removed usage above)
     confirmPlacement() {
+
         const { x, y, item } = this.placementState;
 
         // Place the tile
@@ -636,39 +1105,185 @@ export class Game {
 
     // Helper to sort shop items
     sortShopItems() {
-        this.shopItems.sort((a, b) => {
-            const getRank = (item) => {
-                if (item.id === 'continue') return -1; // Always first
-                if (item.type === 'appliance' || item.type === 'action') return 1;
-                if (item.unlocked) return 0;
-                return 2;
-            };
-            return getRank(a) - getRank(b);
+        this.shopSystem.sortShopItems();
+    }
+
+    spoilStaleItems() {
+        console.log("Checking for stale items...");
+        let staleCount = 0;
+
+        // Helper to check and spoil a single item instance
+        const checkItem = (item) => {
+            if (!item) return null;
+
+            const def = item.definition;
+            if (!def) return item;
+
+            // Handle Age Increment
+            // If item has aging config OR explicit ages: true OR implies aging via spoilable (legacy consistency)
+            if (def.aging || def.ages || def.spoilable) {
+                item.state.age = (item.state.age || 0) + 1;
+            }
+
+            // Determine replacement
+            let newId = null;
+
+            // 1. Data-Driven Aging Spoilage
+            if (def.aging) {
+                // If it passes the spoil date, it rots
+                if (item.state.age >= def.aging.spoilAge) {
+                    newId = def.aging.spoiledItem;
+                }
+            }
+            // 2. Legacy Spoilage (Instant Overnight)
+            // Only if NOT handled by aging config above
+            else if (def.spoilable) {
+                // EXCEPTION: Empty bags don't spoil.
+                if (item.definitionId === 'bag') {
+                    if (!item.state.contents || item.state.contents.length === 0) {
+                        return item;
+                    }
+                }
+
+                // Hardcoded Legacy
+                const id = item.definitionId;
+                if (id === 'plain_bun') newId = 'bun_old';
+                else if (id === 'beef_patty') newId = 'patty_old';
+                else if (id.includes('burger')) newId = 'burger_old';
+                else if (def.isSlice) newId = 'generic_spoil';
+                else if (id === 'fries') newId = 'fries_old';
+                else if (id === 'soda') newId = 'soda_old';
+                else if (id === 'bag') newId = 'bag_old';
+            }
+
+            if (newId) {
+                staleCount++;
+                const newItem = new ItemInstance(newId);
+                return newItem;
+            }
+            return item;
+        };
+
+        // 1. Check Player Hands
+        if (this.player.heldItem) {
+            this.player.heldItem = checkItem(this.player.heldItem);
+        }
+
+        // 2. Check All Rooms
+        Object.values(this.rooms).forEach(room => {
+            if (!room) return;
+            for (let y = 0; y < room.height; y++) {
+                for (let x = 0; x < room.width; x++) {
+                    const cell = room.getCell(x, y);
+                    if (cell.object) {
+                        cell.object = checkItem(cell.object);
+                    }
+                }
+            }
+        });
+
+        if (staleCount > 0) {
+            console.log(`${staleCount} items spoiled!`);
+            this.addFloatingText(`${staleCount} items spoiled!`, this.player.x, this.player.y, '#90ee90');
+        }
+    }
+
+    cleanAppliances() {
+        console.log("Cleaning appliances...");
+        Object.values(this.rooms).forEach(room => {
+            if (!room) return;
+            for (let y = 0; y < room.height; y++) {
+                for (let x = 0; x < room.width; x++) {
+                    const cell = room.getCell(x, y);
+
+                    // 1. Fryer
+                    if (cell.type.id === 'FRYER') {
+                        // Reset to empty
+                        if (cell.state) {
+                            cell.state.status = 'empty';
+                            cell.state.timer = 0;
+                        } else {
+                            cell.state = { status: 'empty' };
+                        }
+                        cell.object = null;
+                    }
+                    // 2. Stovetop
+                    else if (cell.type.id === 'STOVE') {
+                        if (cell.state) {
+                            cell.state.isOn = false;
+                            cell.state.cookingProgress = 0;
+                        }
+                        cell.object = null; // Clear pan/patty
+                    }
+                    // 3. Cutting Board
+                    else if (cell.type.id === 'CUTTING_BOARD') {
+                        cell.object = null;
+                        // Reset internal state
+                        if (cell.state) {
+                            cell.state.status = 'empty';
+                        } else {
+                            cell.state = { status: 'empty' };
+                        }
+                    }
+                    // 4. Sauce Dispenser & Soda Fountain -> Do NOT reset
+                }
+            }
         });
     }
 
     startDay() {
         console.log('Starting Day...');
+        this.ratingPopup.hide();
+
+        // Create Clean Slate for Appliances
+        this.cleanAppliances();
+
+        // Handle Overnight Spoilage
+        this.spoilStaleItems();
+
+        // Handle Morning Orders (Spawn Pending Items)
+        if (this.pendingOrders && this.pendingOrders.length > 0) {
+            console.log(`Spawning ${this.pendingOrders.length} pending orders...`);
+            this.pendingOrders.forEach(order => {
+                // Add to temporary cart just to use the populate logic below?
+                // Or simply merge into cart?
+                // Merging into cart simulates "buying" them now, but we already paid.
+                // We should just increment the count in the cart structure IF we use loop below which iterates shopItems.
+                // BUT the loop below uses `this.cart` which was just reset in endDay (or not? endDay says "Do NOT clear cart here" but startDay consumes it)
+                // Actually startDay consumes `this.cart`.
+                // So we can just add pending counts to `this.cart`.
+                this.cart[order.id] = (this.cart[order.id] || 0) + (order.qty || 1);
+            });
+            this.pendingOrders = []; // Clear queue
+        }
+
         this.dayNumber++;
         console.log(`Starting Day ${this.dayNumber}...`);
 
         this.currentDayPerfect = true;
+        this.starSummaryDismissed = false;
 
         // 1. Populate Fridge (Do this FIRST so capabilities avail)
-        const fridge = this.rooms['fridge'];
+        // 1. Populate Fridge & Office (Do this FIRST so capabilities avail)
         // Note: We NO LONGER clear the fridge. Persistance!
 
         // Spawn ordered items into VALID EMPTY spots
-        // We need to find all counters in the fridge that are EMPTY
+        // We need to find all counters in the fridge/office that are EMPTY
         const emptyCounters = [];
-        for (let y = 0; y < fridge.height; y++) {
-            for (let x = 0; x < fridge.width; x++) {
-                const c = fridge.getCell(x, y);
-                if (c.type.id === 'COUNTER' && !c.object) {
-                    emptyCounters.push(c);
+
+        ['fridge', 'office'].forEach(roomId => {
+            const room = this.rooms[roomId];
+            if (room) {
+                for (let y = 0; y < room.height; y++) {
+                    for (let x = 0; x < room.width; x++) {
+                        const c = room.getCell(x, y);
+                        if (c.type.id === 'DELIVERY_TILE' && !c.object) {
+                            emptyCounters.push(c);
+                        }
+                    }
                 }
             }
-        }
+        });
 
         // Populate sequentially into empty slots
         let counterIndex = 0;
@@ -683,6 +1298,10 @@ export class Game {
                     if (counterIndex < emptyCounters.length) {
                         const cell = emptyCounters[counterIndex];
                         const instance = new ItemInstance(itemId);
+                        // Custom Insert Logic: Spawn stack of 3
+                        if (itemId === 'insert') {
+                            instance.state.count = 3;
+                        }
                         cell.object = instance;
                         counterIndex++;
                     }
@@ -695,19 +1314,18 @@ export class Game {
 
         // 3. Generate Daily Orders
         const capabilities = this.getPlayerCapabilities();
-        const orders = this.orderSystem.generateDailyOrders(this.dayNumber, capabilities);
+        // Menu System Integration: Use defined menu instead of raw capabilities
+        const orders = this.orderSystem.generateDailyOrders(this.dayNumber, this.menuSystem.getMenu());
         this.ticketQueue = orders;
+        this.queueFinishedTime = null;
         this.activeTickets = [];
+        this.activeTicketIndex = 0;
         this.orders = [];
-        this.ticketTimer = 10000; // Force first ticket immediately (at start of next update frame or logic)
-        // Actually, let's set it to 10000 so it triggers right away, 
-        // or user said "player gets a ticket every 10 seconds". 
-        // Usually first one is immediate or after 10s? 
-        // "the player gets a ticket every 10 seconds until all the days tickets are printed"
-        // Let's make the first one appear at t=0 (now) by setting timer high.
-
         this.gameState = 'PLAYING';
         this.isDayActive = true;
+        this.isPrepTime = false;
+        this.prepTime = 0;
+        this.maxPrepTime = 0;
 
         // 4. Open Kitchen Shutter
         const mainRoom = this.rooms['main'];
@@ -736,26 +1354,80 @@ export class Game {
 
         // 5. Audio Updates
         // Play Day Music (Alternate)
-        const songIntro = (this.dayNumber % 2 !== 0) ? ASSETS.AUDIO.SONG1_INTRO : ASSETS.AUDIO.SONG2_INTRO;
-        const songLoop = (this.dayNumber % 2 !== 0) ? ASSETS.AUDIO.SONG1_LOOP : ASSETS.AUDIO.SONG2_LOOP;
+        // Play Day Music (Rotate 3 songs)
+        const songIndex = (this.dayNumber - 1) % 4;
+
+        let songIntro, songLoop;
+        if (songIndex === 0) {
+            songIntro = ASSETS.AUDIO.SONG1_INTRO;
+            songLoop = ASSETS.AUDIO.SONG1_LOOP;
+        } else if (songIndex === 1) {
+            songIntro = ASSETS.AUDIO.SONG2_INTRO;
+            songLoop = ASSETS.AUDIO.SONG2_LOOP;
+        } else if (songIndex === 2) {
+            songIntro = ASSETS.AUDIO.SONG3_INTRO;
+            songLoop = ASSETS.AUDIO.SONG3_LOOP;
+        } else {
+            songIntro = ASSETS.AUDIO.SONG4_INTRO;
+            songLoop = ASSETS.AUDIO.SONG4_LOOP;
+        }
 
         this.audioSystem.playMusic(songIntro, songLoop);
         this.audioSystem.setMuffled(false);
-        // Find printer to animate and play sound
-        const kitchen = this.rooms['main'];
-        if (kitchen) {
-            for (let y = 0; y < kitchen.height; y++) {
-                for (let x = 0; x < kitchen.width; x++) {
-                    const c = kitchen.getCell(x, y);
-                    if (c.type.id === 'PRINTER') {
-                        if (!c.state) c.state = {};
-                        c.state.printing = true;
-                        c.state.printStartTime = Date.now();
-                        this.audioSystem.playSFX(ASSETS.AUDIO.PRINTER);
-                    }
-                }
-            }
-        }
+
+        // --- PREP TIME LOGIC ---
+        const complexity = this.menuSystem.calculateComplexity();
+        this.prepTime = 15 + Math.floor(complexity) * 5;
+        this.maxPrepTime = this.prepTime;
+        this.isPrepTime = true;
+        this.ticketTimer = 0; // Reset timer so tickets don't start yet
+
+        // Reset Daily Stats
+        this.dailyMoneyEarned = 0;
+        this.dailyBagsSold = 0;
+
+        console.log(`Starting Day with Prep Time: ${this.prepTime}s (Complexity: ${complexity})`);
+    }
+
+    calculateDailyStars() {
+        // Calculate Daily Stars
+        const breakdown = [];
+        let starCount = 0;
+
+        // 1. Perfect Day (All orders on time)
+        const star1 = this.currentDayPerfect;
+        if (star1) starCount++;
+        breakdown.push(star1);
+
+        // 2. Side on Menu
+        const star2 = this.menuSystem.sides.length > 0;
+        if (star2) starCount++;
+        breakdown.push(star2);
+
+        // 3. Drink on Menu
+        const star3 = this.menuSystem.drinks.length > 0;
+        if (star3) starCount++;
+        breakdown.push(star3);
+
+        // 4. Complexity >= 15
+        const complexity = this.menuSystem.calculateComplexity();
+        const star4 = complexity >= 15;
+        if (star4) starCount++;
+        breakdown.push(star4);
+
+        // 5. Complexity >= 30
+        const star5 = complexity >= 30;
+        if (star5) starCount++;
+        breakdown.push(star5);
+
+        this.dailyStarCount = starCount;
+        this.dailyStarBreakdown = breakdown;
+        console.log(`calculated Daily Stars: ${starCount}`, breakdown);
+
+        // Trigger Popup
+        this.ratingPopup.show(starCount, breakdown);
+
+        return starCount;
     }
 
     endDay() {
@@ -774,54 +1446,42 @@ export class Game {
             this.earnedServiceStar = this.currentDayPerfect;
         }
 
+        // Calculate Daily Stars
+        const starCount = this.calculateDailyStars();
+        console.log(`Daily Star Count: ${starCount} (Perfect: ${this.currentDayPerfect}, Sides: ${this.menuSystem.sides.length}, Drinks: ${this.menuSystem.drinks.length})`);
+
         this.isDayActive = false;
-        this.gameState = 'ORDERING';
+        this.isDayActive = false;
+        this.gameState = 'POST_DAY';
+        this.postDayStartTime = Date.now();
+        this.postDaySystem.start();
 
         // Robust Cart Reset
         this.ticketQueue = [];
         this.activeTickets = [];
-        this.ticketQueue = [];
-        this.activeTickets = [];
         this.incomingTicket = null;
-        this.shopItems.forEach(item => this.cart[item.id] = 0);
+        // Do NOT clear cart here; persist computer orders for the next day/summary screen
+        // this.shopItems.forEach(item => this.cart[item.id] = 0);
 
-        // Force player back to kitchen if in fridge
-        if (this.currentRoomId === 'fridge') {
+        // Force player back to kitchen if in fridge or office
+        if (this.currentRoomId === 'fridge' || this.currentRoomId === 'office') {
             this.currentRoomId = 'main';
             this.grid = this.rooms['main'];
             this.player.x = 1;
-            this.player.y = 1; // In front of shutter
+            this.player.y = 1; // In front of shutter (ish? Default reset point)
             this.saveLevel();
         }
 
         // Save progression
         this.saveLevel();
         this.audioSystem.setMuffled(true);
+
+        // Deduct Rent
+        const rent = SCORING_CONFIG.DAILY_RENT;
+        this.money -= rent;
+        console.log(`End of Day. Rent paid: $${rent}. Remaining Money: $${this.money}`);
     }
 
-    getStarCount() {
-        let stars = 0;
-
-        // Star 1: Two Sides Configured (Fries AND Soda)
-        // CAPABILITY.SERVE_FRIES && CAPABILITY.SERVE_DRINKS
-        if (this.capabilities.has(CAPABILITY.SERVE_FRIES) && this.capabilities.has(CAPABILITY.SERVE_DRINKS)) {
-            stars++;
-        }
-
-        // Star 2: Two Toppings Configured (Mayo AND Tomato)
-        // CAPABILITY.ADD_COLD_SAUCE && CAPABILITY.CUT_TOPPINGS
-        // Note: CAPABILITY.ADD_COLD_SAUCE covers mayo. CAPABILITY.CUT_TOPPINGS covers tomato.
-        if (this.capabilities.has(CAPABILITY.ADD_COLD_SAUCE) && this.capabilities.has(CAPABILITY.CUT_TOPPINGS)) {
-            stars++;
-        }
-
-        // Star 3: Perfect Service
-        if (this.earnedServiceStar) {
-            stars++;
-        }
-
-        return stars;
-    }
 
 
 
@@ -831,7 +1491,7 @@ export class Game {
 
         if (this.audioSystem) this.audioSystem.resume();
 
-        if (event.code === 'KeyC') {
+        if (event.code === 'KeyC' && event.shiftKey) {
             this.money += 500;
             console.log(`Cheat: Added $500. New Balance: ${this.money}`);
         }
@@ -893,7 +1553,7 @@ export class Game {
             // Ideally we'd pull "displayOrder" from a shared location, but for limited scope hardcoding order is okay
             const keyActions = [
                 'MOVE_UP', 'MOVE_DOWN', 'MOVE_LEFT', 'MOVE_RIGHT',
-                'INTERACT', 'PICK_UP',
+                'INTERACT', 'PICK_UP', 'VIEW_ORDERS',
                 'EQUIP_1', 'EQUIP_2', 'EQUIP_3', 'EQUIP_4'
             ];
 
@@ -935,10 +1595,50 @@ export class Game {
             return;
         }
 
-        if (this.gameState === 'BUILD_MODE') {
-            this.handlePlacementInput(event);
+        if (this.gameState === 'POST_DAY') {
+            const result = this.postDaySystem.handleInput(event, this.settings);
+            if (result === 'DONE') {
+                // State transition handled in grantDailyReward usually, or here if we prefer explicit
+            }
             return;
         }
+
+        if (this.gameState === 'ORDERING') {
+            this.handleOrderInput(event);
+            return;
+        }
+
+        if (this.gameState === 'COMPUTER_ORDERING') {
+            this.handleComputerInput(event);
+            return;
+        }
+
+        if (this.gameState === 'RENO_SHOP') {
+            this.handleRenoInput(event);
+            return;
+        }
+
+        if (this.gameState === 'MENU_CUSTOM') {
+            this.handleMenuInput(event);
+            return;
+        }
+
+        if (this.gameState === 'BUILD_MODE') {
+            if (this.gameState === 'BUILD_MODE') {
+                this.handleBuildModeInput(event);
+                return;
+            }
+            return;
+        }
+
+
+
+        // Handle Rating Popup Input
+        if (this.ratingPopup.isVisible) {
+            const consumed = this.ratingPopup.handleInput(event, this.settings, ACTIONS);
+            if (consumed) return;
+        }
+
 
         if (event.code === 'KeyE' && event.shiftKey) {
             this.editor.toggle();
@@ -971,15 +1671,54 @@ export class Game {
                 if (penalty > 0) {
                     this.addFloatingText(`Given Up: -$${penalty}`, this.player.x, this.player.y, '#ff0000');
                 }
-                this.endDay();
+                // Clear all tickets to trigger "Queue Finished" routine automatically in update()
+                this.ticketQueue = [];
+                this.activeTickets = [];
+                this.incomingTicket = null;
+                this.addFloatingText("Service Terminated", this.player.x, this.player.y, '#ff0000');
                 return;
             }
             this.player.actionPickUp(this.grid);
         }
 
         if (code === this.settings.getBinding(ACTIONS.INTERACT)) {
+            const facingCell = this.player.getTargetCell(this.grid);
+            if (facingCell && facingCell.type.id === 'COMPUTER') {
+                this.gameState = 'COMPUTER_ORDERING';
+                return;
+            }
+            console.log('Interacting. Facing:', facingCell ? facingCell.type.id : 'null');
+            if (facingCell && facingCell.type.id === 'RENO') {
+                console.log('entering Build Mode from Reno Tile');
+                this.addFloatingText("Build Mode", this.player.x, this.player.y, '#ffd700');
+                this.enterBuildMode();
+                return;
+            }
+
+            if (facingCell && facingCell.type.id === 'MENU') {
+                if (!this.isEndgameUnlocked) {
+                    this.addFloatingText("Locked!", this.player.x, this.player.y, '#ff0000');
+                    return;
+                }
+                console.log('Opening Custom Menu');
+                this.gameState = 'MENU_CUSTOM';
+                return;
+            }
+
+            if (facingCell && facingCell.type.id === 'TICKET_WHEEL') {
+                if (this.isPrepTime) {
+                    this.prepTime = 0;
+                    console.log("Prep time skipped by user interaction.");
+                    return;
+                }
+                this.cycleActiveTicket();
+                return;
+            }
+
             this.player.actionInteract(this.grid);
         }
+
+
 
         if (dx !== 0 || dy !== 0) {
             const moved = this.player.move(dx, dy, this.grid);
@@ -988,12 +1727,24 @@ export class Game {
                 const cell = this.grid.getCell(this.player.x, this.player.y);
                 if (cell && cell.type.isDoor) {
                     this.handleDoorTraversal(cell);
+                } else if (cell && cell.type.id === 'EXIT_DOOR') {
+                    // Trigger End of Day
+                    this.endDay();
                 }
             } else {
-                // Blocked. Are we standing on a door attempting to leave?
+                // Blocked. Are we standing on a door attempting to leave via the edge?
                 const currentCell = this.grid.getCell(this.player.x, this.player.y);
                 if (currentCell && currentCell.type.isDoor) {
-                    this.handleDoorTraversal(currentCell);
+                    // Only traverse if we are trying to move OUT OF BOUNDS
+                    // This prevents "walking into a wall" from triggering the door again
+                    const targetX = this.player.x + dx;
+                    const targetY = this.player.y + dy;
+                    const isOutOfBounds = targetX < 0 || targetX >= this.grid.width ||
+                        targetY < 0 || targetY >= this.grid.height;
+
+                    if (isOutOfBounds) {
+                        this.handleDoorTraversal(currentCell);
+                    }
                 }
             }
         }
@@ -1063,6 +1814,21 @@ export class Game {
     update(dt) {
         if (!dt) return;
 
+        // Ticket Wheel Interaction
+        if (this.gameState === 'PLAYING') {
+            const interactKey = this.settings.getBinding(ACTIONS.INTERACT);
+            const viewKey = this.settings.getBinding(ACTIONS.VIEW_ORDERS);
+
+            const isHoldingInteract = (this.keys && (this.keys[interactKey] || this.keys['Enter']));
+            const isHoldingView = (this.keys && this.keys[viewKey]);
+
+            if (isHoldingView) {
+                this.isViewingOrders = true;
+            } else {
+                this.isViewingOrders = false;
+            }
+        }
+
         // Floating Text Update
         this.floatingTexts = this.floatingTexts.filter(ft => ft.life > 0);
         this.floatingTexts.forEach(ft => {
@@ -1071,9 +1837,27 @@ export class Game {
 
         // Ticket Arrival Logic
         if (this.isDayActive) {
+            // Check for day completion (no more tickets to arrive AND no more active tickets AND no incoming ticket printing)
+            // Fix: Check !this.incomingTicket to prevent early trigger while last ticket is printing
+            if (this.ticketQueue.length === 0 && this.activeTickets.length === 0 && !this.incomingTicket && !this.queueFinishedTime) {
+                this.queueFinishedTime = Date.now();
+                this.audioSystem.setMuffled(true);
+                this.calculateDailyStars();
+            }
+
             // Ticket Arrival Logic
-            // Always increment arrival timer to maintain rhythm
-            this.ticketTimer += dt;
+            if (this.isPrepTime) {
+                this.prepTime -= dt / 1000;
+                if (this.prepTime <= 0) {
+                    this.isPrepTime = false;
+                    this.prepTime = 0;
+                    this.ticketTimer = 10000; // Force immediate first ticket
+                    console.log("Prep Time Over! Service starting...");
+                }
+            } else {
+                // Always increment arrival timer to maintain rhythm
+                this.ticketTimer += dt;
+            }
 
             // 1. Check if we can start a new print
             // We only dequeue if we aren't currently printing another one
@@ -1169,7 +1953,7 @@ export class Game {
                         const stageDef = item.definition.cooking.stages[currentStage];
 
                         if (stageDef) {
-                            item.state.cookingProgress += dt;
+                            item.state.cookingProgress = (item.state.cookingProgress || 0) + dt;
                             // Use time from definition, fallback to stove speed if defined (or combine?)
                             // For now, let's use the definition duration as primary if it exists.
                             const requiredTime = stageDef.duration || cell.state.cookingSpeed || 2000;
@@ -1187,11 +1971,40 @@ export class Game {
                 if (cell.type.id === 'FRYER' && cell.state) {
                     if (cell.state.status === 'down') {
                         cell.state.timer = (cell.state.timer || 0) + dt;
-                        const max = cell.state.cookingSpeed || 2000;
+
+                        let max = cell.state.cookingSpeed || 2000;
+                        // Synchronize with item cooking duration if active
+                        if (cell.object && cell.object.definition && cell.object.definition.cooking) {
+                            const stage = cell.object.state.cook_level || 'raw';
+                            const stageDef = cell.object.definition.cooking.stages[stage];
+                            if (stageDef && stageDef.duration) {
+                                max = stageDef.duration;
+                            }
+                        }
+
                         if (cell.state.timer >= max) {
                             cell.state.status = 'done';
                             cell.state.timer = 0;
                             console.log('Fries done!');
+                        }
+                    }
+
+                    // Cooking placed items (e.g. Chicken Patty)
+                    const item = cell.object;
+                    if (item && item.definition.cooking && item.definition.cooking.stages) {
+                        const currentStage = item.state.cook_level || 'raw';
+                        const stageDef = item.definition.cooking.stages[currentStage];
+
+                        if (stageDef && stageDef.cookMethod === 'fry') {
+                            item.state.cookingProgress = (item.state.cookingProgress || 0) + dt;
+                            // Use definition duration
+                            const requiredTime = stageDef.duration || 2000;
+
+                            if (item.state.cookingProgress >= requiredTime) {
+                                item.state.cook_level = stageDef.next;
+                                item.state.cookingProgress = 0;
+                                console.log(`Fryer Item cooked: ${item.definitionId} -> ${stageDef.next}`);
+                            }
                         }
                     }
                 }
@@ -1213,18 +2026,22 @@ export class Game {
                 if (cell.type.id === 'SERVICE' && cell.object && cell.object.definitionId === 'bag') {
                     if (this.activeTickets.length > 0) {
 
-                        // Try to satisfy ANY active ticket
-                        // We iterate to find a match
+                        // Ensure activeTicketIndex is valid
+                        if (this.activeTicketIndex === undefined || this.activeTicketIndex < 0) {
+                            this.activeTicketIndex = 0;
+                        }
+
+                        // Try to satisfy ONLY the ACTIVE ticket
                         let matchedTicketIndex = -1;
                         let matchResult = null;
 
-                        for (let i = 0; i < this.activeTickets.length; i++) {
-                            const t = this.activeTickets[i];
+                        // Check if active index is within bounds
+                        if (this.activeTicketIndex < this.activeTickets.length) {
+                            const t = this.activeTickets[this.activeTicketIndex];
                             const res = t.verifyBag(cell.object);
                             if (res.matched) {
-                                matchedTicketIndex = i;
+                                matchedTicketIndex = this.activeTicketIndex;
                                 matchResult = res;
-                                break;
                             }
                         }
 
@@ -1234,6 +2051,8 @@ export class Game {
 
                             // Reward
                             this.money += matchResult.payout;
+                            this.dailyMoneyEarned += matchResult.payout;
+                            this.dailyBagsSold++;
 
                             // Update Display
                             // We need to re-generate the orders display list
@@ -1271,20 +2090,50 @@ export class Game {
                                 }
 
                                 this.money += bonus;
+                                this.dailyMoneyEarned += bonus;
 
                                 this.addFloatingText(message + ` ($${bonus})`, x, y, color);
+
+                                // Bonus Time Logic: "whenever you complete an order, give half that order's par time as bounus time to tall pending orders"
+                                const bonusTime = par / 2;
+                                if (bonusTime > 0) {
+                                    // 1. Active Tickets (Excluding the one just finished)
+                                    this.activeTickets.forEach((t, i) => {
+                                        if (i !== matchedTicketIndex) {
+                                            t.elapsedTime -= bonusTime;
+                                        }
+                                    });
+
+                                    // 2. Incoming Ticket (Printing)
+                                    if (this.incomingTicket) {
+                                        this.incomingTicket.elapsedTime -= bonusTime;
+                                    }
+
+                                    // 3. Queued Tickets
+                                    this.ticketQueue.forEach(t => t.elapsedTime -= bonusTime);
+
+                                    console.log(`Bonus Time Awarded: ${bonusTime}s`);
+                                    this.addFloatingText(`Bonus: +${bonusTime}s`, x, y - 1, '#00ffff');
+                                }
 
                                 // Remove from active list
                                 this.activeTickets.splice(matchedTicketIndex, 1);
 
-                                // Check if Day is Done (No queue, no active)
+                                // Check if Day is Done (No queue, no active) - REMOVED AUTO END
+                                /*
                                 if (this.ticketQueue.length === 0 && this.activeTickets.length === 0) {
                                     // End Day Immediately
                                     setTimeout(() => {
                                         this.endDay();
                                     }, 1500);
                                 }
+                                */
+                                // Adjust active index if needed
+                                if (this.activeTicketIndex >= this.activeTickets.length) {
+                                    this.activeTicketIndex = 0;
+                                }
                             }
+                            // NOTE: If ticket is NOT complete, we do NOT remove it.
 
                             // Refresh orders view
                             this.orders = this.activeTickets.map(t => t.toDisplayFormat());
@@ -1294,17 +2143,51 @@ export class Game {
             }
         }
 
-        // Ticket Wheel Interaction Logic
-        this.isViewingOrders = false;
-        if (this.keys[this.settings.getBinding(ACTIONS.INTERACT)] && !this.editor.isActive) {
-            // Debug: check keys
-            // console.log('KeyE held');
-            const facingCell = this.player.getTargetCell(this.grid);
-            if (facingCell) {
-                // console.log('Facing:', facingCell.type.id);
+
+
+        // Dynamically update Office State (Door & Reno Tile)
+        this.updateOfficeState();
+    }
+
+    updateOfficeState() {
+        const hasActiveOrders = (this.activeTickets.length > 0) ||
+            (this.ticketQueue.length > 0) ||
+            (this.incomingTicket != null);
+
+        // 1. Office Door Logic: ALWAYS OPEN (User Request)
+        const mainRoom = this.rooms['main'];
+        if (mainRoom) {
+            let officeDoor = null;
+            // Scan for door (using ID to be safe or coordinates (6,1))
+            for (let y = 0; y < mainRoom.height; y++) {
+                for (let x = 0; x < mainRoom.width; x++) {
+                    const c = mainRoom.getCell(x, y);
+                    if (c.state && c.state.id === 'kitchen_office_door') {
+                        officeDoor = c;
+                        break;
+                    }
+                }
+                if (officeDoor) break;
             }
-            if (facingCell && facingCell.type.id === 'TICKET_WHEEL') {
-                this.isViewingOrders = true;
+
+            if (officeDoor) {
+                // Ensure it is always OPEN
+                if (officeDoor.type.id !== 'OFFICE_DOOR') {
+                    officeDoor.type = TILE_TYPES.OFFICE_DOOR;
+                }
+            }
+        }
+
+        // 2. Reno Tile Logic: Locked if active orders
+        const officeRoom = this.rooms['office'];
+        if (officeRoom) {
+            // Reno tile is at (1, 0) by default definition, but let's scan or check (1,0)
+            const cell = officeRoom.getCell(1, 0);
+            if (cell && (cell.type.id === 'RENO' || cell.type.id === 'RENO_LOCKED')) {
+                const desiredType = hasActiveOrders ? TILE_TYPES.RENO_LOCKED : TILE_TYPES.RENO;
+                if (cell.type.id !== desiredType.id) {
+                    cell.type = desiredType;
+                }
             }
         }
     }
@@ -1319,40 +2202,49 @@ export class Game {
                 this.renderer.renderTitleScreen(this.titleSelection);
             } else if (this.gameState === 'SETTINGS') {
                 this.renderer.renderSettingsMenu(this.settingsState, this.settings);
+            } else if (this.gameState === 'POST_DAY') {
+                this.postDaySystem.render(this.renderer.ctx, {
+                    moneyEarned: this.dailyMoneyEarned,
+                    bagsSold: this.dailyBagsSold,
+                    rent: SCORING_CONFIG.DAILY_RENT,
+                    netTotal: this.dailyMoneyEarned - SCORING_CONFIG.DAILY_RENT,
+                    starCount: this.dailyStarCount || 0,
+                    startTime: this.postDayStartTime || Date.now()
+                });
             } else if (this.gameState === 'ORDERING') {
-                this.renderer.renderOrderScreen({
+                if (!this.orderingStartTime) this.orderingStartTime = Date.now();
+                this.postDaySystem.render(this.renderer.ctx, {
                     money: this.money,
                     cart: this.cart,
-                    shopItems: this.shopItems, // Pass the full list instead of prices
+                    shopItems: this.shopItems,
                     selectedIndex: this.selectedOrderItemIndex,
                     dayNumber: this.dayNumber,
-                    stars: this.getStarCount()
+                    bagsSold: this.dailyBagsSold,
+                    moneyEarned: this.dailyMoneyEarned,
+                    rent: SCORING_CONFIG.DAILY_RENT,
+                    netTotal: this.dailyMoneyEarned - SCORING_CONFIG.DAILY_RENT,
+                    startTime: this.orderingStartTime
                 });
             } else if (this.gameState === 'BUILD_MODE') {
-                // Render Game underneath
+                // Special Render for Build Mode (hides player)
                 this.renderer.render({
                     grid: this.grid,
-                    player: null, // Don't show player during placement?
-                    // Or show player? Usually placement hides player or just locks them.
-                    // Request says: "display the kitchen with the new asset i made for you, 'assets/selector.png'. thats a curser"
-                    // So we probably render the grid normally.
-                    placementState: this.placementState // Pass this so HUD can draw
+                    player: null,
+                    placementState: this.placementState,
+                    gameState: this.gameState,
+                    shopItems: this.shopItems,
+                    money: this.money
                 });
-                // Render Cursor Overlay
                 this.renderer.renderPlacementCursor(this.placementState);
+                if (this.placementState.menu) {
+                    this.renderer.renderBuildMenu(this.placementState.menu);
+                }
             } else {
-                this.update(dt);
-                this.renderer.render({
-                    grid: this.grid,
-                    player: this.player,
-                    isViewingOrders: this.isViewingOrders,
-                    orders: this.orders,
-                    money: this.money,
-                    floatingTexts: this.floatingTexts,
-                    pickUpKey: this.settings.getBinding(ACTIONS.PICK_UP),
-                    penalty: this.activeTickets.length * 20,
-                    activeTickets: this.activeTickets
-                });
+                // Standard Game Render (PLAYING, and all Overlay Menus)
+                if (this.gameState === 'PLAYING') {
+                    this.update(dt);
+                }
+                this.renderer.render(this);
             }
         }
         requestAnimationFrame((t) => this.loop(t));
@@ -1373,7 +2265,9 @@ export class Game {
                 // Removed dayDuration
                 // Save Unlocks
                 unlockedItems: this.shopItems.filter(i => i.unlocked).map(i => i.id),
+                storage: this.storage,
                 earnedServiceStar: this.earnedServiceStar,
+                pendingOrders: this.pendingOrders,
                 rooms: {}
             };
 
@@ -1441,6 +2335,18 @@ export class Game {
                 });
             }
 
+            if (data.storage) {
+                this.storage = data.storage;
+            } else {
+                this.storage = {};
+            }
+
+            if (data.pendingOrders) {
+                this.pendingOrders = data.pendingOrders;
+            } else {
+                this.pendingOrders = [];
+            }
+
             if (typeof data.earnedServiceStar === 'boolean') {
                 this.earnedServiceStar = data.earnedServiceStar;
             }
@@ -1455,6 +2361,24 @@ export class Game {
         }
         return false;
     }
+    cycleActiveTicket() {
+        if (this.activeTickets.length <= 1) {
+            this.ticketWheelAnimStartTime = Date.now();
+            return;
+        }
+
+        // Just increment index instead of rotating array
+        this.activeTicketIndex++;
+        if (this.activeTicketIndex >= this.activeTickets.length) {
+            this.activeTicketIndex = 0;
+        }
+
+        console.log("Cycled active ticket index. Now pointing to:", this.activeTickets[this.activeTicketIndex].id);
+
+        // Trigger Animation
+        this.ticketWheelAnimStartTime = Date.now();
+    }
+
     addFloatingText(text, gridX, gridY, color = '#fff') {
         // Convert grid coords to pixel coords estimation or store grid coords and let renderer handle it
         // Renderer handles Grid -> Pixel if we pass it correctly. 
@@ -1466,5 +2390,15 @@ export class Game {
             color: color,
             life: 2.0 // seconds
         });
+    }
+
+    handleComputerInput(event) {
+        this.shopSystem.handleComputerInput(event);
+    }
+
+
+
+    handleRenoInput(event) {
+        this.shopSystem.handleRenoInput(event);
     }
 }

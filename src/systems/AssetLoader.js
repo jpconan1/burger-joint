@@ -62,10 +62,39 @@ export class AssetLoader {
 
     get(filename) {
         const asset = this.assets.get(filename);
-        if (!asset) {
-            console.warn(`Asset not found: ${filename}`);
-            return null;
+        if (asset) return asset;
+
+        // Lazy Load Fallback
+        // If we haven't tried to load this yet (and it's not explicitly failed/missing)
+        if (!this.failedAssets) this.failedAssets = new Set();
+        if (!this.pendingAssets) this.pendingAssets = new Set();
+
+        if (!this.failedAssets.has(filename) && !this.pendingAssets.has(filename)) {
+            console.log(`Lazy loading asset: ${filename}...`);
+            this.pendingAssets.add(filename);
+
+            // Determine type based on extension
+            if (filename.match(/\.(png|jpg|jpeg)$/i)) {
+                this.loadImage(filename).then(() => {
+                    this.pendingAssets.delete(filename);
+                    console.log(`Lazy loaded: ${filename}`);
+                }).catch(() => {
+                    this.pendingAssets.delete(filename);
+                    this.failedAssets.add(filename);
+                });
+            } else if (filename.match(/\.(wav|mp3|ogg)$/i)) {
+                this.loadAudio(filename).then(() => {
+                    this.pendingAssets.delete(filename);
+                    console.log(`Lazy loaded audio: ${filename}`);
+                }).catch(() => {
+                    this.pendingAssets.delete(filename);
+                    this.failedAssets.add(filename);
+                });
+            } else {
+                this.failedAssets.add(filename);
+            }
         }
-        return asset;
+
+        return null; // Return null while loading (will pop-in next frame)
     }
 }
