@@ -150,6 +150,14 @@ export class ShopSystem {
         const perBox = def ? (def.maxCount || 1) : 1;
         count += inCart * perBox;
 
+        // Add Pending Orders (Morning Delivery)
+        if (this.game.pendingOrders) {
+            const pending = this.game.pendingOrders.find(o => o.id === itemId);
+            if (pending) {
+                count += pending.qty * perBox;
+            }
+        }
+
         return count;
     }
 

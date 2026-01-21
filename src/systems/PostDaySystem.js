@@ -362,7 +362,11 @@ export class PostDaySystem {
 
                 let included = false;
                 if (isToppingSource(def)) {
-                    included = true;
+                    if (def.id === 'chicken_patty_box' && !hasFryer) {
+                        included = false;
+                    } else {
+                        included = true;
+                    }
                 } else if (hasFryer && isSideSource(def)) {
                     included = true;
                 } else if (hasFountain && isDrinkSource(def)) {

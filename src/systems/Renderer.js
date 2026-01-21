@@ -1442,6 +1442,7 @@ export class Renderer {
             let textureName = item.id + '-closed.png';
             // Specific overrides if needed (some assets might be named differently)
             if (item.id === 'bag_box') textureName = 'bag_box-closed.png';
+            if (item.id === 'insert') textureName = 'insert.png';
             // AssetLoader keys are derived from filenames visually in listing
             // bag_box-closed.png exists.
 
