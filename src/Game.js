@@ -36,7 +36,7 @@ export class Game {
         this.constructionSystem = new ConstructionSystem(this);
         this.menuSystem = new MenuSystem(this);
 
-        this.gameState = 'TITLE'; // TITLE, ORDERING, PLAYING, PLACEMENT, SETTINGS
+        this.gameState = 'TITLE'; // TITLE, PLAYING, PLACEMENT, SETTINGS
         this.titleSelection = 0; // 0: New Game, 1: Settings
         this.settingsState = {
             selectedIndex: 0,
@@ -527,6 +527,11 @@ export class Game {
 
         this.pendingOrders = []; // Clear pending orders on new game
 
+        this.queueFinishedTime = null;
+        this.ratingPopup.hide();
+        this.isDayActive = false;
+
+        this.postDaySystem.state = 'SUPPLY_ORDER';
         this.updateCapabilities();
     }
 
@@ -893,168 +898,33 @@ export class Game {
         this.saveLevel();
     }
 
-    handleOrderInput(event) {
-        if (event.code === 'Enter' || event.code === 'Space' || event.code === this.settings.getBinding(ACTIONS.INTERACT)) {
-            this.startDay();
-        }
-        return;
-        /*
-    
-        const items = this.shopItems;
-    
-        const moveSelection = (direction) => {
-            let nextIndex = this.selectedOrderItemIndex;
-            const count = items.length;
-            // Limit loop to avoid infinite loop if all locked (though essentials are always unlocked)
-            for (let i = 0; i < count; i++) {
-                nextIndex += direction;
-                if (nextIndex >= count) nextIndex = 0;
-                if (nextIndex < 0) nextIndex = count - 1;
-    
-                if (items[nextIndex].unlocked) {
-                    this.selectedOrderItemIndex = nextIndex;
-                    return;
-                }
-            }
-        };
-    
-        if (event.code === 'ArrowUp' || event.code === this.settings.getBinding(ACTIONS.MOVE_UP)) {
-            moveSelection(-1);
-        } else if (event.code === 'ArrowDown' || event.code === this.settings.getBinding(ACTIONS.MOVE_DOWN)) {
-            moveSelection(1);
-        }
-    
-        const currentItem = items[this.selectedOrderItemIndex];
-    
-        if (currentItem.locked || !currentItem.unlocked) {
-            // Cannot modify locked items
-            // Maybe skip selection? For now just return if user tries to interact
-            // But we should allow confirming the order even if we are on a locked item?
-        }
-    
-        const currentQty = this.cart[currentItem.id] || 0;
-    
-        // Count just supplies for the fridge limit
-        // Count just supplies for the fridge/office limit
-        let emptyCounters = 0;
-        ['fridge', 'office'].forEach(roomId => {
-            const room = this.rooms[roomId];
-            if (room) {
-                for (let y = 0; y < room.height; y++) {
-                    for (let x = 0; x < room.width; x++) {
-                        const c = room.getCell(x, y);
-                        // Check for empty counters (including Office Door acting as counter/walkable if we want? No, explicitly counters)
-                        // Note: Office is ringed by counters.
-                        if (c.type.id === 'COUNTER' && !c.object) {
-                            emptyCounters++;
-                        }
-                    }
-                }
-            }
-        });
-    
-        const totalSuppliesInCart = this.shopItems
-            .filter(i => i.type === 'supply')
-            .reduce((sum, i) => sum + (this.cart[i.id] || 0), 0);
-    
-        // Adjust Quantity / Buy Appliance
-        if (event.code === 'ArrowRight' || event.code === this.settings.getBinding(ACTIONS.MOVE_RIGHT)) {
-            if (currentItem.unlocked) {
-                if (currentItem.type === 'supply') {
-                    if (totalSuppliesInCart < emptyCounters) {
-                        this.cart[currentItem.id]++;
-                    }
-                } else if (currentItem.type === 'appliance') {
-                    // Appliances are boolean? Or just buy and place immediately.
-                    // User says: "selecting the button and spends the money, display the kitchen..."
-                    // So we treat it as an action button, not a quantity increment.
-                    // But if we use Space/Enter to activate?
-                    // Let's assume ArrowRight doesn't do anything for appliances, or maybe it toggles '1' if we want to confirm later?
-                    // Prompt says: "after the user selects the button and spends the money".
-                    // This implies pressing Enter on it.
-                }
-            }
-        } else if (event.code === 'ArrowLeft' || event.code === this.settings.getBinding(ACTIONS.MOVE_LEFT)) {
-            if (currentQty > 0 && currentItem.type === 'supply') {
-                this.cart[currentItem.id]--;
-            }
-        }
-    
-        // Confirm / Action
-        if (event.code === 'Enter') {
-            if (currentItem.id === 'continue') {
-                // Confirm Order (Supplies)
-                // Calculate Total Cost
-                let totalCost = 0;
-                let essentialCost = 0;
-    
-                for (const item of this.shopItems) {
-                    if (item.type === 'supply') {
-                        const qty = (this.cart[item.id] || 0);
-                        const cost = qty * item.price;
-                        totalCost += cost;
-                        if (item.isEssential) {
-                            essentialCost += cost;
-                        }
-                    }
-                }
-    
-                // Logic: We must be able to afford the NON-ESSENTIAL items with current money.
-                // The ESSENTIAL items can be bought with debt (or existing money).
-                const nonEssentialCost = totalCost - essentialCost;
-    
-                const fundsAvailableForNonEssentials = Math.max(0, this.money);
-    
-                // Day 0: Essentials Check
-                if (this.dayNumber === 0) {
-                    const missingEssentials = this.shopItems
-                        .filter(i => i.isEssential)
-                        .some(i => (this.cart[i.id] || 0) === 0);
-    
-                    if (missingEssentials) {
-                        console.log("Cannot start day: Missing essential items!");
-                        return; // Prevent start
-                    }
-                }
-    
-                if (fundsAvailableForNonEssentials >= nonEssentialCost) {
-                    this.money -= totalCost;
-                    this.startDay();
-                } else {
-                    console.log("Not enough money! (Cannot cover non-essential items)");
-                    // Optional: Visual feedback for not enough money
-                }
-                } else if (currentItem.type === 'action' && currentItem.unlocked) {
-                if (currentItem.id === 'expansion') {
-                    if (this.money >= currentItem.price) {
-                        this.money -= currentItem.price;
-                        this.expandKitchen();
-                        currentItem.price *= 2; // Increase price for next time
-                    } else {
-                        console.log("Not enough money for expansion");
-                    }
-                } else if (currentItem.id === 'build_mode') {
-                    this.enterBuildMode();
-                }
-            } else if (currentItem.type === 'appliance' && currentItem.unlocked) {
-                // Enter Build Mode
-                this.startPlacement(currentItem);
-            }
-        }
-        */
-    }
+
+
 
     handleBuildModeInput(event) {
         this.constructionSystem.handleInput(event);
     }
 
     handleMenuInput(event) {
-        const consumed = this.menuSystem.handleInput(event, this.settings);
-        if (consumed) return;
+        const result = this.menuSystem.handleInput(event, this.settings);
+        // Linear "NEXT" flow disabled for Hub-based navigation
+        /*
+        if (result === 'NEXT') {
+            if (this.gameState === 'MENU_CUSTOM') {
+                this.gameState = 'COMPUTER_ORDERING';
+                this.shopSystem.selectedComputerItemId = null;
+            }
+            return;
+        }
+        */
+        if (result) return;
 
         if (event.code === 'Escape') {
-            this.gameState = 'PLAYING';
-            // Optional: this.menuSystem.close() if needed
+            if (this.isDayActive) {
+                this.gameState = 'PLAYING';
+            } else {
+                this.gameState = 'POST_DAY';
+            }
             return;
         }
     }
@@ -1540,7 +1410,8 @@ export class Game {
                 if (this.titleSelection === 0) {
                     // New Game
                     this.startNewGame();
-                    this.gameState = 'ORDERING';
+                    this.startDay();
+                    this.gameState = 'PLAYING';
                 } else if (this.titleSelection === 1) {
                     // Settings
                     this.gameState = 'SETTINGS';
@@ -1619,10 +1490,7 @@ export class Game {
             return;
         }
 
-        if (this.gameState === 'ORDERING') {
-            this.handleOrderInput(event);
-            return;
-        }
+
 
         if (this.gameState === 'DAY_SUMMARY') {
             // Handle Rating Popup Input
@@ -1654,10 +1522,7 @@ export class Game {
             return;
         }
 
-        if (this.gameState === 'ORDERING') {
-            this.handleOrderInput(event);
-            return;
-        }
+
 
         if (this.gameState === 'COMPUTER_ORDERING') {
             this.handleComputerInput(event);
@@ -2265,20 +2130,7 @@ export class Game {
                     starCount: this.dailyStarCount || 0,
                     startTime: this.postDayStartTime || Date.now()
                 });
-            } else if (this.gameState === 'ORDERING') {
-                if (!this.orderingStartTime) this.orderingStartTime = Date.now();
-                this.postDaySystem.render(this.renderer.ctx, {
-                    money: this.money,
-                    cart: this.cart,
-                    shopItems: this.shopItems,
-                    selectedIndex: this.selectedOrderItemIndex,
-                    dayNumber: this.dayNumber,
-                    bagsSold: this.dailyBagsSold,
-                    moneyEarned: this.dailyMoneyEarned,
-                    rent: 0,
-                    netTotal: this.dailyMoneyEarned,
-                    startTime: this.orderingStartTime
-                });
+
             } else if (this.gameState === 'BUILD_MODE') {
                 // Special Render for Build Mode (hides player)
                 this.renderer.render({
@@ -2448,7 +2300,10 @@ export class Game {
     }
 
     handleComputerInput(event) {
-        this.shopSystem.handleComputerInput(event);
+        const result = this.shopSystem.handleComputerInput(event);
+        if (result === 'START_DAY') {
+            this.startDay();
+        }
     }
 
 

@@ -24,7 +24,12 @@ export class ShopSystem {
         let selectedIndex = computerItems.findIndex(i => i.id === (this.selectedComputerItemId || computerItems[0].id));
         if (selectedIndex === -1) selectedIndex = 0;
 
-        if (event.code === 'ArrowRight' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_RIGHT)) selectedIndex++;
+        if (event.code === 'ArrowRight' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_RIGHT)) {
+            if (selectedIndex % cols === (cols - 1)) {
+                return 'START_DAY';
+            }
+            selectedIndex++;
+        }
         if (event.code === 'ArrowLeft' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_LEFT)) selectedIndex--;
         if (event.code === 'ArrowDown' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_DOWN)) selectedIndex += cols;
         if (event.code === 'ArrowUp' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_UP)) selectedIndex -= cols;
@@ -109,7 +114,11 @@ export class ShopSystem {
         }
 
         if (event.code === 'Escape') {
-            this.game.gameState = 'PLAYING';
+            if (this.game.isDayActive) {
+                this.game.gameState = 'PLAYING';
+            } else {
+                this.game.gameState = 'POST_DAY';
+            }
         }
     }
 

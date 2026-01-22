@@ -1555,6 +1555,23 @@ export class Renderer {
         this.ctx.textAlign = 'center';
         this.ctx.fillText("ARROWS to Navigate  |  ENTER to Order  |  ESC to Exit", this.canvas.width / 2, this.canvas.height - 40);
 
+        // Draw START DAY Arrow (Right Side)
+        if (gameState.gameState === 'COMPUTER_ORDERING') {
+            const arrowImg = this.assetLoader.get(ASSETS.UI.GREEN_ARROW);
+            if (arrowImg) {
+                const arrowSize = 64;
+                const arrowX = startX + gridW + 40;
+                const arrowY = this.canvas.height / 2;
+
+                this.ctx.drawImage(arrowImg, arrowX - arrowSize / 2, arrowY - arrowSize / 2, arrowSize, arrowSize);
+
+                this.ctx.fillStyle = '#fff';
+                this.ctx.font = 'bold 16px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText("START DAY >", arrowX, arrowY + arrowSize / 2 + 20);
+            }
+        }
+
         this.ctx.restore();
     }
 

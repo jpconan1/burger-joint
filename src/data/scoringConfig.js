@@ -2,11 +2,11 @@ export const SCORING_CONFIG = {
     // Time added to the "Par Time" for each component (in seconds)
     DAILY_RENT: 100,
     PAR_TIMES: {
-        burger: 30,
-        sliced_topping: 15,
-        sauce: 12,
-        side: 25,
-        drink: 15
+        burger: 15,
+        sliced_topping: 7,
+        sauce: 6,
+        side: 15,
+        drink: 7
     },
 
     // Thresholds (Seconds faster than Par)

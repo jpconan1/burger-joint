@@ -376,6 +376,8 @@ export class MenuSystem {
 
             } else if (this.expandedSlotIndex === null || this.expandedSlotIndex === undefined) {
                 // --- MAIN MENU NAVIGATION ---
+                const isPostDay = (this.game.gameState === 'MENU_CUSTOM');
+
                 if (code === 'KeyA' || code === 'ArrowLeft') {
                     if (this.selectedButtonIndex === 4) {
                         // Sides -> nothing (or loop?)
@@ -390,6 +392,9 @@ export class MenuSystem {
                     } else if (this.selectedButtonIndex === 5) {
                         // Drinks -> nothing
                     } else {
+                        if (this.selectedButtonIndex === 3 && isPostDay) {
+                            return 'NEXT';
+                        }
                         this.selectedButtonIndex = Math.min(3, this.selectedButtonIndex + 1);
                     }
                 } else if (code === 'KeyS' || code === 'ArrowDown') {
@@ -400,6 +405,9 @@ export class MenuSystem {
                         } else {
                             this.selectedButtonIndex = 5; // Right half -> Drinks
                         }
+                    } else if (this.selectedButtonIndex === 5 && isPostDay) {
+                        // Drinks -> Next
+                        return 'NEXT';
                     }
                 } else if (code === 'KeyW' || code === 'ArrowUp') {
                     // Move to Row 0 (Burgers)
@@ -789,10 +797,35 @@ export class MenuSystem {
 
             this.renderNamingOverlay(renderer);
 
+            // Draw Next Arrow if in Post Day flow
+            if (this.game.gameState === 'MENU_CUSTOM') {
+                this.renderNextArrow(renderer, layout);
+            }
+
 
         } catch (e) {
             console.error("MenuSystem render error:", e);
         }
+    }
+
+    renderNextArrow(renderer, layout) {
+        const ctx = renderer.ctx;
+        const { x, bg, y } = layout;
+        const arrowX = x + bg.width + 40;
+        const arrowY = y + bg.height / 2;
+
+        const arrowImg = this.game.assetLoader.get(ASSETS.UI.GREEN_ARROW);
+        const size = 64;
+
+        if (arrowImg) {
+            ctx.drawImage(arrowImg, arrowX - size / 2, arrowY - size / 2, size, size);
+        }
+
+        // Draw hint
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 16px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText("NEXT >", arrowX, arrowY + size / 2 + 20);
     }
 
     renderBackground(renderer) {
