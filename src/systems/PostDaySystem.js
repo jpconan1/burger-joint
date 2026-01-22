@@ -38,7 +38,7 @@ export class PostDaySystem {
     }
 
     start() {
-        this.state = 'REPORT';
+        this.state = 'REWARDS';
         this.selectedRewardIndex = 0;
         this.selectedOptionIndex = 0;
         this.rewardOptions = [];
@@ -79,21 +79,12 @@ export class PostDaySystem {
         }
 
         switch (this.state) {
-            case 'REPORT': return this.handleReportInput(inputs);
             case 'REWARDS': return this.handleRewardsInput(inputs);
             case 'ITEM_SELECTION': return this.handleItemSelectionInput(inputs);
             case 'MENU_EDIT': return this.handleMenuEditInput(inputs);
             case 'SUPPLY_ORDER': return this.handleSupplyOrderInput(inputs);
             default: return 'CONTINUE';
         }
-    }
-
-    handleReportInput({ isInteract }) {
-        if (isInteract) {
-            this.state = 'REWARDS';
-            return 'CONTINUE';
-        }
-        return 'CONTINUE';
     }
 
     handleRewardsInput({ isInteract, isUp, isDown }) {
@@ -280,7 +271,17 @@ export class PostDaySystem {
                 this.game.startDay();
                 return 'DONE';
             }
-        } else {
+        }
+
+        // Prevent ShopSystem from hijacking Escape and resetting state to PLAYING
+        // Check AFTER arrow logic to prioritize "Next" button interaction if keybinds overlap
+        if (event.code === 'Escape') {
+            this.state = 'MENU_EDIT';
+            this.arrowSelected = false;
+            return 'CONTINUE';
+        }
+
+        if (!this.arrowSelected) {
             // Check if assume Right Edge of Grid
             // Shop grid is 4 columns.
             const ss = this.game.shopSystem;
@@ -518,9 +519,7 @@ export class PostDaySystem {
             }
         }
 
-        if (this.state === 'REPORT') {
-            this.renderReport(ctx, data, centerX, centerY, elapsed);
-        } else if (this.state === 'REWARDS') {
+        if (this.state === 'REWARDS') {
             this.renderRewards(ctx, centerX, centerY);
         } else if (this.state === 'ITEM_SELECTION') {
             this.renderItemSelection(ctx, centerX, centerY);
@@ -574,93 +573,6 @@ export class PostDaySystem {
             ctx.fillStyle = '#fff';
             ctx.textAlign = 'center';
             ctx.fillText("NEXT", x, y);
-        }
-    }
-
-    renderReport(ctx, data, centerX, centerY, elapsed) {
-        // Title
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 48px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText("Daily Financial Report", centerX, centerY - 200);
-
-        // Line Configuration
-        const lineHeight = 60;
-        const startY = centerY - 100;
-
-        // Render Helper
-        const renderLine = (index, label, value, color) => {
-            const appearTime = (index + 1) * 750; // Staggered animation
-            if (elapsed < appearTime) return;
-
-            const y = startY + index * lineHeight;
-
-            ctx.textAlign = 'left';
-            ctx.font = '32px Arial';
-
-            // Label
-            ctx.fillStyle = '#aaa';
-            ctx.fillText(label, centerX - 200, y);
-
-            // Value
-            ctx.textAlign = 'right';
-            ctx.fillStyle = color;
-            ctx.fillText(value, centerX + 200, y);
-        };
-
-        // 1. Bags Sold
-        renderLine(0, "Bags Sold:", data.bagsSold, '#fff');
-
-        // 2. Money Earned
-        renderLine(1, "Money Earned:", `$${data.moneyEarned}`, '#2ecc71'); // Green
-
-        // 3. Rent
-        renderLine(2, "Rent:", `-$${data.rent}`, '#e74c3c'); // Red
-
-        // 4. Net Total
-        const netColor = data.netTotal >= 0 ? '#2ecc71' : '#e74c3c';
-        renderLine(3, "Net Profit:", `$${data.netTotal}`, netColor);
-
-        // 5. Star Rating
-        if (elapsed > 3200) {
-            const starCount = data.starCount || 0;
-            const starSize = 48;
-            const starSpacing = 16;
-            const totalW = 5 * starSize + 4 * starSpacing;
-            let sx = centerX - totalW / 2;
-            const sy = startY + 4 * lineHeight + 20; // Below Net Profit
-
-            const filledStar = this.game.assetLoader.get(ASSETS.UI.STAR_FILLED);
-            const emptyStar = this.game.assetLoader.get(ASSETS.UI.STAR_EMPTY);
-
-            // Draw "Rating" Text (Optional, but looks nice)
-            // ctx.fillStyle = '#fff';
-            // ctx.font = '24px Arial';
-            // ctx.textAlign = 'center';
-            // ctx.fillText("Service Rating", centerX, sy - 10);
-
-            for (let i = 0; i < 5; i++) {
-                const img = (i < starCount) ? filledStar : emptyStar;
-                if (img) {
-                    // Add a little pop in animation? 
-                    // simple draw for now
-                    ctx.drawImage(img, sx, sy, starSize, starSize);
-                }
-                sx += starSize + starSpacing;
-            }
-        }
-
-
-        // Interaction Prompt (Wait for all animations)
-        if (elapsed > 3000) {
-            ctx.fillStyle = '#ccc';
-            ctx.font = '16px Arial';
-            ctx.textAlign = 'center';
-
-            // Blinking effect
-            if (Math.floor(Date.now() / 500) % 2 === 0) {
-                ctx.fillText("- Press INTERACT/ENTER to Continue -", centerX, ctx.canvas.height - 40);
-            }
         }
     }
 

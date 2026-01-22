@@ -1103,6 +1103,11 @@ export class Renderer {
             const vKey = getBind('VIEW_ORDERS');
 
             this.ctx.fillText(`MOVE: WASD | INTERACT: ${iKey} | PICK UP: ${pKey} | SHOW TICKET: ${vKey}`, centerX, y);
+
+            // Day Counter
+            this.ctx.font = 'bold 16px Monospace';
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.fillText(`Day ${gameState.dayNumber}`, centerX, y + 25);
         }
 
         this.ctx.restore();

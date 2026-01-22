@@ -1408,7 +1408,35 @@ export class Game {
         this.dailyMoneyEarned = 0;
         this.dailyBagsSold = 0;
 
+        // Ensure player is in Main Room (Kitchen) to start the day
+        if (this.currentRoomId !== 'main') {
+            console.log("Resetting player to Main Room for start of day.");
+            this.currentRoomId = 'main';
+            this.grid = this.rooms['main'];
+            this.player.x = 2; // Center-ish
+            this.player.y = 1;
+            this.saveLevel();
+        }
+
         console.log(`Starting Day with Prep Time: ${this.prepTime}s (Complexity: ${complexity})`);
+    }
+
+    onClosingTime() {
+        console.log('Restaurant Closing (Queue Finished).');
+        this.queueFinishedTime = Date.now();
+        this.audioSystem.setMuffled(true);
+        this.isDayActive = false; // Stop timers
+
+        // Calculate Final Stats
+        const starCount = this.calculateDailyStars();
+
+        // Update Persistent Stats
+        if (this.dayNumber > 0) {
+            this.earnedServiceStar = this.currentDayPerfect;
+        }
+
+        // Show Rating Popup
+        this.ratingPopup.show(starCount, this.dailyStarBreakdown);
     }
 
     calculateDailyStars() {
@@ -1446,62 +1474,41 @@ export class Game {
         this.dailyStarBreakdown = breakdown;
         console.log(`calculated Daily Stars: ${starCount}`, breakdown);
 
-        // Trigger Popup
-        this.ratingPopup.show(starCount, breakdown);
-
         return starCount;
     }
 
+    // Called when player exits the door
     endDay() {
-        console.log('Day Over.');
-
-        // Check for unfinished work
-        if (this.ticketQueue.length > 0 || this.activeTickets.length > 0) {
-            this.currentDayPerfect = false;
+        // Ensure we can only end day if service is finished
+        if (this.isDayActive && !this.queueFinishedTime) {
+            this.addFloatingText("Finish Service First!", this.player.x, this.player.y, '#ff0000');
+            return;
         }
 
-        // Update Service Star Status
-        // Note: checking dayNumber > 0 to ensure we don't award it before first play, 
-        // though logically if we start perfect it might be fine. 
-        // But usually "previous service" implies we must have played one.
-        if (this.dayNumber > 0) {
-            this.earnedServiceStar = this.currentDayPerfect;
-        }
+        console.log('Transitioning to Post-Day...');
 
-        // Calculate Daily Stars
-        const starCount = this.calculateDailyStars();
-        console.log(`Daily Star Count: ${starCount} (Perfect: ${this.currentDayPerfect}, Sides: ${this.menuSystem.sides.length}, Drinks: ${this.menuSystem.drinks.length})`);
-
-        this.isDayActive = false;
-        this.isDayActive = false;
         this.gameState = 'POST_DAY';
-        this.postDayStartTime = Date.now();
         this.postDaySystem.start();
+        this.postDayStartTime = Date.now();
 
-        // Robust Cart Reset
+        // Robust Cart Reset / Cleanup
         this.ticketQueue = [];
         this.activeTickets = [];
         this.incomingTicket = null;
-        // Do NOT clear cart here; persist computer orders for the next day/summary screen
-        // this.shopItems.forEach(item => this.cart[item.id] = 0);
 
-        // Force player back to kitchen if in fridge or office
+        // Force player back to kitchen if in fridge or office (Reset position for next day start, or visual consistency)
         if (this.currentRoomId === 'fridge' || this.currentRoomId === 'office') {
             this.currentRoomId = 'main';
             this.grid = this.rooms['main'];
             this.player.x = 1;
-            this.player.y = 1; // In front of shutter (ish? Default reset point)
+            this.player.y = 1;
             this.saveLevel();
         }
 
         // Save progression
         this.saveLevel();
         this.audioSystem.setMuffled(true);
-
-        // Deduct Rent
-        const rent = SCORING_CONFIG.DAILY_RENT;
-        this.money -= rent;
-        console.log(`End of Day. Rent paid: $${rent}. Remaining Money: $${this.money}`);
+        console.log(`End of Day. Remaining Money: $${this.money}`);
     }
 
 
@@ -1614,6 +1621,28 @@ export class Game {
 
         if (this.gameState === 'ORDERING') {
             this.handleOrderInput(event);
+            return;
+        }
+
+        if (this.gameState === 'DAY_SUMMARY') {
+            // Handle Rating Popup Input
+            if (this.ratingPopup.isVisible) {
+                const consumed = this.ratingPopup.handleInput(event, this.settings, ACTIONS);
+
+                // If popup just closed (consumed input and is no longer visible)
+                if (!this.ratingPopup.isVisible) {
+                    console.log(`[Game] Rating Popup dismissed. Transitioning to POST_DAY.`);
+                    this.gameState = 'POST_DAY';
+                    this.postDayStartTime = Date.now();
+                    this.postDaySystem.start();
+                }
+                return;
+            } else {
+                // Safety catch
+                this.gameState = 'POST_DAY';
+                this.postDayStartTime = Date.now();
+                this.postDaySystem.start();
+            }
             return;
         }
 
@@ -1861,10 +1890,10 @@ export class Game {
         if (this.isDayActive) {
             // Check for day completion (no more tickets to arrive AND no more active tickets AND no incoming ticket printing)
             // Fix: Check !this.incomingTicket to prevent early trigger while last ticket is printing
+            // Check for day completion (no more tickets to arrive AND no more active tickets AND no incoming ticket printing)
+            // Fix: Check !this.incomingTicket to prevent early trigger while last ticket is printing
             if (this.ticketQueue.length === 0 && this.activeTickets.length === 0 && !this.incomingTicket && !this.queueFinishedTime) {
-                this.queueFinishedTime = Date.now();
-                this.audioSystem.setMuffled(true);
-                this.calculateDailyStars();
+                this.onClosingTime();
             }
 
             // Ticket Arrival Logic
@@ -2224,12 +2253,15 @@ export class Game {
                 this.renderer.renderTitleScreen(this.titleSelection);
             } else if (this.gameState === 'SETTINGS') {
                 this.renderer.renderSettingsMenu(this.settingsState, this.settings);
+            } else if (this.gameState === 'DAY_SUMMARY') {
+                // Render the game world in background, then the popup over it (via Renderer.render logic)
+                this.renderer.render(this);
             } else if (this.gameState === 'POST_DAY') {
                 this.postDaySystem.render(this.renderer.ctx, {
                     moneyEarned: this.dailyMoneyEarned,
                     bagsSold: this.dailyBagsSold,
-                    rent: SCORING_CONFIG.DAILY_RENT,
-                    netTotal: this.dailyMoneyEarned - SCORING_CONFIG.DAILY_RENT,
+                    rent: 0,
+                    netTotal: this.dailyMoneyEarned,
                     starCount: this.dailyStarCount || 0,
                     startTime: this.postDayStartTime || Date.now()
                 });
@@ -2243,8 +2275,8 @@ export class Game {
                     dayNumber: this.dayNumber,
                     bagsSold: this.dailyBagsSold,
                     moneyEarned: this.dailyMoneyEarned,
-                    rent: SCORING_CONFIG.DAILY_RENT,
-                    netTotal: this.dailyMoneyEarned - SCORING_CONFIG.DAILY_RENT,
+                    rent: 0,
+                    netTotal: this.dailyMoneyEarned,
                     startTime: this.orderingStartTime
                 });
             } else if (this.gameState === 'BUILD_MODE') {
@@ -2255,7 +2287,8 @@ export class Game {
                     placementState: this.placementState,
                     gameState: this.gameState,
                     shopItems: this.shopItems,
-                    money: this.money
+                    money: this.money,
+                    dayNumber: this.dayNumber
                 });
                 this.renderer.renderPlacementCursor(this.placementState);
                 if (this.placementState.menu) {
