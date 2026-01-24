@@ -20,6 +20,7 @@
                     "cook_level": "raw",
                     "cookingProgress": 0
                 },
+                "cookingTexture": "stovetop-patty-part.png",
                 "cooking": {
                     "stages": {
                         "raw": {
@@ -1044,6 +1045,7 @@
                     "cook_level": "raw",
                     "cookingProgress": 0
                 },
+                "cookingTexture": "stovetop-bacon-part.png",
                 "cooking": {
                     "stages": {
                         "raw": {

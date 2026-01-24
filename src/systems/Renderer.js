@@ -101,7 +101,7 @@ export class Renderer {
                         }
                     }
                 }
-                if (cell.type.id === 'STOVE' && cell.state.isOn) {
+                if (cell.type.id === 'STOVE') {
                     tileTexture = ASSETS.TILES.STOVE_ON;
                 }
 
@@ -147,7 +147,14 @@ export class Renderer {
                             bagTexture = DEFINITIONS[cell.state.bagId].texture;
                         }
 
-                        this.drawTile(bagTexture, x, y);
+                        const bagImg = this.assetLoader.get(bagTexture);
+                        if (bagImg) {
+                            // Scaled down 40% (0.6 scale), nudged 8 pixels left, 5 pixels down
+                            const scale = 0.6;
+                            const size = TILE_SIZE * scale;
+                            const offset = (TILE_SIZE - size) / 2;
+                            this.ctx.drawImage(bagImg, x * TILE_SIZE + offset - 8, y * TILE_SIZE + offset + 5, size, size);
+                        }
 
                         // 2. Select Overlay based on charges
                         const charges = cell.state.charges;
@@ -306,11 +313,20 @@ export class Renderer {
                     }
 
                     if (!isFrying) {
-                        this.drawObject(cell.object, x, y);
+                        let overrideTexture = null;
+                        // Check for Stove Cooking Texture Override
+                        if (cell.type.id === 'STOVE' && cell.object && cell.object.definition.cookingTexture) {
+                            // Only use override if currently "raw" (cooking process uses this state)
+                            // If cooked, it usually switches to 'patty-cooked.png' via internal rules
+                            if (cell.object.state.cook_level === 'raw') {
+                                overrideTexture = cell.object.definition.cookingTexture;
+                            }
+                        }
+                        this.drawObject(cell.object, x, y, overrideTexture);
                     }
 
                     // Cooking Progress Bar (Stove)
-                    if (cell.type.id === 'STOVE' && cell.state.isOn) {
+                    if (cell.type.id === 'STOVE') {
                         const item = cell.object;
                         if (item.state && item.state.cookingProgress > 0 && item.state.cook_level === 'raw') {
                             let max = cell.state.cookingSpeed || 2000;
@@ -512,7 +528,7 @@ export class Renderer {
         }
     }
 
-    drawObject(object, x, y) {
+    drawObject(object, x, y, overrideTexture = null) {
         if (!object) return;
 
         // Dynamic Burger Rendering
@@ -532,7 +548,7 @@ export class Renderer {
             return;
         }
 
-        const textureName = object.texture;
+        const textureName = overrideTexture || object.texture;
         if (!textureName) return;
         const img = this.assetLoader.get(textureName);
         if (img) {

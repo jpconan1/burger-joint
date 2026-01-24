@@ -21,7 +21,6 @@ export const ASSETS = {
         DISPENSER_PARTIAL2: 'dispenser-partial2.png', // Overlay
         FRYER: 'fryer.png',
         FRYER_FRIES: 'fryer-fries.png',
-        FRYER_DOWN: 'fryer-fries-down.png',
         FRYER_BASKET_DOWN: 'fryer-down.png',
         SODA_FOUNTAIN_EMPTY: 'soda_fountain-empty.png',
         SODA_FOUNTAIN_FULL: 'soda_fountain-full.png',
@@ -72,6 +71,8 @@ export const ASSETS = {
 
 
         PATTY_RAW: 'patty-raw.png',
+        STOVETOP_PATTY_PART: 'stovetop-patty-part.png',
+        STOVETOP_BACON_PART: 'stovetop-bacon-part.png',
         PATTY_COOKED: 'patty-cooked.png',
         PATTY_PART: 'beef_patty-part.png',
         WRAPPER: 'wrapper.png',

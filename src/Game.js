@@ -719,7 +719,7 @@ export class Game {
         // 3. Ticket Wheel -> Under Printer (0,1)
         // 4. Service Counter -> Under Ticket Wheel (0,2)
 
-        const width = 7;
+        const width = 8;
         const height = 4;
         const grid = new Grid(width, height);
 
@@ -737,11 +737,12 @@ export class Game {
         };
 
         // Rest of Row 0
-        grid.setTileType(2, 0, TILE_TYPES.CUTTING_BOARD);
-        grid.setTileType(3, 0, TILE_TYPES.COUNTER);
-        grid.setTileType(4, 0, TILE_TYPES.STOVE);
-        grid.setTileType(5, 0, TILE_TYPES.COUNTER);
-        grid.setTileType(6, 0, TILE_TYPES.WALL);
+        grid.setTileType(2, 0, TILE_TYPES.STOVE);
+        grid.setTileType(3, 0, TILE_TYPES.FRYER);
+        grid.setTileType(4, 0, TILE_TYPES.DISPENSER);
+        grid.setTileType(5, 0, TILE_TYPES.CUTTING_BOARD);
+        grid.setTileType(6, 0, TILE_TYPES.COUNTER); // New Column: Counter
+        grid.setTileType(width - 1, 0, TILE_TYPES.WALL);
 
         // Row 1 (Middle 1)
         grid.setTileType(0, 1, TILE_TYPES.TICKET_WHEEL); // Under Printer
@@ -749,10 +750,9 @@ export class Game {
         for (let x = 1; x < width - 1; x++) {
             grid.setTileType(x, 1, TILE_TYPES.FLOOR);
         }
-        // grid.setTileType(6, 1, TILE_TYPES.COUNTER); // Right Edge (Original)
-        // (6, 1) Office Door
-        grid.setTileType(6, 1, TILE_TYPES.OFFICE_DOOR);
-        grid.getCell(6, 1).state = {
+        // Right Edge
+        grid.setTileType(width - 1, 1, TILE_TYPES.OFFICE_DOOR);
+        grid.getCell(width - 1, 1).state = {
             id: 'kitchen_office_door',
             targetRoom: 'office',
             targetDoorId: 'office_exit',
@@ -765,16 +765,21 @@ export class Game {
         for (let x = 1; x < width - 1; x++) {
             grid.setTileType(x, 2, TILE_TYPES.FLOOR);
         }
-        grid.setTileType(6, 2, TILE_TYPES.GARBAGE); // Right Edge (Second from bottom)
+        grid.setTileType(width - 1, 2, TILE_TYPES.GARBAGE); // Right Edge (Second from bottom)
 
         // Row 3 (Bottom)
         grid.setTileType(0, 3, TILE_TYPES.WALL);
-        // Fill bottom with Counters
-        for (let x = 1; x < width - 1; x++) {
+
+        // (1,3) Soda Fountain
+        grid.setTileType(1, 3, TILE_TYPES.SODA_FOUNTAIN);
+        grid.getCell(1, 3).state.facing = 0; // Normal orientation
+
+        // Fill rest of bottom with Counters
+        for (let x = 2; x < width - 1; x++) {
             grid.setTileType(x, 3, TILE_TYPES.COUNTER);
             grid.getCell(x, 3).state.facing = 2; // Face UP (towards center)
         }
-        grid.setTileType(6, 3, TILE_TYPES.WALL);
+        grid.setTileType(width - 1, 3, TILE_TYPES.WALL);
 
         return grid;
     }
@@ -987,6 +992,24 @@ export class Game {
         this.shopSystem.sortShopItems();
     }
 
+    unlockAllCheat() {
+        console.log("CHEAT: Unlocking ALL items and appliances.");
+        this.addFloatingText("CHEAT: Unlocked Everything!", this.player.x, this.player.y, '#ff00ff');
+
+        this.shopItems.forEach(item => {
+            item.unlocked = true;
+            item.justUnlocked = true;
+            // Prevent re-locking by ShopSystem.checkUnlocks
+            item.isReward = true;
+        });
+
+        if (this.menuSystem) {
+            this.menuSystem.updateAvailableItems();
+        }
+
+        this.sortShopItems();
+    }
+
     spoilStaleItems() {
         console.log("Checking for stale items...");
         let staleCount = 0;
@@ -1089,7 +1112,6 @@ export class Game {
                     // 2. Stovetop
                     else if (cell.type.id === 'STOVE') {
                         if (cell.state) {
-                            cell.state.isOn = false;
                             cell.state.cookingProgress = 0;
                         }
                         cell.object = null; // Clear pan/patty
@@ -1393,6 +1415,10 @@ export class Game {
         if (event.code === 'KeyC' && event.shiftKey) {
             this.money += 500;
             console.log(`Cheat: Added $500. New Balance: ${this.money}`);
+        }
+
+        if (event.code === 'KeyU' && event.shiftKey) {
+            this.unlockAllCheat();
         }
 
         if (this.gameState === 'TITLE') {
@@ -1861,7 +1887,7 @@ export class Game {
                 const cell = this.grid.getCell(x, y);
 
                 // Stove Logic
-                if (cell.type.id === 'STOVE' && cell.state.isOn) {
+                if (cell.type.id === 'STOVE') {
                     const item = cell.object;
                     // Check if item has cooking definition
                     if (item && item.definition.cooking && item.definition.cooking.stages) {

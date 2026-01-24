@@ -829,10 +829,7 @@ export class Player {
 
         // 2. Tile Interaction
         if (cell.type.id === 'STOVE') {
-            if (cell.state) {
-                cell.state.isOn = !cell.state.isOn;
-                console.log(`Stovetop ${cell.state.isOn ? 'ON' : 'OFF'}`);
-            }
+            // Stove is permanently on.
         }
     }
 
