@@ -15,10 +15,10 @@ export class TouchInputSystem {
         const dpadContainer = document.createElement('div');
         dpadContainer.className = 'dpad-container';
 
-        dpadContainer.appendChild(this.createButton('up', '▲', 'ArrowUp', ['dpad', 'up']));
-        dpadContainer.appendChild(this.createButton('down', '▼', 'ArrowDown', ['dpad', 'down']));
-        dpadContainer.appendChild(this.createButton('left', '◀', 'ArrowLeft', ['dpad', 'left']));
-        dpadContainer.appendChild(this.createButton('right', '▶', 'ArrowRight', ['dpad', 'right']));
+        dpadContainer.appendChild(this.createButton('up', '▲', 'KeyW', ['dpad', 'up']));
+        dpadContainer.appendChild(this.createButton('down', '▼', 'KeyS', ['dpad', 'down']));
+        dpadContainer.appendChild(this.createButton('left', '◀', 'KeyA', ['dpad', 'left']));
+        dpadContainer.appendChild(this.createButton('right', '▶', 'KeyD', ['dpad', 'right']));
 
         container.appendChild(dpadContainer);
 
@@ -27,9 +27,9 @@ export class TouchInputSystem {
         actionContainer.className = 'action-container';
 
         // Interact (Primary)
-        actionContainer.appendChild(this.createButton('interact', 'E', 'KeyE', ['action-primary']));
+        actionContainer.appendChild(this.createButton('interact', 'ENT', 'Enter', ['action-primary']));
         // Pickup (Secondary)
-        actionContainer.appendChild(this.createButton('pickup', 'Space', 'Space', ['action-secondary']));
+        actionContainer.appendChild(this.createButton('pickup', 'SP', 'Space', ['action-secondary']));
 
         container.appendChild(actionContainer);
 
