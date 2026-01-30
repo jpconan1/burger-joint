@@ -528,3 +528,133 @@ canvas {
         transform: translateX(10px);
     }
 }
+
+/* ------------------------------------------------------------- */
+/* TOUCH CONTROLS OVERLAY */
+/* ------------------------------------------------------------- */
+
+#touch-controls {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 9999;
+    pointer-events: none;
+    display: none;
+    /* Hidden by default, toggled by system */
+}
+
+/* Only show touch controls on touch devices or if forced */
+@media (hover: none) and (pointer: coarse) {
+    #touch-controls {
+        display: block;
+    }
+}
+
+/* Button Base */
+.touch-btn {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    border-radius: 50%;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    font-family: 'Inter', sans-serif;
+    font-weight: bold;
+    text-shadow: 1px 1px 2px black;
+    backdrop-filter: blur(2px);
+    transition: transform 0.1s, background 0.1s;
+}
+
+.touch-btn:active,
+.touch-btn.active {
+    background: rgba(255, 255, 255, 0.5);
+    transform: scale(0.95);
+}
+
+/* D-Pad Container */
+.dpad-container {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    width: 150px;
+    height: 150px;
+}
+
+.touch-btn.dpad {
+    width: 50px;
+    height: 50px;
+    border-radius: 10px;
+}
+
+.touch-btn.dpad.up {
+    top: 0;
+    left: 50px;
+}
+
+.touch-btn.dpad.down {
+    bottom: 0;
+    left: 50px;
+}
+
+.touch-btn.dpad.left {
+    top: 50px;
+    left: 0;
+}
+
+.touch-btn.dpad.right {
+    top: 50px;
+    right: 0;
+}
+
+/* Action Buttons */
+.action-container {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 160px;
+    height: 160px;
+}
+
+.touch-btn.action-primary {
+    width: 80px;
+    height: 80px;
+    bottom: 10px;
+    right: 0px;
+    background: rgba(0, 255, 0, 0.3);
+    border-color: rgba(0, 255, 0, 0.6);
+}
+
+.touch-btn.action-secondary {
+    width: 60px;
+    height: 60px;
+    bottom: 20px;
+    right: 90px;
+    background: rgba(255, 255, 0, 0.3);
+    border-color: rgba(255, 255, 0, 0.6);
+}
+
+/* Top Corners */
+.touch-btn.top-left {
+    top: 20px;
+    left: 20px;
+    width: 50px;
+    height: 50px;
+    border-radius: 10px;
+    background: rgba(255, 0, 0, 0.2);
+}
+
+.touch-btn.top-right {
+    top: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(0, 255, 255, 0.2);
+}

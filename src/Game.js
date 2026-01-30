@@ -16,6 +16,7 @@ import { ShopSystem } from './systems/ShopSystem.js';
 import { ConstructionSystem } from './systems/ConstructionSystem.js';
 import { MenuSystem } from './systems/MenuSystem.js';
 import { PostDaySystem } from './systems/PostDaySystem.js';
+import { TouchInputSystem } from './systems/TouchInputSystem.js';
 
 import { RatingPopup } from './ui/RatingPopup.js';
 
@@ -35,6 +36,7 @@ export class Game {
         this.shopSystem = new ShopSystem(this);
         this.constructionSystem = new ConstructionSystem(this);
         this.menuSystem = new MenuSystem(this);
+        this.touchInputSystem = new TouchInputSystem(this);
 
         this.gameState = 'TITLE'; // TITLE, PLAYING, PLACEMENT, SETTINGS
         this.titleSelection = 0; // 0: New Game, 1: Settings
