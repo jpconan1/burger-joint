@@ -53,7 +53,7 @@ export class ItemInstance {
             case ItemType.Composite:
                 this.state = {
                     bun: null,
-                    patty: null,
+                    // patty: null, // REMOVED: Patty is now a topping
                     toppings: [],
                     sauces: [],
                     ...this.state
@@ -63,19 +63,15 @@ export class ItemInstance {
                 // Exclude burger_old effectively
                 if (this.definitionId.includes('burger') && this.definitionId !== 'burger_old') {
                     if (!this.state.bun) this.state.bun = new ItemInstance('plain_bun');
-                    if (!this.state.patty) {
+
+                    // Default Patty (Moved to Toppings)
+                    // We only add if toppings is empty to avoid duplicating on re-init (though this only runs on fresh init usually)
+                    if (this.state.toppings.length === 0) {
                         const p = new ItemInstance('beef_patty');
                         p.state.cook_level = 'cooked';
-                        this.state.patty = p;
-                    }
-                    // Simple heuristic for legacy items
-                    if (this.state.toppings.length === 0) {
-                        // Check logic: if it has tomato and mayo, which one is bottom?
-                        // Assuming standard build: Top Bun <- Mayo <- Tomato <- Patty <- Bottom Bun
-                        // So Mayo is last (top).
+                        this.state.toppings.push(p);
 
-                        // We push in order: Bottom -> Top
-
+                        // Simple heuristic for legacy items
                         if (this.definitionId.includes('tomato')) {
                             this.state.toppings.push(new ItemInstance('tomato_slice'));
                         }
@@ -232,6 +228,15 @@ export class ItemInstance {
         };
 
         item.state = restore(data.state || {});
+
+        // MIGRATION: Move old 'patty' state to 'toppings'
+        if (item.state.patty) {
+            if (!item.state.toppings) item.state.toppings = [];
+            // Add as first topping (bottom)
+            item.state.toppings.unshift(item.state.patty);
+            delete item.state.patty;
+        }
+
         return item;
     }
 }

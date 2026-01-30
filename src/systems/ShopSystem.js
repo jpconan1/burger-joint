@@ -61,7 +61,7 @@ export class ShopSystem {
                 // RUSH MODE: Immediate Delivery
                 // Find space and spawn
                 let targetCell = null;
-                const rooms = ['fridge', 'office'];
+                const rooms = ['store_room', 'office'];
 
                 for (const roomId of rooms) {
                     const room = this.game.rooms[roomId];
@@ -69,8 +69,8 @@ export class ShopSystem {
                     for (let y = 0; y < room.height; y++) {
                         for (let x = 0; x < room.width; x++) {
                             const cell = room.getCell(x, y);
-                            // Find empty DELIVERY_TILE
-                            if (cell.type.id === 'DELIVERY_TILE' && !cell.object) {
+                            // Find empty spot (Relaxed: Delivery Tile OR Floor)
+                            if (!cell.object && (cell.type.id === 'DELIVERY_TILE' || cell.type.id === 'FLOOR')) {
                                 targetCell = cell;
                                 break;
                             }
@@ -325,7 +325,11 @@ export class ShopSystem {
                 // Appliances next
                 if (item.type === 'appliance') return 1;
                 // Unlocked supplies
-                if (item.unlocked) return 2;
+                if (item.unlocked) {
+                    if (item.id === 'bun_box') return 2.1;
+                    if (item.id === 'patty_box') return 2.2;
+                    return 2.5;
+                }
                 // Locked supplies
                 return 3;
             };

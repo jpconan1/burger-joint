@@ -6,8 +6,8 @@ import { Renderer } from './systems/Renderer.js';
 import { Grid } from './systems/Grid.js';
 import { Player } from './entities/Player.js';
 import { ItemInstance } from './entities/Item.js';
-import { Editor } from './systems/Editor.js';
-import { DEFAULT_LEVEL } from './data/defaultLevel.js';
+
+import { DEFAULT_LEVEL, DEFAULT_STORE_ROOM, DEFAULT_OFFICE_ROOM } from './data/defaultLevel.js';
 import { OrderSystem } from './systems/OrderSystem.js';
 import { getMenuForCapabilities } from './data/orderTemplates.js';
 import { Settings, ACTIONS } from './systems/Settings.js';
@@ -25,7 +25,7 @@ export class Game {
         this.grid = new Grid(GRID_WIDTH, GRID_HEIGHT);
         this.renderer = null;
         this.player = new Player(4, 4);
-        this.editor = new Editor(this);
+
         this.postDaySystem = new PostDaySystem(this);
         this.ratingPopup = new RatingPopup(this);
         this.settings = new Settings();
@@ -172,7 +172,7 @@ export class Game {
             id: 'insert',
             price: 20, // Manual price as it's not a box
             type: 'supply',
-            unlocked: true,
+            unlocked: false,
             isEssential: false
         });
 
@@ -299,7 +299,7 @@ export class Game {
 
             if (producedDef.isTopping === true || producedDef.category === 'topping' || producedDef.type === 'SauceContainer') {
                 categoryIndex = 0;
-            } else if ((producedDef.orderConfig && producedDef.orderConfig.type === 'side') || itemDef.id === 'fry_box') {
+            } else if ((producedDef.orderConfig && producedDef.orderConfig.type === 'side') || itemDef.id === 'fry_box' || producedDef.fryContent) {
                 // fry_box -> fry_bag -> raw_fries -> fries (side)
                 categoryIndex = 1;
             } else if (producedDef.category === 'syrup' || (producedDef.orderConfig && producedDef.orderConfig.type === 'drink')) {
@@ -327,11 +327,13 @@ export class Game {
             const plainSlot = this.menuSystem.menuSlots[0];
             if (plainSlot && toppingId) {
                 // Check if already there
-                const exists = plainSlot.state.toppings.some(t => t.definitionId === toppingId);
-                if (!exists) {
-                    plainSlot.state.toppings.push({ definitionId: toppingId, optional: true });
-                    console.log(`Added ${toppingId} to Plain Burger (Optional)`);
-                }
+                // Check if already there and clean up any potential duplicates (especially "required" ones that shouldn't be there)
+                // Filter out any existing instances of this topping to ensure we start fresh
+                plainSlot.state.toppings = plainSlot.state.toppings.filter(t => t.definitionId !== toppingId);
+
+                // Add as optional
+                plainSlot.state.toppings.push({ definitionId: toppingId, optional: true });
+                console.log(`Added ${toppingId} to Plain Burger (Optional)`);
             }
         } else {
             // For Sides and Drinks
@@ -344,6 +346,14 @@ export class Game {
             } else if (pDef.process && pDef.process.result) {
                 if (pDef.result) itemId = pDef.result;
                 else itemId = pDef.id;
+            } else if (pDef.fryContent) {
+                // Resolve fry content (Bag -> Raw -> Cooked)
+                const rawDef = DEFINITIONS[pDef.fryContent];
+                if (rawDef && rawDef.result) {
+                    itemId = rawDef.result;
+                } else {
+                    itemId = pDef.id;
+                }
             } else {
                 itemId = pDef.id;
             }
@@ -362,6 +372,52 @@ export class Game {
                 }
             }
         }
+
+        // --- Helper Unlock Logic ---
+        // "Helpers come free with your first side (1), drink (2) or topping (0) unlock"
+        let helperId = null;
+        if (categoryIndex === 0) {
+            // Only grant inserts for solid toppings (choppable/processable), not sauces
+            // Check if the produced item is a sauce container or related to sauce
+            let isSauce = false;
+            // Check produced item properties
+            if (producedDef.type === 'SauceContainer' || producedDef.category === 'sauce_refill') isSauce = true;
+            if (producedDef.orderConfig && producedDef.orderConfig.capability === 'ADD_COLD_SAUCE') isSauce = true;
+
+            // Also check if the item itself (if no produced item or same) is a sauce
+            if (itemDef.category === 'sauce_refill' || itemDef.type === 'SauceContainer') isSauce = true;
+
+            if (!isSauce) {
+                helperId = 'insert';
+            }
+        }
+        else if (categoryIndex === 1) helperId = 'side_cup_box';
+        else if (categoryIndex === 2) helperId = 'drink_cup_box';
+
+        if (helperId) {
+            const helperItem = this.shopItems.find(i => i.id === helperId);
+
+            // Determine if we should grant the helper item
+            // 1. If it's not unlocked yet (First Time for Drink/Topping)
+            // 2. If it's a Side (Category 1), ALWAYS grant a box (per user request)
+            const shouldGrant = helperItem && (!helperItem.unlocked || categoryIndex === 1);
+
+            if (shouldGrant) {
+                console.log(`Granting Free Helper: ${helperId}`);
+                const isNew = !helperItem.unlocked;
+
+                helperItem.unlocked = true;
+                // Give one free (add to cart for morning delivery)
+                this.cart[helperId] = (this.cart[helperId] || 0) + 1;
+
+                if (isNew) {
+                    this.addFloatingText("Helper Unlocked!", this.player.x, this.player.y - 40, '#00ffff');
+                } else {
+                    this.addFloatingText("Bonus Cups!", this.player.x, this.player.y - 40, '#00ffff');
+                }
+            }
+        }
+        // ---------------------------
 
         this.addFloatingText("Reward Unlocked!", this.player.x, this.player.y, '#ffd700');
 
@@ -430,16 +486,19 @@ export class Game {
         // 1. Setup Main Room (Kitchen)
         // const mainGrid = new Grid(GRID_WIDTH, GRID_HEIGHT);
         // mainGrid.deserialize(DEFAULT_LEVEL);
-        const mainGrid = this.createSmallKitchen();
-
+        // 1. Setup Main Room (Kitchen)
+        const mainGrid = new Grid(DEFAULT_LEVEL.width, DEFAULT_LEVEL.height);
+        mainGrid.deserialize(DEFAULT_LEVEL);
         this.rooms['main'] = mainGrid;
 
-        // 2. Setup Fridge Room
-        const fridgeGrid = this.createFridgeRoom();
-        this.rooms['fridge'] = fridgeGrid;
+        // 2. Setup Store Room
+        const storeRoomGrid = new Grid(DEFAULT_STORE_ROOM.width, DEFAULT_STORE_ROOM.height);
+        storeRoomGrid.deserialize(DEFAULT_STORE_ROOM);
+        this.rooms['store_room'] = storeRoomGrid;
 
         // 3. Setup Office Room
-        const officeGrid = this.createOfficeRoom();
+        const officeGrid = new Grid(DEFAULT_OFFICE_ROOM.width, DEFAULT_OFFICE_ROOM.height);
+        officeGrid.deserialize(DEFAULT_OFFICE_ROOM);
         this.rooms['office'] = officeGrid;
 
         // Set Initial Active Room
@@ -711,180 +770,7 @@ export class Game {
         return false;
     }
 
-    createSmallKitchen() {
-        // Direct construction of 7x4 Grid (Expanded size)
-        // User requested modifications:
-        // 1. Printer -> Top Left (0,0)
-        // 2. Shutter -> Next to Printer (1,0)
-        // 3. Ticket Wheel -> Under Printer (0,1)
-        // 4. Service Counter -> Under Ticket Wheel (0,2)
 
-        const width = 8;
-        const height = 4;
-        const grid = new Grid(width, height);
-
-        // Row 0 (Top)
-        // (0,0) Printer
-        grid.setTileType(0, 0, TILE_TYPES.PRINTER);
-
-        // (1,0) Shutter Door (Kitchen Shutter to Fridge)
-        grid.setTileType(1, 0, TILE_TYPES.SHUTTER_DOOR);
-        grid.getCell(1, 0).state = {
-            id: 'kitchen_shutter',
-            targetRoom: 'fridge',
-            targetDoorId: 'fridge_exit',
-            isOpen: true
-        };
-
-        // Rest of Row 0
-        grid.setTileType(2, 0, TILE_TYPES.STOVE);
-        grid.setTileType(3, 0, TILE_TYPES.FRYER);
-        grid.setTileType(4, 0, TILE_TYPES.DISPENSER);
-        grid.setTileType(5, 0, TILE_TYPES.CUTTING_BOARD);
-        grid.setTileType(6, 0, TILE_TYPES.COUNTER); // New Column: Counter
-        grid.setTileType(width - 1, 0, TILE_TYPES.WALL);
-
-        // Row 1 (Middle 1)
-        grid.setTileType(0, 1, TILE_TYPES.TICKET_WHEEL); // Under Printer
-        // Fill middle with floor
-        for (let x = 1; x < width - 1; x++) {
-            grid.setTileType(x, 1, TILE_TYPES.FLOOR);
-        }
-        // Right Edge
-        grid.setTileType(width - 1, 1, TILE_TYPES.OFFICE_DOOR);
-        grid.getCell(width - 1, 1).state = {
-            id: 'kitchen_office_door',
-            targetRoom: 'office',
-            targetDoorId: 'office_exit',
-            isOpen: true
-        };
-
-        // Row 2 (Middle 2)
-        grid.setTileType(0, 2, TILE_TYPES.SERVICE); // Under Ticket Wheel
-        // Fill middle with floor
-        for (let x = 1; x < width - 1; x++) {
-            grid.setTileType(x, 2, TILE_TYPES.FLOOR);
-        }
-        grid.setTileType(width - 1, 2, TILE_TYPES.GARBAGE); // Right Edge (Second from bottom)
-
-        // Row 3 (Bottom)
-        grid.setTileType(0, 3, TILE_TYPES.WALL);
-
-        // (1,3) Soda Fountain
-        grid.setTileType(1, 3, TILE_TYPES.SODA_FOUNTAIN);
-        grid.getCell(1, 3).state.facing = 0; // Normal orientation
-
-        // Fill rest of bottom with Counters
-        for (let x = 2; x < width - 1; x++) {
-            grid.setTileType(x, 3, TILE_TYPES.COUNTER);
-            grid.getCell(x, 3).state.facing = 2; // Face UP (towards center)
-        }
-        grid.setTileType(width - 1, 3, TILE_TYPES.WALL);
-
-        return grid;
-    }
-
-    createFridgeRoom() {
-        // Expanded to fit 14 boxes: 5w x 8h
-        // Walls on outer ring (x=0, x=4, y=0)
-        // Counters on x=1 and x=3
-        // Floor on x=2
-        const width = 5;
-        const height = 8;
-        const grid = new Grid(width, height);
-
-        // 1. Fill base with Walls
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                grid.setTileType(x, y, TILE_TYPES.WALL);
-            }
-        }
-
-        // 2. Place Counters (Silver Tiles)
-        // Rows 1 to 6 (STOP before bottom row 7)
-        for (let y = 1; y < height - 1; y++) {
-            // Left Counter (Faces Right -> 3)
-            grid.setTileType(1, y, TILE_TYPES.DELIVERY_TILE);
-            grid.getCell(1, y).state.facing = 3;
-
-            // Right Counter (Faces Left -> 1)
-            grid.setTileType(3, y, TILE_TYPES.DELIVERY_TILE);
-            grid.getCell(3, y).state.facing = 1;
-        }
-
-        // Top Center Counter
-        grid.setTileType(2, 0, TILE_TYPES.DELIVERY_TILE);
-        grid.getCell(2, 0).state.facing = 0; // Down
-
-        // 3. Place Center Aisle (Floor)
-        // Rows 1 to 6 (Row 7 is door)
-        for (let y = 1; y < height - 1; y++) {
-            grid.setTileType(2, y, TILE_TYPES.FLOOR);
-        }
-
-        // 4. Add Door back to Kitchen
-        // At bottom center: (2, 7)
-        grid.setTileType(2, 7, TILE_TYPES.SHUTTER_DOOR);
-        grid.getCell(2, 7).state = {
-            id: 'fridge_exit',
-            targetRoom: 'main',
-            targetDoorId: 'kitchen_shutter',
-            isOpen: true
-        };
-
-        return grid;
-    }
-
-    createOfficeRoom() {
-        // 4x4 Room
-        // Corners: Walls
-        // Ring: Counters
-        // Center: Floor
-        const width = 4;
-        const height = 4;
-        const grid = new Grid(width, height);
-
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                // Corners
-                if ((x === 0 && y === 0) || (x === width - 1 && y === 0) ||
-                    (x === 0 && y === height - 1) || (x === width - 1 && y === height - 1)) {
-                    grid.setTileType(x, y, TILE_TYPES.WALL);
-                }
-                // Ring (Edges)
-                else if (x === 0 || x === width - 1 || y === 0 || y === height - 1) {
-                    grid.setTileType(x, y, TILE_TYPES.COUNTER);
-                }
-                // Center
-                else {
-                    grid.setTileType(x, y, TILE_TYPES.FLOOR);
-                }
-            }
-        }
-
-        // Add Computer (replace a counter, e.g., top row middle-ish)
-        grid.setTileType(2, 0, TILE_TYPES.COMPUTER);
-
-        // Add Reno Tile (Appliance Shop) next to Computer
-        grid.setTileType(1, 0, TILE_TYPES.RENO);
-
-        // Add Menu Tile (Custom Menu) at top right (moved to side for access)
-        grid.setTileType(3, 1, TILE_TYPES.MENU);
-
-        // Add Door back to Kitchen (Left wall, y=1)
-        grid.setTileType(0, 1, TILE_TYPES.OFFICE_DOOR);
-        grid.getCell(0, 1).state = {
-            id: 'office_exit',
-            targetRoom: 'main',
-            targetDoorId: 'kitchen_office_door',
-            isOpen: true
-        };
-
-        // Add Exit Door (bottom row, 2nd column -> x=1, y=3)
-        grid.setTileType(1, 3, TILE_TYPES.EXIT_DOOR);
-
-        return grid;
-    }
 
     expandKitchen() {
         console.log("Expanding Kitchen!");
@@ -925,6 +811,11 @@ export class Game {
         if (result) return;
 
         if (event.code === 'Escape') {
+            // Explicitly hide the menu overlay
+            if (this.menuSystem) {
+                this.menuSystem.close();
+            }
+
             if (this.isDayActive) {
                 this.gameState = 'PLAYING';
             } else {
@@ -1014,56 +905,89 @@ export class Game {
         console.log("Checking for stale items...");
         let staleCount = 0;
 
-        // Helper to check and spoil a single item instance
+        // Core Spoilage Rules:
+        // 1. Boxes (and their contents) NEVER spoil.
+        // 2. Unboxed Items: Spoil IMMEDIATELY (overnight).
+        // 3. Exception: Items in 'inserts' last 1 night (Age 0 -> Age 1). Spoil if Age >= 2.
+
         const checkItem = (item) => {
             if (!item) return null;
 
+            // Box Check
+            if (item.type === 'Box' || item.definition.type === 'Box') {
+                return item; // No spoilage
+            }
+
+            // Insert Check
+            if (item.definitionId === 'insert') {
+                // Check contents
+                if (item.state.contents && item.state.contents.length > 0) {
+                    const newContents = [];
+                    item.state.contents.forEach(content => {
+                        // Increment age
+                        const age = (content.age || 0) + 1;
+                        content.age = age;
+
+                        // Survival Check (Max Age 1)
+                        if (age < 2) {
+                            newContents.push(content);
+                        } else {
+                            // Spoils! turning into trash? Or just disappearing?
+                            // User "stuff not in boxes spoils overnight".
+                            // Usually this means it turns into 'spoil.png' or similar.
+                            // However, inserts hold distinct items.
+                            // Let's create a 'generic_spoil' item in its place.
+                            staleCount++;
+                            newContents.push({
+                                definitionId: 'generic_spoil',
+                                state: {},
+                                texture: 'spoil.png' // shim for renderer
+                            });
+                        }
+                    });
+                    item.state.contents = newContents;
+                }
+                return item;
+            }
+
+            // Unboxed Item (Not Insert, Not Box)
+            // IMMEDIATE SPOILAGE
+            // Unless it is explicitly non-spoilable (e.g. tools? plates?)
+            // We rely on 'spoilable' on definition, OR whitelist trash/tools.
+            // But user said "stuff not in boxes spoils".
+            // Let's assume Ingredients/Containers/Composites spoil.
             const def = item.definition;
             if (!def) return item;
 
-            // Handle Age Increment
-            // If item has aging config OR explicit ages: true OR implies aging via spoilable (legacy consistency)
-            if (def.aging || def.ages || def.spoilable) {
-                item.state.age = (item.state.age || 0) + 1;
+            // Whitelist types that don't spoil?
+            // Player held items?
+            // Assume Tools don't spoil.
+            if (def.category === 'tool') return item;
+
+            // Whitelist types that don't spoil (Stock items)
+            if (def.category === 'sauce_refill') return item;
+            if (def.id === 'fry_bag' || def.id === 'sweet_fry_bag') return item;
+
+            // Standard Spoiling
+            let newId = 'generic_spoil';
+            if (def.spoilage && def.spoilage.id) newId = def.spoilage.id;
+            else if (def.aging && def.aging.spoiledItem) newId = def.aging.spoiledItem; // Legacy config support if present
+
+            // Legacy fallbacks (explicit map for cleaner UX than generic spoil)
+            const id = item.definitionId;
+            if (id === 'plain_bun') newId = 'bun_old';
+            else if (id === 'beef_patty') newId = 'patty_old';
+            else if (id.includes('burger')) newId = 'burger_old';
+            else if (id === 'fries') newId = 'fries_old';
+            else if (id === 'soda') newId = 'soda_old';
+            else if (id === 'bag') {
+                // Empty bags don't spoil
+                if (!item.state.contents || item.state.contents.length === 0) return item;
+                newId = 'bag_old';
             }
 
-            // Determine replacement
-            let newId = null;
-
-            // 1. Data-Driven Aging Spoilage
-            if (def.aging) {
-                // If it passes the spoil date, it rots
-                if (item.state.age >= def.aging.spoilAge) {
-                    newId = def.aging.spoiledItem;
-                }
-            }
-            // 2. Legacy Spoilage (Instant Overnight)
-            // Only if NOT handled by aging config above
-            else if (def.spoilable) {
-                // EXCEPTION: Empty bags don't spoil.
-                if (item.definitionId === 'bag') {
-                    if (!item.state.contents || item.state.contents.length === 0) {
-                        return item;
-                    }
-                }
-
-                // Hardcoded Legacy
-                const id = item.definitionId;
-                if (id === 'plain_bun') newId = 'bun_old';
-                else if (id === 'beef_patty') newId = 'patty_old';
-                else if (id.includes('burger')) newId = 'burger_old';
-                else if (def.isSlice) newId = 'generic_spoil';
-                else if (id === 'fries') newId = 'fries_old';
-                else if (id === 'soda') newId = 'soda_old';
-                else if (id === 'bag') newId = 'bag_old';
-            }
-
-            if (newId) {
-                staleCount++;
-                const newItem = new ItemInstance(newId);
-                return newItem;
-            }
-            return item;
+            staleCount++;
+            return new ItemInstance(newId);
         };
 
         // 1. Check Player Hands
@@ -1172,7 +1096,7 @@ export class Game {
         // We need to find all counters in the fridge/office that are EMPTY
         const emptyCounters = [];
 
-        ['fridge', 'office'].forEach(roomId => {
+        ['store_room', 'office'].forEach(roomId => {
             const room = this.rooms[roomId];
             if (room) {
                 for (let y = 0; y < room.height; y++) {
@@ -1388,8 +1312,8 @@ export class Game {
         this.activeTickets = [];
         this.incomingTicket = null;
 
-        // Force player back to kitchen if in fridge or office (Reset position for next day start, or visual consistency)
-        if (this.currentRoomId === 'fridge' || this.currentRoomId === 'office') {
+        // Force player back to kitchen if in store_room or office
+        if (this.currentRoomId === 'store_room' || this.currentRoomId === 'office') {
             this.currentRoomId = 'main';
             this.grid = this.rooms['main'];
             this.player.x = 1;
@@ -1582,16 +1506,7 @@ export class Game {
         }
 
 
-        if (event.code === 'KeyE' && event.shiftKey) {
-            this.editor.toggle();
-            // If we just closed the editor, update capabilities as appliances might have changed
-            if (!this.editor.isActive) {
-                this.updateCapabilities();
-            }
-            return;
-        }
 
-        if (this.editor.isActive) return;
 
         let dx = 0;
         let dy = 0;
@@ -1732,7 +1647,20 @@ export class Game {
         }
 
         if (!found) {
-            console.warn(`Target door '${targetDoorId}' not found in room '${nextRoomId}'. Spawning at default.`);
+            console.warn(`Target door '${targetDoorId}' not found in room '${nextRoomId}'. Spawning at safe default.`);
+            // Fallback: Find ANY walkable tile
+            for (let y = 0; y < nextRoom.height; y++) {
+                for (let x = 0; x < nextRoom.width; x++) {
+                    const c = nextRoom.getCell(x, y);
+                    if (c.type.walkable) {
+                        spawnX = x;
+                        spawnY = y;
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
         }
 
         // Perform Switch
@@ -1741,8 +1669,7 @@ export class Game {
         this.player.x = spawnX;
         this.player.y = spawnY;
 
-        // Optional: Update Editor reference if needed
-        this.editor.game = this; // Ensure editor points to current game/grid state implies referencing `this.grid` which it does via `this.game.grid` hopefully
+
 
         console.log(`Switched to room: ${nextRoomId}`);
         // Auto-save on room transition
@@ -1857,233 +1784,212 @@ export class Game {
             this.activeTickets.forEach(t => t.elapsedTime += dt / 1000);
         }
 
-        // Truck Status Check
-        const kShutter = this.rooms['main'].getCell(6, 0);
-        if (kShutter && kShutter.state.isOpen) {
-            const truck = this.rooms['truck'];
-            let hasItems = false;
-            for (let y = 0; y < truck.height; y++) {
-                for (let x = 0; x < truck.width; x++) {
-                    if (truck.getCell(x, y).object) {
-                        hasItems = true;
-                        break;
-                    }
-                }
-                if (hasItems) break;
-            }
+        // Update appliances in ALL rooms
+        Object.values(this.rooms).forEach(room => {
+            if (!room) return;
+            for (let y = 0; y < room.height; y++) {
+                for (let x = 0; x < room.width; x++) {
+                    const cell = room.getCell(x, y);
 
-            if (!hasItems) {
-                console.log("Truck empty! Closing shutter.");
-                kShutter.state.isOpen = false;
-            }
-        }
+                    // Stove Logic
+                    if (cell.type.id === 'STOVE') {
+                        const item = cell.object;
+                        // Check if item has cooking definition
+                        if (item && item.definition.cooking && item.definition.cooking.stages) {
+                            const currentStage = item.state.cook_level || 'raw';
+                            const stageDef = item.definition.cooking.stages[currentStage];
 
+                            if (stageDef) {
+                                item.state.cookingProgress = (item.state.cookingProgress || 0) + dt;
+                                // Use time from definition, fallback to stove speed if defined (or combine?)
+                                // For now, let's use the definition duration as primary if it exists.
+                                const requiredTime = stageDef.duration || cell.state.cookingSpeed || 2000;
 
-        // Iterate entire grid for appliance logic
-        // Optimization: Maintain a list of active appliances if grid is large.
-        // For 12x8, iterating all is fine.
-        for (let y = 0; y < this.grid.height; y++) {
-            for (let x = 0; x < this.grid.width; x++) {
-                const cell = this.grid.getCell(x, y);
-
-                // Stove Logic
-                if (cell.type.id === 'STOVE') {
-                    const item = cell.object;
-                    // Check if item has cooking definition
-                    if (item && item.definition.cooking && item.definition.cooking.stages) {
-                        const currentStage = item.state.cook_level || 'raw';
-                        const stageDef = item.definition.cooking.stages[currentStage];
-
-                        if (stageDef) {
-                            item.state.cookingProgress = (item.state.cookingProgress || 0) + dt;
-                            // Use time from definition, fallback to stove speed if defined (or combine?)
-                            // For now, let's use the definition duration as primary if it exists.
-                            const requiredTime = stageDef.duration || cell.state.cookingSpeed || 2000;
-
-                            if (item.state.cookingProgress >= requiredTime) {
-                                item.state.cook_level = stageDef.next;
-                                item.state.cookingProgress = 0;
-                                console.log(`Item cooked: ${item.definitionId} -> ${stageDef.next}`);
-                            }
-                        }
-                    }
-                }
-
-                // Fryer Logic
-                if (cell.type.id === 'FRYER' && cell.state) {
-                    if (cell.state.status === 'down') {
-                        cell.state.timer = (cell.state.timer || 0) + dt;
-
-                        let max = cell.state.cookingSpeed || 2000;
-                        // Synchronize with item cooking duration if active
-                        if (cell.object && cell.object.definition && cell.object.definition.cooking) {
-                            const stage = cell.object.state.cook_level || 'raw';
-                            const stageDef = cell.object.definition.cooking.stages[stage];
-                            if (stageDef && stageDef.duration) {
-                                max = stageDef.duration;
-                            }
-                        }
-
-                        if (cell.state.timer >= max) {
-                            cell.state.status = 'done';
-                            cell.state.timer = 0;
-                            console.log('Fries done!');
-                        }
-                    }
-
-                    // Cooking placed items (e.g. Chicken Patty)
-                    const item = cell.object;
-                    if (item && item.definition.cooking && item.definition.cooking.stages) {
-                        const currentStage = item.state.cook_level || 'raw';
-                        const stageDef = item.definition.cooking.stages[currentStage];
-
-                        if (stageDef && stageDef.cookMethod === 'fry') {
-                            item.state.cookingProgress = (item.state.cookingProgress || 0) + dt;
-                            // Use definition duration
-                            const requiredTime = stageDef.duration || 2000;
-
-                            if (item.state.cookingProgress >= requiredTime) {
-                                item.state.cook_level = stageDef.next;
-                                item.state.cookingProgress = 0;
-                                console.log(`Fryer Item cooked: ${item.definitionId} -> ${stageDef.next}`);
-                            }
-                        }
-                    }
-                }
-
-                // Soda Fountain Logic
-                if (cell.type.id === 'SODA_FOUNTAIN' && cell.state) {
-                    if (cell.state.status === 'filling') {
-                        cell.state.timer = (cell.state.timer || 0) + dt;
-                        const max = cell.state.fillDuration || 3000;
-                        if (cell.state.timer >= max) {
-                            cell.state.status = 'done';
-                            cell.state.timer = 0;
-                            console.log('Soda filling done!');
-                        }
-                    }
-                }
-
-                // Service Counter Logic
-                if (cell.type.id === 'SERVICE' && cell.object && cell.object.definitionId === 'bag') {
-                    if (this.activeTickets.length > 0) {
-
-                        // Ensure activeTicketIndex is valid
-                        if (this.activeTicketIndex === undefined || this.activeTicketIndex < 0) {
-                            this.activeTicketIndex = 0;
-                        }
-
-                        // Try to satisfy ONLY the ACTIVE ticket
-                        let matchedTicketIndex = -1;
-                        let matchResult = null;
-
-                        // Check if active index is within bounds
-                        if (this.activeTicketIndex < this.activeTickets.length) {
-                            const t = this.activeTickets[this.activeTicketIndex];
-                            const res = t.verifyBag(cell.object);
-                            if (res.matched) {
-                                matchedTicketIndex = this.activeTicketIndex;
-                                matchResult = res;
-                            }
-                        }
-
-                        if (matchedTicketIndex !== -1) {
-                            console.log(`Order Bag Verified! Payout: $${matchResult.payout}`);
-                            const ticket = this.activeTickets[matchedTicketIndex];
-
-                            // Reward
-                            this.money += matchResult.payout;
-                            this.dailyMoneyEarned += matchResult.payout;
-                            this.dailyBagsSold++;
-
-                            // Update Display
-                            // We need to re-generate the orders display list
-                            // But first we check if ticket is totally done
-
-                            // Destroy Bag
-                            cell.object = null;
-
-                            // Check Ticket Completion
-                            if (ticket.isComplete()) {
-                                console.log("Ticket Completed!");
-
-                                // SCORING LOGIC
-                                const par = ticket.parTime;
-                                const elapsed = ticket.elapsedTime;
-                                const diff = par - elapsed;
-
-                                let bonus = 0;
-                                let message = "";
-                                let color = "#fff";
-
-                                if (diff >= SCORING_CONFIG.THRESHOLDS.BONUS) {
-                                    bonus = SCORING_CONFIG.REWARDS.BONUS;
-                                    message = "GREAT SPEED! BONUS!";
-                                    color = "#00ff00";
-                                } else if (diff >= 0) {
-                                    bonus = SCORING_CONFIG.REWARDS.PAR;
-                                    message = "ON TIME";
-                                    color = "#ffff00";
-                                } else {
-                                    bonus = SCORING_CONFIG.REWARDS.SLOW;
-                                    message = "LATE SERVING";
-                                    color = "#ff0000";
-                                    this.currentDayPerfect = false;
+                                if (item.state.cookingProgress >= requiredTime) {
+                                    item.state.cook_level = stageDef.next;
+                                    item.state.cookingProgress = 0;
+                                    console.log(`Item cooked: ${item.definitionId} -> ${stageDef.next}`);
                                 }
+                            }
+                        }
+                    }
 
-                                this.money += bonus;
-                                this.dailyMoneyEarned += bonus;
+                    // Fryer Logic
+                    if (cell.type.id === 'FRYER' && cell.state) {
+                        if (cell.state.status === 'down') {
+                            cell.state.timer = (cell.state.timer || 0) + dt;
 
-                                this.addFloatingText(message + ` ($${bonus})`, x, y, color);
+                            let max = cell.state.cookingSpeed || 2000;
+                            // Synchronize with item cooking duration if active
+                            if (cell.object && cell.object.definition && cell.object.definition.cooking) {
+                                const stage = cell.object.state.cook_level || 'raw';
+                                const stageDef = cell.object.definition.cooking.stages[stage];
+                                if (stageDef && stageDef.duration) {
+                                    max = stageDef.duration;
+                                }
+                            }
 
-                                // Bonus Time Logic: "whenever you complete an order, give half that order's par time as bounus time to tall pending orders"
-                                const bonusTime = par / 2;
-                                if (bonusTime > 0) {
-                                    // 1. Active Tickets (Excluding the one just finished)
-                                    this.activeTickets.forEach((t, i) => {
-                                        if (i !== matchedTicketIndex) {
-                                            t.elapsedTime -= bonusTime;
-                                        }
-                                    });
+                            if (cell.state.timer >= max) {
+                                cell.state.status = 'done';
+                                cell.state.timer = 0;
+                                console.log('Fries done!');
+                            }
+                        }
 
-                                    // 2. Incoming Ticket (Printing)
-                                    if (this.incomingTicket) {
-                                        this.incomingTicket.elapsedTime -= bonusTime;
+                        // Cooking placed items (e.g. Chicken Patty)
+                        const item = cell.object;
+                        if (item && item.definition.cooking && item.definition.cooking.stages) {
+                            const currentStage = item.state.cook_level || 'raw';
+                            const stageDef = item.definition.cooking.stages[currentStage];
+
+                            if (stageDef && stageDef.cookMethod === 'fry') {
+                                item.state.cookingProgress = (item.state.cookingProgress || 0) + dt;
+                                // Use definition duration
+                                const requiredTime = stageDef.duration || 2000;
+
+                                if (item.state.cookingProgress >= requiredTime) {
+                                    item.state.cook_level = stageDef.next;
+                                    item.state.cookingProgress = 0;
+                                    console.log(`Fryer Item cooked: ${item.definitionId} -> ${stageDef.next}`);
+                                }
+                            }
+                        }
+                    }
+
+                    // Soda Fountain Logic
+                    if (cell.type.id === 'SODA_FOUNTAIN' && cell.state) {
+                        if (cell.state.status === 'filling') {
+                            cell.state.timer = (cell.state.timer || 0) + dt;
+                            const max = cell.state.fillDuration || 3000;
+                            if (cell.state.timer >= max) {
+                                cell.state.status = 'done';
+                                cell.state.timer = 0;
+                                console.log('Soda filling done!');
+                            }
+                        }
+                    }
+
+                    // Service Counter Logic
+                    if (cell.type.id === 'SERVICE' && cell.object && cell.object.definitionId === 'bag') {
+                        if (this.activeTickets.length > 0) {
+
+                            // Ensure activeTicketIndex is valid
+                            if (this.activeTicketIndex === undefined || this.activeTicketIndex < 0) {
+                                this.activeTicketIndex = 0;
+                            }
+
+                            // Try to satisfy ONLY the ACTIVE ticket
+                            let matchedTicketIndex = -1;
+                            let matchResult = null;
+
+                            // Check if active index is within bounds
+                            if (this.activeTicketIndex < this.activeTickets.length) {
+                                const t = this.activeTickets[this.activeTicketIndex];
+                                const res = t.verifyBag(cell.object);
+                                if (res.matched) {
+                                    matchedTicketIndex = this.activeTicketIndex;
+                                    matchResult = res;
+                                }
+                            }
+
+                            if (matchedTicketIndex !== -1) {
+                                console.log(`Order Bag Verified! Payout: $${matchResult.payout}`);
+                                const ticket = this.activeTickets[matchedTicketIndex];
+
+                                // Reward
+                                this.money += matchResult.payout;
+                                this.dailyMoneyEarned += matchResult.payout;
+                                this.dailyBagsSold++;
+
+                                // Update Display
+                                // We need to re-generate the orders display list
+                                // But first we check if ticket is totally done
+
+                                // Destroy Bag
+                                cell.object = null;
+
+                                // Check Ticket Completion
+                                if (ticket.isComplete()) {
+                                    console.log("Ticket Completed!");
+
+                                    // SCORING LOGIC
+                                    const par = ticket.parTime;
+                                    const elapsed = ticket.elapsedTime;
+                                    const diff = par - elapsed;
+
+                                    let bonus = 0;
+                                    let message = "";
+                                    let color = "#fff";
+
+                                    if (diff >= SCORING_CONFIG.THRESHOLDS.BONUS) {
+                                        bonus = SCORING_CONFIG.REWARDS.BONUS;
+                                        message = "GREAT SPEED! BONUS!";
+                                        color = "#00ff00";
+                                    } else if (diff >= 0) {
+                                        bonus = SCORING_CONFIG.REWARDS.PAR;
+                                        message = "ON TIME";
+                                        color = "#ffff00";
+                                    } else {
+                                        bonus = SCORING_CONFIG.REWARDS.SLOW;
+                                        message = "LATE SERVING";
+                                        color = "#ff0000";
+                                        this.currentDayPerfect = false;
                                     }
 
-                                    // 3. Queued Tickets
-                                    this.ticketQueue.forEach(t => t.elapsedTime -= bonusTime);
+                                    this.money += bonus;
+                                    this.dailyMoneyEarned += bonus;
 
-                                    console.log(`Bonus Time Awarded: ${bonusTime}s`);
-                                    this.addFloatingText(`Bonus: +${bonusTime}s`, x, y - 1, '#00ffff');
-                                }
+                                    this.addFloatingText(message + ` ($${bonus})`, x, y, color);
 
-                                // Remove from active list
-                                this.activeTickets.splice(matchedTicketIndex, 1);
+                                    // Bonus Time Logic: "whenever you complete an order, give half that order's par time as bounus time to tall pending orders"
+                                    const bonusTime = par / 2;
+                                    if (bonusTime > 0) {
+                                        // 1. Active Tickets (Excluding the one just finished)
+                                        this.activeTickets.forEach((t, i) => {
+                                            if (i !== matchedTicketIndex) {
+                                                t.elapsedTime -= bonusTime;
+                                            }
+                                        });
 
-                                // Check if Day is Done (No queue, no active) - REMOVED AUTO END
-                                /*
-                                if (this.ticketQueue.length === 0 && this.activeTickets.length === 0) {
-                                    // End Day Immediately
-                                    setTimeout(() => {
-                                        this.endDay();
-                                    }, 1500);
+                                        // 2. Incoming Ticket (Printing)
+                                        if (this.incomingTicket) {
+                                            this.incomingTicket.elapsedTime -= bonusTime;
+                                        }
+
+                                        // 3. Queued Tickets
+                                        this.ticketQueue.forEach(t => t.elapsedTime -= bonusTime);
+
+                                        console.log(`Bonus Time Awarded: ${bonusTime}s`);
+                                        this.addFloatingText(`Bonus: +${bonusTime}s`, x, y - 1, '#00ffff');
+                                    }
+
+                                    // Remove from active list
+                                    this.activeTickets.splice(matchedTicketIndex, 1);
+
+                                    // Check if Day is Done (No queue, no active) - REMOVED AUTO END
+                                    /*
+                                    if (this.ticketQueue.length === 0 && this.activeTickets.length === 0) {
+                                        // End Day Immediately
+                                        setTimeout(() => {
+                                            this.endDay();
+                                        }, 1500);
+                                    }
+                                    */
+                                    // Adjust active index if needed
+                                    if (this.activeTicketIndex >= this.activeTickets.length) {
+                                        this.activeTicketIndex = 0;
+                                    }
                                 }
-                                */
-                                // Adjust active index if needed
-                                if (this.activeTicketIndex >= this.activeTickets.length) {
-                                    this.activeTicketIndex = 0;
-                                }
+                                // NOTE: If ticket is NOT complete, we do NOT remove it.
+
+                                // Refresh orders view
+                                this.orders = this.activeTickets.map(t => t.toDisplayFormat());
                             }
-                            // NOTE: If ticket is NOT complete, we do NOT remove it.
-
-                            // Refresh orders view
-                            this.orders = this.activeTickets.map(t => t.toDisplayFormat());
                         }
                     }
                 }
             }
-        }
+        });
 
 
 

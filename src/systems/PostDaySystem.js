@@ -8,59 +8,48 @@ export class PostDaySystem {
     }
 
     reset() {
-        this.state = 'POST_DAY_MENU'; // The only state now
+        this.state = 'POST_DAY_MENU';
+        this.domInitialized = false;
+
 
         // Navigation State
         // Row 0: Daily Rewards (3 items)
-        // Row 1: Unlocks (variable)
-        // Row 2: Actions (Build, Menu, Shop, Start)
-        this.selection = { row: 2, col: 0 };
+        // Row 1: Supply Menu (1 item) -> Now dynamic list
+        // Row 2: Edit Kitchen / Edit Menu / Next Day (3 items)
+        this.selection = { row: 2, col: 2 };
 
-        this.dailyRewards = []; // { def, cost, claimed }
-        this.unlockOptions = []; // { id, label, cost, type, available }
+        this.dailyRewards = []; // { def, claimed }
+        this.supplyItems = []; // { def, shopItem, cost }
 
-        this.rewardsPicked = 0;
-        this.maxRewards = 2;
+        this.rewardClaimed = false;
     }
 
     start() {
         this.reset();
         this.generateDailyRewards();
-        this.updateUnlockOptions();
+        this.generateSupplyItems();
 
         // Default selection logic
         if (this.dailyRewards.length > 0) {
             this.selection = { row: 0, col: 0 };
-        } else if (this.unlockOptions.length > 0) {
+        } else if (this.supplyItems.length > 0) {
             this.selection = { row: 1, col: 0 };
         } else {
-            this.selection = { row: 2, col: 0 };
+            this.selection = { row: 2, col: 2 };
         }
     }
 
-    updateUnlockOptions() {
-        this.unlockOptions = [];
-        const hasFryer = this.game.hasAppliance('FRYER');
-        const hasFountain = this.game.hasAppliance('SODA_FOUNTAIN');
-
-        if (!hasFryer) {
-            this.unlockOptions.push({
-                id: 'fryer',
-                label: 'Unlock Fryer',
-                cost: 100,
-                type: 'appliance',
-                available: true
-            });
-        }
-        if (!hasFountain) {
-            this.unlockOptions.push({
-                id: 'soda_fountain',
-                label: 'Unlock Drinks',
-                cost: 200,
-                type: 'appliance',
-                available: true
-            });
-        }
+    generateSupplyItems() {
+        this.supplyItems = this.game.shopItems.filter(item => {
+            if (item.type !== 'supply') return false;
+            // Include if essential or unlocked
+            // Note: ShopSystem filters/updates 'unlocked' state based on game progress
+            return item.isEssential || item.unlocked;
+        }).map(item => ({
+            def: DEFINITIONS[item.id],
+            shopItem: item,
+            cost: item.price
+        }));
     }
 
     generateDailyRewards() {
@@ -101,13 +90,25 @@ export class PostDaySystem {
             return true;
         };
 
-        const potentialCandidates = this.game.shopItems.filter(item =>
-            item.type === 'supply' && !item.unlocked
-        );
+        const potentialCandidates = this.game.shopItems.filter(item => {
+            if (item.type !== 'supply') return false;
+            if (item.unlocked) return false;
+
+            // Exclude Essentials from Reward Pool
+            if (item.isEssential) return false;
+            if (item.id === 'insert') return false;
+
+            // Double check definition
+            const def = DEFINITIONS[item.id];
+            if (def && def.isEssential) return false;
+
+            return true;
+        });
 
         potentialCandidates.forEach(shopItem => {
             const def = DEFINITIONS[shopItem.id];
             if (!def) return;
+            if (def.classification === 'helper') return;
 
             let included = false;
             if (isToppingSource(def)) {
@@ -131,8 +132,8 @@ export class PostDaySystem {
         if (validCandidates.length < 3) {
             const essentialItems = this.game.shopItems.filter(item => {
                 const def = DEFINITIONS[item.id];
+                if (def && def.classification === 'helper') return false;
                 if (item.isEssential || (def && def.isEssential)) return true;
-                if (item.id === 'side_cup_box' || item.id === 'drink_cup_box') return true;
                 return false;
             });
 
@@ -161,27 +162,8 @@ export class PostDaySystem {
         // Select top 3
         this.dailyRewards = validCandidates.slice(0, 3).map(def => ({
             def: def,
-            cost: this.game.getRewardCost ? this.game.getRewardCost(def) : (this.getRewardCost(def)),
             claimed: false
         }));
-    }
-
-    getRewardCost(itemDef) {
-        // Duplicated from original or referenced if helper exists. 
-        // Logic: Side/Drink=2, Topping=1
-        const def = itemDef;
-        // Reuse helpers defined in generateDailyRewards but they are scoped.
-        // Let's simplified check:
-        // Assume 1 for simplicity unless I copy the logic?
-        // Let's copy the basic logic
-        if (def.id.includes('syrup') || def.id.includes('fry') || def.id.includes('side') || def.id.includes('drink')) return 2;
-        // Proper check:
-        if (def.produces) {
-            const p = DEFINITIONS[def.produces];
-            if (p && (p.category === 'side' || p.category === 'drink' || (p.orderConfig && (p.orderConfig.type === 'side' || p.orderConfig.type === 'drink')))) return 2;
-            if (p && p.fryContent) return 2;
-        }
-        return 1;
     }
 
     handleInput(event, settings) {
@@ -201,10 +183,8 @@ export class PostDaySystem {
     handleHubInput({ isUp, isDown, isLeft, isRight, isInteract }) {
         // Define rows that have items
         const hasRewards = this.dailyRewards.length > 0;
-        const hasUnlocks = this.unlockOptions.length > 0;
 
-        // Rows: 0=Reward, 1=Unlock, 2=Action
-        // If empty, we skip over.
+        // Rows: 0=Reward, 1=Supply, 2=Actions
 
         const currentRow = this.selection.row;
         let nextRow = currentRow;
@@ -212,33 +192,153 @@ export class PostDaySystem {
 
         // Navigation Config
         const rowConfig = {
-            0: { count: this.dailyRewards.length, exists: hasRewards },
-            1: { count: this.unlockOptions.length, exists: hasUnlocks },
-            2: { count: 4, exists: true } // Actions: Build, Menu, Shop, Start
+            0: { count: this.dailyRewards.length + (hasRewards ? 1 : 0), exists: hasRewards && !this.rewardClaimed }, // +1 for Reroll
+            1: { count: this.supplyItems.length, exists: this.supplyItems.length > 0 }, // Supply Items
+            2: { count: 3, exists: true } // Edit Kitchen, Edit Menu, Next Day
+        };
+
+        // Helper for visual navigation in wrapped grids (Intra-row)
+        const findBestVisualNeighbor = (rowId, currentIdx, isUpDir) => {
+            const container = document.getElementById(rowId);
+            if (!container) return -1;
+            const items = Array.from(container.children);
+            const currentEl = items[currentIdx];
+            if (!currentEl) return -1;
+
+            const curRect = currentEl.getBoundingClientRect();
+            const curCentX = curRect.left + curRect.width / 2;
+            const curCentY = curRect.top + curRect.height / 2;
+
+            let bestIdx = -1;
+            let bestXDist = Infinity;
+
+            // We filter for items that are in the "visual row" immediately above/below
+            let closestVDiff = Infinity;
+            const candidates = [];
+
+            items.forEach((el, idx) => {
+                if (idx === currentIdx) return;
+                const rect = el.getBoundingClientRect();
+                const centY = rect.top + rect.height / 2;
+
+                const vDiff = isUpDir ? (curCentY - centY) : (centY - curCentY);
+
+                if (vDiff <= 10) return; // Ignore items not clearly in direction
+
+                if (vDiff < closestVDiff - 10) {
+                    closestVDiff = vDiff;
+                    candidates.length = 0;
+                    candidates.push({ idx, rect });
+                } else if (Math.abs(vDiff - closestVDiff) <= 10) {
+                    candidates.push({ idx, rect });
+                }
+            });
+
+            candidates.forEach(cand => {
+                const centX = cand.rect.left + cand.rect.width / 2;
+                const distX = Math.abs(centX - curCentX);
+                if (distX < bestXDist) {
+                    bestXDist = distX;
+                    bestIdx = cand.idx;
+                }
+            });
+
+            return bestIdx;
+        };
+
+        // NEW: Helper for Cross-Row visual navigation
+        const findBestColInRow = (targetRowIdx, sourceEl, isMovingUp) => {
+            const container = document.getElementById(`pd-row-${targetRowIdx}`);
+            if (!container || container.children.length === 0) return 0;
+            if (!sourceEl) return 0;
+
+            const candidates = Array.from(container.children).map((el, idx) => ({ el, idx, rect: el.getBoundingClientRect() }));
+
+            // Filter by vertical 'edge' (Top edge if moving down/entering from top; Bottom edge if moving up/entering from bottom)
+            const yValues = candidates.map(c => c.rect.top);
+            // If Moving UP, we approach from below, so we want the Bottom-most items (Max Y)
+            // If Moving DOWN, we approach from above, so we want the Top-most items (Min Y)
+            const targetY = isMovingUp ? Math.max(...yValues) : Math.min(...yValues);
+
+            const validCandidates = candidates.filter(c => Math.abs(c.rect.top - targetY) < 20);
+
+            if (validCandidates.length === 0) return 0;
+
+            const sourceRect = sourceEl.getBoundingClientRect();
+            const sourceX = sourceRect.left + sourceRect.width / 2;
+
+            let bestIdx = 0;
+            let minDist = Infinity;
+
+            validCandidates.forEach(c => {
+                const cx = c.rect.left + c.rect.width / 2;
+                const dist = Math.abs(cx - sourceX);
+                if (dist < minDist) {
+                    minDist = dist;
+                    bestIdx = c.idx;
+                }
+            });
+
+            return bestIdx;
+        };
+
+        const getCurrentRowEl = () => {
+            const r = document.getElementById('pd-row-' + currentRow);
+            return r ? r.children[this.selection.col] : null;
         };
 
         // VERTICAL MOVEMENTS
         if (isUp) {
-            // Find previous existing row
-            let r = currentRow - 1;
-            while (r >= 0 && !rowConfig[r].exists) {
-                r--;
+            let handled = false;
+            // 1. Try Intra-Row Visual Navigation (mainly for Supply grid)
+            if (rowConfig[currentRow].count > 0) {
+                const visualIdx = findBestVisualNeighbor(`pd-row-${currentRow}`, this.selection.col, true);
+                if (visualIdx !== -1) {
+                    nextCol = visualIdx;
+                    handled = true;
+                }
             }
-            if (r >= 0) {
-                nextRow = r;
-                // Clamp col
-                nextCol = Math.min(this.selection.col, rowConfig[nextRow].count - 1);
+
+            // 2. Cross-Row Navigation
+            if (!handled) {
+                let r = currentRow - 1;
+                while (r >= 0 && !rowConfig[r].exists) r--;
+
+                if (r >= 0) {
+                    nextRow = r;
+                    const curEl = getCurrentRowEl();
+                    if (curEl) {
+                        nextCol = findBestColInRow(nextRow, curEl, true);
+                    } else {
+                        nextCol = Math.min(this.selection.col, rowConfig[nextRow].count - 1);
+                    }
+                }
             }
         } else if (isDown) {
-            // Find next existing row
-            let r = currentRow + 1;
-            while (r <= 2 && !rowConfig[r].exists) {
-                r++;
+            let handled = false;
+            // 1. Try Intra-Row Visual Navigation
+            if (rowConfig[currentRow].count > 0) {
+                const visualIdx = findBestVisualNeighbor(`pd-row-${currentRow}`, this.selection.col, false);
+                if (visualIdx !== -1) {
+                    nextCol = visualIdx;
+                    handled = true;
+                }
             }
-            if (r <= 2) {
-                nextRow = r;
-                // Clamp col
-                nextCol = Math.min(this.selection.col, rowConfig[nextRow].count - 1);
+
+            // 2. Cross-Row Navigation
+            if (!handled) {
+                let r = currentRow + 1;
+                while (r <= 2 && !rowConfig[r].exists) r++;
+
+                if (r <= 2) {
+                    nextRow = r;
+                    const curEl = getCurrentRowEl();
+                    if (curEl) {
+                        nextCol = findBestColInRow(nextRow, curEl, false);
+                    } else {
+                        nextCol = Math.min(this.selection.col, rowConfig[nextRow].count - 1);
+                    }
+                }
             }
         }
 
@@ -246,10 +346,6 @@ export class PostDaySystem {
         if (isLeft) {
             nextCol--;
             if (nextCol < 0) {
-                // Loop or stop? Stop is better for grid.
-                // Or maybe wrap around? "Stop" is standard.
-                // However, user said "Input Handling: ... Left/Right between items"
-                // Let's wrap for better feel on short rows? No, standard is clamp.
                 nextCol = rowConfig[currentRow].count - 1; // Wrap
             }
         } else if (isRight) {
@@ -257,6 +353,11 @@ export class PostDaySystem {
             if (nextCol >= rowConfig[currentRow].count) {
                 nextCol = 0; // Wrap
             }
+        }
+
+        // Check if selection changed
+        if (this.selection.row !== nextRow || this.selection.col !== nextCol) {
+            // Sound effect could go here
         }
 
         this.selection.row = nextRow;
@@ -275,242 +376,491 @@ export class PostDaySystem {
 
         if (row === 0) {
             // REWARDS
+            // Check if it's the Reroll button (last index)
+            if (col === this.dailyRewards.length) {
+                this.generateDailyRewards();
+                this.game.addFloatingText("Rerolled!", this.game.player.x, this.game.player.y, '#ffffff');
+                this.game.audioSystem.playSFX('select'); // Or any sound
+                return;
+            }
+
             const reward = this.dailyRewards[col];
             if (reward && !reward.claimed) {
-                if (this.rewardsPicked + reward.cost <= this.maxRewards) {
+                if (!this.rewardClaimed) {
                     this.game.grantDailyReward(reward.def);
                     reward.claimed = true;
-                    this.rewardsPicked += reward.cost;
+                    this.rewardClaimed = true;
                     this.game.addFloatingText("Claimed!", this.game.player.x, this.game.player.y, '#ffd700');
+                    this.generateSupplyItems();
 
-                    // If slots full, maybe move cursor to Actions?
-                    if (this.rewardsPicked >= this.maxRewards) {
-                        // Auto-move to next phases? User said "return to Post Day Hub".
-                        // So we stay here. Maybe highlight "Start Day"?
+                    if (this.supplyItems.length > 0) {
+                        this.selection = { row: 1, col: 0 };
+                    } else {
+                        this.selection = { row: 2, col: 2 };
                     }
                 } else {
-                    this.game.addFloatingText("Not enough slots", this.game.player.x, this.game.player.y, '#ff0000');
+                    this.game.addFloatingText("Already picked a reward", this.game.player.x, this.game.player.y, '#ff0000');
                 }
             }
         } else if (row === 1) {
-            // UNLOCKS
-            const unlock = this.unlockOptions[col];
-            if (unlock && unlock.available) {
-                if (this.game.money >= unlock.cost) {
-                    this.game.money -= unlock.cost;
-                    // Trigger Purchase/Build Logic
-                    const itemDef = this.game.shopItems.find(i => i.id === unlock.id);
-                    if (itemDef) {
-                        this.game.constructionSystem.startPlacement(itemDef);
+            // SUPPLY ORDER
+            const item = this.supplyItems[col];
+            if (item) {
+                // Buy Item Logic (Morning Delivery / Post-Day Order)
+                if (this.game.money >= item.cost) {
+
+                    // Visual Feedback
+                    const rowEl = document.getElementById('pd-row-1');
+                    if (rowEl && rowEl.children[col]) {
+                        const el = rowEl.children[col];
+                        el.classList.add('pressed');
+                        setTimeout(() => el.classList.remove('pressed'), 150);
                     }
-                    // Since startPlacement switches gamestate, we will disappear from view.
-                    // On return, this will re-render. 
-                    // Should we remove the unlock option immediately?
-                    // Re-entering start() clears it? No, start() isn't called on return.
-                    // updateUnlockOptions() should be called every render or on enter?
-                    // We'll update it now.
-                    this.updateUnlockOptions();
+
+                    this.game.money -= item.cost;
+
+                    // Add to Pending Orders
+                    if (!this.game.pendingOrders) this.game.pendingOrders = [];
+                    const existing = this.game.pendingOrders.find(o => o.id === item.shopItem.id);
+                    if (existing) {
+                        existing.qty = (existing.qty || 1) + 1;
+                    } else {
+                        this.game.pendingOrders.push({ id: item.shopItem.id, qty: 1 });
+                    }
+
+                    this.game.addFloatingText(`Ordered ${item.def.name || item.def.id}`, this.game.player.x, this.game.player.y, '#00ff00');
+                    if (this.game.audioSystem) this.game.audioSystem.playSFX(ASSETS.AUDIO.Select || ASSETS.AUDIO.PRINTER); // Fallback
                 } else {
-                    this.game.addFloatingText("Need $" + unlock.cost, this.game.player.x, this.game.player.y, '#ff0000');
+                    this.game.addFloatingText("Not enough money", this.game.player.x, this.game.player.y, '#ff0000');
                 }
             }
         } else if (row === 2) {
-            // ACTIONS
-            // 0: Build, 1: Menu, 2: Shop, 3: Start
-            switch (col) {
-                case 0: // Build Mode
-                    this.game.enterBuildMode();
-                    break;
-                case 1: // Menu Custom
-                    this.game.gameState = 'MENU_CUSTOM';
-                    this.game.menuSystem.expandedSlotIndex = null;
-                    break;
-                case 2: // Shop (Computer)
-                    this.game.gameState = 'COMPUTER_ORDERING';
-                    break;
-                case 3: // Start Day
+            // EDIT KITCHEN / EDIT MENU / NEXT DAY
+            if (col === 0) { // Edit Kitchen (Build)
+                this.game.enterBuildMode();
+                this.cleanupDOM();
+            } else if (col === 1) { // Edit Menu
+                this.game.gameState = 'MENU_CUSTOM';
+                this.game.menuSystem.expandedSlotIndex = null;
+                this.cleanupDOM();
+            } else if (col === 2) { // Next Day
+                const isLocked = this.dailyRewards.length > 0 && !this.rewardClaimed;
+                if (!isLocked) {
                     this.game.startDay();
-                    break;
+                    this.cleanupDOM();
+                } else {
+                    this.game.audioSystem.playSFX('error'); // Optional: feedback if they try to click locked
+                }
             }
         }
     }
 
-    render(ctx, data) {
-        // Redesign render for Hub View
-        const canvas = ctx.canvas;
-        const W = canvas.width;
-        const H = canvas.height;
-        const centerX = W / 2;
-        const centerY = H / 2;
+    render(ctx) {
+        // Clear canvas behind the UI to prevent artifacts (optional, since CSS bg is opaque-ish)
+        // ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-        ctx.fillStyle = '#1a1a1a';
-        ctx.fillRect(0, 0, W, H);
-
-        // Header
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 36px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText("Post-Day Menu", centerX, 60);
-
-        // Stats
-        ctx.font = '20px Arial';
-        ctx.fillStyle = '#ccc';
-        ctx.fillText(`Money: $${Math.floor(this.game.money)}  |  Slots Used: ${this.rewardsPicked}/${this.maxRewards}`, centerX, 100);
-
-        // GRID RENDERING
-        // We have 3 potentially visible rows.
-
-        let currentY = 160;
-        const ROW_HEIGHT = 180;
-
-        // ROW 0: Rewards
-        if (this.dailyRewards.length > 0) {
-            this.renderRow(ctx, 0, this.dailyRewards, centerX, currentY);
-            currentY += ROW_HEIGHT;
-        }
-
-        // ROW 1: Unlocks
-        if (this.unlockOptions.length > 0) {
-            this.renderRow(ctx, 1, this.unlockOptions, centerX, currentY);
-            currentY += ROW_HEIGHT;
-        }
-
-        // ROW 2: Actions
-        this.renderActionsRow(ctx, 2, centerX, currentY);
+        // Render via DOM
+        this.renderDOM();
     }
 
-    renderRow(ctx, rowIndex, items, centerX, y) {
-        const ITEM_WIDTH = 180;
-        const SPACING = 20;
-        const count = items.length;
-        const totalW = count * ITEM_WIDTH + (count - 1) * SPACING;
-        let x = centerX - totalW / 2;
+    renderDOM() {
+        const uiLayer = document.getElementById('ui-layer');
+        if (!uiLayer) return;
 
-        items.forEach((item, colIndex) => {
-            const isSelected = (this.selection.row === rowIndex && this.selection.col === colIndex);
+        // 1. Initialize Container if missing
+        let container = document.getElementById('post-day-menu');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'post-day-menu';
+            container.className = 'post-day-menu';
 
-            // Draw Card
-            this.drawCard(ctx, x, y, ITEM_WIDTH, 140, item, isSelected, rowIndex === 0); // isReward = true for Row 0
+            // Custom typography style
+            container.style.fontFamily = "'Inter', sans-serif";
+            container.style.fontWeight = "900";
+            container.style.color = "white";
+            container.style.webkitTextStroke = "8px black"; // Using 8px (approx 8pt) for the requested strong stroke
+            container.style.paintOrder = "stroke fill";
+            container.style.backgroundImage = "url('assets/ui/postday-bg.png')";
+            container.style.backgroundSize = "cover";
+            container.style.backgroundPosition = "center";
 
-            x += ITEM_WIDTH + SPACING;
+            container.innerHTML = `
+                <style>
+                    .menu-item .item-icon {
+                        transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                    }
+                    .menu-item.selected .item-icon {
+                        /* Pop up significantly (calculated from center) + random offsets */
+                        transform: translate(-50%, calc(-50% - 24px)) scale(1.3) translate(var(--rand-x), var(--rand-y)) rotate(var(--rand-rot)) !important;
+                        z-index: 10 !important;
+                        filter: drop-shadow(0 10px 4px rgba(0,0,0,0.4)); /* Shadow to emphasize height */
+                    }
+                    .menu-item .item-text {
+                        transition: all 0.2s ease;
+                        transform-origin: center center;
+                        display: inline-block;
+                    }
+                    .menu-item.selected .item-text {
+                        color: #00ff00 !important;
+                        transform: scale(1.2) rotate(var(--rand-text-rot));
+                    }
+                    .menu-item .label {
+                        opacity: 0;
+                        transition: opacity 0.2s;
+                        z-index: 20;
+                        pointer-events: none;
+                    }
+                    .menu-item.selected .label,
+                    .menu-item:hover .label {
+                        opacity: 1 !important;
+                    }
+                    .menu-item.pressed .item-icon {
+                        transform: translate(-50%, calc(-50% + 2px)) scale(0.78) !important;
+                    }
+                    .menu-item.pressed .supply-meter-bar {
+                        height: 100% !important;
+                        background-color: #00ff00 !important;
+                        transition: height 0.1s !important;
+                    }
+                    @keyframes boil {
+                        100% { background-position: -219px 0; }
+                    }
+                    .boil-bg {
+                        width: 73px;
+                        height: 73px;
+                        background-image: url('assets/ui/button_background-boil.png');
+                        animation: boil 0.4s steps(3) infinite;
+                        image-rendering: pixelated;
+                        display: block;
+                    }
+                    .supply-boil-bg {
+                        width: 73px;
+                        height: 73px;
+                        background-image: url('assets/ui/supply_button_background-boil.png');
+                        animation: boil 0.4s steps(3) infinite;
+                        image-rendering: pixelated;
+                        display: block;
+                    }
+                </style>
+                <div class="post-day-header">
+                    <h1>Post-Day Menu</h1>
+                    <div class="post-day-stats" id="pd-stats"></div>
+                </div>
+                <div class="post-day-content">
+                    <div class="menu-row" id="pd-row-0"></div> <!-- Rewards -->
+                    <div class="menu-row" id="pd-row-1"></div> <!-- Supply Items -->
+                    <div class="menu-row" id="pd-row-2"></div> <!-- Edit Kitchen / Menu -->
+                </div>
+            `;
+            uiLayer.appendChild(container);
+            this.domInitialized = true;
+        }
+
+        // 2. Update Stats
+        const statsEl = document.getElementById('pd-stats');
+        if (statsEl) {
+            statsEl.innerText = `Money: $${Math.floor(this.game.money)}`;
+        }
+
+        // 3. Update Rows
+
+        // Row 0: Rewards (Add Reroll Button)
+        const rewardsWithReroll = [...this.dailyRewards];
+        if (rewardsWithReroll.length > 0) {
+            rewardsWithReroll.push({ isReroll: true, claimed: false });
+        }
+        this.updateRowDOM('pd-row-0', rewardsWithReroll, 0);
+
+        // Row 1: Supply Items
+        this.updateRowDOM('pd-row-1', this.supplyItems, 1);
+
+        // Row 2: Edit Kitchen / Edit Menu / Next Day
+        this.updateActionRowDOM('pd-row-2', 2, [
+            { label: 'Edit Kitchen', id: 'build_mode', image: true },
+            { label: 'Edit Menu', id: 'menu_custom', image: true },
+            { label: 'Next Day', id: 'start_day', image: true }
+        ]);
+    }
+
+    // Helper to update generic item rows (Rewards)
+    updateRowDOM(elementId, items, rowIndex) {
+        const rowEl = document.getElementById(elementId);
+        if (!rowEl) return;
+
+        // 1. Sync DOM elements count to items length
+        if (rowEl.children.length !== items.length) {
+            rowEl.innerHTML = '';
+            items.forEach((item, index) => {
+                const el = document.createElement('div');
+                el.className = 'menu-item';
+
+                // Random Pop Config
+                el.style.setProperty('--rand-x', (Math.random() * 8 - 4) + 'px');
+                el.style.setProperty('--rand-y', (Math.random() * 8 - 4) + 'px');
+                el.style.setProperty('--rand-rot', (Math.random() * 10 - 5) + 'deg');
+                el.style.setProperty('--rand-text-rot', (Math.random() * 6 - 3) + 'deg');
+                // Metadata
+                el.dataset.index = index;
+                el.dataset.row = rowIndex;
+
+                rowEl.appendChild(el);
+            });
+        }
+
+        // 2. Update Content & State
+        Array.from(rowEl.children).forEach((el, index) => {
+            const item = items[index];
+            const isSelected = (this.selection.row === rowIndex && this.selection.col === index);
+
+            // -- Content Update Check --
+            let itemId = item.isReroll ? 'reroll' : (item.def ? item.def.id : 'unknown');
+            let claimed = item.claimed || false;
+
+            const prevId = el.dataset.itemId;
+            const prevClaimed = el.dataset.claimed;
+            const needsContentBuild = (el.innerHTML === '') || (prevId !== itemId) || (rowIndex === 0 && String(prevClaimed) !== String(claimed));
+
+            if (needsContentBuild) {
+                if (rowIndex === 0) { // Rewards
+                    el.classList.add('reward-card');
+                    el.classList.remove('supply-card');
+                    this.buildRewardContent(el, item);
+                } else if (rowIndex === 1) { // Supply
+                    el.classList.add('supply-card');
+                    el.classList.remove('reward-card');
+                    this.buildSupplyContent(el, item);
+                }
+                el.dataset.itemId = itemId;
+                el.dataset.claimed = claimed;
+            } else if (rowIndex === 1) {
+                // Smart Update for Supply Meter (avoid full rebuild to keep animations if possible, or just update data)
+                const def = item.def;
+                const maxCount = def.maxCount || 1;
+                const currentCount = this.getBoxedSupplyCount(def.id);
+                const ratio = Math.min(currentCount / maxCount, 1.0);
+
+                // Check if visually different
+                const prevRatio = parseFloat(el.dataset.ratio || -1);
+                if (Math.abs(ratio - prevRatio) > 0.01) {
+                    this.buildSupplyContent(el, item); // Rebuild to update meter
+                }
+            }
+
+            // -- Selection State --
+            if (isSelected) el.classList.add('selected');
+            else el.classList.remove('selected');
+
+            // -- Claimed/Dim State (Rewards) --
+            if (rowIndex === 0) {
+                if (items[index].claimed) el.classList.add('claimed');
+                else el.classList.remove('claimed');
+
+                // Dim others if one is claimed
+                if (this.rewardClaimed && !items[index].claimed) {
+                    el.style.opacity = '0.5';
+                    el.style.filter = 'grayscale(100%)';
+                } else {
+                    el.style.opacity = '1';
+                    el.style.filter = 'none';
+                }
+            }
         });
     }
 
-    renderActionsRow(ctx, rowIndex, centerX, y) {
-        const actions = [
-            { label: 'Build Mode', icon: 'RENO_BUILD_MODE' },
-            { label: 'Menu', icon: 'RENO_ICON_COUNTER' }, // Placeholder icon
-            { label: 'Supply Order', icon: 'COMPUTER' }, // Placeholder
-            { label: 'Start Day', icon: 'EXIT_DOOR' } // Placeholder
-        ];
+    buildRewardContent(el, item) {
+        if (item.isReroll) {
+            // Reroll Button
+            el.style.background = 'none';
+            el.style.border = 'none';
 
-        const ITEM_WIDTH = 180;
-        const SPACING = 20;
-        const count = actions.length;
-        const totalW = count * ITEM_WIDTH + (count - 1) * SPACING;
-        let x = centerX - totalW / 2;
-
-        actions.forEach((action, colIndex) => {
-            const isSelected = (this.selection.row === rowIndex && this.selection.col === colIndex);
-
-            // Draw Action Button
-            this.drawActionButton(ctx, x, y, ITEM_WIDTH, 100, action, isSelected);
-
-            x += ITEM_WIDTH + SPACING;
-        });
-    }
-
-    drawCard(ctx, x, y, w, h, item, isSelected, isReward) {
-        ctx.save();
-
-        if (isSelected) {
-            ctx.translate(x + w / 2, y + h / 2);
-            ctx.scale(1.1, 1.1);
-            ctx.translate(-(x + w / 2), -(y + h / 2));
+            el.innerHTML = `
+                <div style="position: relative; display: inline-block;">
+                    <div class="boil-bg"></div>
+                    <img class="item-icon" src="assets/ui/reroll.png" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(1.0); z-index: 1; image-rendering: pixelated;">
+                </div>
+                <div class="label item-text" style="position: absolute; top: -55px; width: 200%; left: -50%; text-align: center; font-size: 1rem; color: white;">Reroll</div>
+            `;
+            return;
         }
 
-        // BG
-        ctx.fillStyle = isSelected ? '#333' : '#222';
-        if (isReward && item.claimed) ctx.fillStyle = '#111'; // Dimmed
-        ctx.fillRect(x, y, w, h);
+        const def = item.def;
+        const iconName = this.getRewardIcon(def);
 
-        // Border
-        ctx.strokeStyle = isSelected ? '#ffd700' : '#444';
-        ctx.lineWidth = isSelected ? 4 : 2;
-        ctx.strokeRect(x, y, w, h);
+        // Use button_background.png as base
+        // Render icon on top
+        // Overlay info
 
-        // Content
-        if (isReward) {
-            // Reward Card
-            const def = item.def;
-            if (!item.claimed) {
-                // Icon
-                const iconName = this.getRewardIcon(def);
-                const img = this.game.assetLoader.get(iconName);
+        el.style.background = 'none';
+        el.style.border = 'none';
+
+        el.innerHTML = `
+            <div style="position: relative; display: inline-block;">
+                <div class="boil-bg"></div>
+                <img class="item-icon" src="assets/${iconName}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1; image-rendering: pixelated;">
+                
+                <div style="position: absolute; bottom: 2px; width: 100%; text-align: center; z-index: 2; text-shadow: 1px 1px 0 #000; font-size: 0.6rem; pointer-events: none;">
+                </div>
+                
+                ${item.claimed ? `
+                <img src="assets/ui/green_check.png" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; image-rendering: pixelated;">
+                ` : ''}
+            </div>
+            <div class="label item-text" style="position: absolute; top: -55px; width: 200%; left: -50%; text-align: center; font-size: 1rem; color: white;">${def.id.replace(/_/g, ' ')}</div>
+        `;
+    }
+
+    buildSupplyContent(el, item) {
+        const def = item.def;
+        // Logic for icon: use closed box texture or fallback
+        const iconName = def.texture || `${def.id}-closed.png`;
+
+        // Calculate Supply Meter
+        const maxCount = def.maxCount || 1;
+        const currentCount = this.getBoxedSupplyCount(def.id);
+        const ratio = Math.min(currentCount / maxCount, 1.0);
+
+        el.dataset.ratio = ratio; // Store for update check
+
+        let color = '#ff0000'; // Red (< 0.25)
+        if (ratio > 0.5) color = '#00ff00'; // Green
+        else if (ratio >= 0.25) color = '#ffff00'; // Yellow
+
+        // Max height reduced to 57px (from 63px) to allow 3px padding top/bottom
+        const barHeight = Math.floor(ratio * 57);
+        // Use percentage for CSS transition smoothness if we were updating style directly, but px is fine too.
+        // Actually, let's use percentage of the container (63pxish) 
+        // 57px is ~90% of 63. Let's stick to px for precision.
+
+        el.style.background = 'none';
+        el.style.border = 'none';
+
+        el.innerHTML = `
+            <div style="position: relative; display: inline-block;">
+                <div class="supply-boil-bg"></div>
+                <img class="item-icon" src="assets/${iconName}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.8); z-index: 1; image-rendering: pixelated; max-width: 48px; max-height: 48px;">
+                
+                <div class="item-text" style="position: absolute; bottom: 4px; width: 100%; text-align: center; z-index: 2; font-size: 1rem; color: white; pointer-events: none;">
+                    $${item.cost}
+                </div>
+
+                <!-- Supply Meter -->
+                <div style="position: absolute; right: -20px; bottom: 0; width: 15px; height: 63px;">
+                    <!-- Inner Bar: 9px wide (3px margin left/right), starts 3px from bottom -->
+                    <div class="supply-meter-bar" style="position: absolute; bottom: 3px; left: 3px; width: 9px; height: ${barHeight}px; background-color: ${color}; transition: height 0.3s; pointer-events: none;"></div>
+                    <img src="assets/ui/supply_meter.png" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; image-rendering: pixelated;">
+                </div>
+            </div>
+        `;
+    }
+
+    getBoxedSupplyCount(itemId) {
+        // Count ONLY items in boxes (or full boxes in cart/pending)
+        // itemId should be the Box ID (e.g. patty_box)
+        const def = DEFINITIONS[itemId];
+        const perBox = def ? (def.maxCount || 1) : 1;
+
+        let count = 0;
+
+        // 1. Scan Rooms for Boxes
+        Object.values(this.game.rooms).forEach(room => {
+            if (!room) return;
+            for (let y = 0; y < room.height; y++) {
+                for (let x = 0; x < room.width; x++) {
+                    const cell = room.getCell(x, y);
+                    const obj = cell.object;
+                    if (obj) {
+                        // Check if it's the box itself
+                        if (obj.definitionId === itemId && obj.state && obj.state.count !== undefined) {
+                            count += obj.state.count;
+                        }
+                    }
+                }
+            }
+        });
+
+        // 2. Add Cart content (Full Boxes)
+        const inCart = this.game.cart[itemId] || 0;
+        count += inCart * perBox;
+
+        // 3. Add Pending Orders (Morning Delivery)
+        if (this.game.pendingOrders) {
+            const pending = this.game.pendingOrders.find(o => o.id === itemId);
+            if (pending) {
+                count += pending.qty * perBox;
+            }
+        }
+
+        return count;
+    }
+
+    updateActionRowDOM(elementId, rowIndex, actions) {
+        const rowEl = document.getElementById(elementId);
+        if (!rowEl) return;
+
+        if (rowEl.children.length !== actions.length) {
+            rowEl.innerHTML = '';
+            actions.forEach((action, index) => {
+                const el = document.createElement('div');
+                el.className = 'menu-item action-btn';
+                el.dataset.actionId = action.id;
+
+                if (action.image) {
+                    // Image-based buttons
+                    el.classList.add('image-btn');
+                    const img = document.createElement('img');
+                    img.style.display = 'block';
+                    el.appendChild(img);
+                } else {
+                    // Text buttons
+                    el.innerText = action.label;
+                    if (action.specialClass) el.classList.add(action.specialClass);
+                }
+
+                rowEl.appendChild(el);
+            });
+        }
+
+        // Update Selection
+        Array.from(rowEl.children).forEach((el, index) => {
+            const isSelected = (this.selection.row === rowIndex && this.selection.col === index);
+            const actionId = el.dataset.actionId;
+
+            let visuallySelected = isSelected;
+            let isLocked = false;
+
+            if (actionId === 'start_day') {
+                isLocked = this.dailyRewards.length > 0 && !this.rewardClaimed;
+            }
+
+            if (visuallySelected) el.classList.add('selected');
+            else el.classList.remove('selected');
+
+            // Handle Image Swapping for buttons that need it
+            if (actionId === 'build_mode') {
+                const img = el.querySelector('img');
+                if (img) img.src = isSelected ? 'assets/ui/build_button-selected.png' : 'assets/ui/build_button-idle.png';
+            } else if (actionId === 'menu_custom') {
+                const img = el.querySelector('img');
+                if (img) img.src = isSelected ? 'assets/ui/menu_button-selected.png' : 'assets/ui/menu_button-idle.png';
+            } else if (actionId === 'start_day') {
+                const img = el.querySelector('img');
                 if (img) {
-                    ctx.drawImage(img, x + w / 2 - 32, y + 20, 64, 64);
+                    if (isLocked) {
+                        img.src = 'assets/ui/continue_button-locked.png';
+                        el.style.cursor = 'not-allowed';
+                    } else {
+                        img.src = visuallySelected ? 'assets/ui/continue_button-selected.png' : 'assets/ui/continue_button-idle.png';
+                        el.style.cursor = 'pointer';
+                    }
                 }
-
-                // Text
-                ctx.fillStyle = '#fff';
-                ctx.font = '16px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(def.id.replace(/_/g, ' '), x + w / 2, y + 100);
-
-                // Cost
-                if (item.cost > 1) {
-                    ctx.fillStyle = '#f39c12';
-                    ctx.font = '12px Arial';
-                    ctx.fillText(`${item.cost} Slots`, x + w / 2, y + 120);
-                }
-            } else {
-                ctx.fillStyle = '#555';
-                ctx.font = 'bold 20px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText("CLAIMED", x + w / 2, y + h / 2);
             }
-        } else {
-            // Unlock Card
-            const unlock = item;
-            ctx.fillStyle = '#fff';
-            ctx.font = '16px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText(unlock.label, x + w / 2, y + 40);
-
-            ctx.fillStyle = (this.game.money >= unlock.cost) ? '#2ecc71' : '#e74c3c';
-            ctx.font = 'bold 20px Arial';
-            ctx.fillText(`$${unlock.cost}`, x + w / 2, y + 80);
-        }
-
-        ctx.restore();
+        });
     }
 
-    drawActionButton(ctx, x, y, w, h, action, isSelected) {
-        ctx.save();
-
-        if (isSelected) {
-            ctx.translate(x + w / 2, y + h / 2);
-            ctx.scale(1.1, 1.1);
-            ctx.translate(-(x + w / 2), -(y + h / 2));
-        }
-
-        // Different style for Start Day
-        const isStart = action.label === 'Start Day';
-
-        ctx.fillStyle = isSelected ? '#444' : '#333';
-        if (isStart) ctx.fillStyle = isSelected ? '#27ae60' : '#2ecc71';
-
-        ctx.fillRect(x, y, w, h);
-
-        ctx.strokeStyle = isSelected ? '#fff' : '#555';
-        ctx.strokeRect(x, y, w, h);
-
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 18px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(action.label, x + w / 2, y + h / 2 + 6);
-
-        ctx.restore();
+    cleanupDOM() {
+        const container = document.getElementById('post-day-menu');
+        if (container) container.remove();
+        this.domInitialized = false;
     }
 
     getRewardIcon(def) {
@@ -528,6 +878,7 @@ export class PostDaySystem {
             }
         }
         if (targetDef.texture) return targetDef.texture;
+        if (targetDef.textures && targetDef.textures.base) return targetDef.textures.base;
         return def.texture || `${def.id}-closed.png`;
     }
 }

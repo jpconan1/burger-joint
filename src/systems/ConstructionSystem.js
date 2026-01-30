@@ -29,7 +29,6 @@ export class ConstructionSystem {
     }
 
     enterBuildMode(initialHeldItem = null, fromPurchase = false) {
-        console.log(`Entering Build Mode`);
 
         // Save previous context
         this.previousGameState = this.game.gameState;
@@ -162,6 +161,13 @@ export class ConstructionSystem {
                     }
                 }
 
+                // Restore object on top if any
+                if (state.heldItem.attachedObject) {
+                    const newCell = this.game.grid.getCell(state.x, state.y);
+                    // Explicitly link the object back to the cell
+                    newCell.object = state.heldItem.attachedObject;
+                }
+
                 state.heldItem = null;
                 this.game.updateCapabilities(); // Live update
                 // this.game.audioSystem.playSFX(ASSETS.AUDIO.PRINTER); // Clunk sound
@@ -194,10 +200,17 @@ export class ConstructionSystem {
                         state.heldItem = {
                             id: shopItem.id,
                             tileType: tileTypeId,
-                            savedState: savedState
+                            savedState: savedState,
+                            attachedObject: targetCell.object // Save item on top
                         };
 
                         this.game.grid.setTileType(state.x, state.y, TILE_TYPES.FLOOR);
+
+                        // IMPORTANT: Clear the object from the grid so it moves with the cursor
+                        if (targetCell.object) {
+                            targetCell.object = null;
+                        }
+
                         this.game.updateCapabilities();
                         // this.game.audioSystem.playSFX(ASSETS.AUDIO.PRINTER); // Swoosh sound
                     }
@@ -226,56 +239,61 @@ export class ConstructionSystem {
 
         // 4. Context Menu (Interact/E)
         if (!isPlacementAction && (event.code === this.game.settings.getBinding(ACTIONS.INTERACT) || event.code === 'Enter')) {
-            const targetCell = this.game.grid.getCell(state.x, state.y);
-            const isAppliance = targetCell.type.id !== 'FLOOR' && targetCell.type.id !== 'WALL' && !targetCell.type.isDoor;
-
-            const options = [];
-
-            if (isAppliance) {
-                // Option 1: Rotate
-                options.push({ label: 'Rotate', action: 'rotate' });
-                // Option 2: Store
-                options.push({ label: 'Store', action: 'store' });
-            } else if (targetCell.type.id === 'FLOOR' && !state.heldItem) {
-                // Open Storage List
-                // List all owned items with count > 0
-                Object.keys(this.game.storage).forEach(itemId => {
-                    if (this.game.storage[itemId] > 0) {
-                        const def = this.game.shopItems.find(i => i.id === itemId);
-                        if (def) {
-                            options.push({ label: `Retrieve ${def.id} (${this.game.storage[itemId]})`, action: 'retrieve', itemId: itemId });
-                        }
-                    }
-                });
-
-                // Add Buy Options
-                const appliances = this.game.shopItems.filter(i => i.type === 'appliance' && i.unlocked);
-                appliances.forEach(app => {
-                    options.push({
-                        label: `Buy ${app.id.replace('_', ' ').toUpperCase()} ($${app.price})`,
-                        action: 'buy',
-                        itemId: app.id,
-                        price: app.price,
-                        tileType: app.tileType
-                    });
-                });
-            }
-
-            if (options.length > 0) {
-                state.menu = {
-                    active: true,
-                    options: options,
-                    selectedIndex: 0,
-                    x: state.x,
-                    y: state.y
-                };
-            }
+            this.openContextMenu();
         }
 
 
 
         if (event.code === 'Escape') {
             this.exitBuildMode();
+        }
+    }
+
+    openContextMenu() {
+        const state = this.state;
+        const targetCell = this.game.grid.getCell(state.x, state.y);
+        const isAppliance = targetCell.type.id !== 'FLOOR' && targetCell.type.id !== 'WALL' && !targetCell.type.isDoor;
+
+        const options = [];
+
+        if (isAppliance) {
+            // Option 1: Rotate
+            options.push({ label: 'Rotate', action: 'rotate' });
+            // Option 2: Store
+            options.push({ label: 'Store', action: 'store' });
+        } else if (targetCell.type.id === 'FLOOR' && !state.heldItem) {
+            // Open Storage List
+            // List all owned items with count > 0
+            Object.keys(this.game.storage).forEach(itemId => {
+                if (this.game.storage[itemId] > 0) {
+                    const def = this.game.shopItems.find(i => i.id === itemId);
+                    if (def) {
+                        options.push({ label: `Retrieve ${def.id} (${this.game.storage[itemId]})`, action: 'retrieve', itemId: itemId });
+                    }
+                }
+            });
+
+            // Add Buy Options
+            const appliances = this.game.shopItems.filter(i => i.type === 'appliance' && i.unlocked);
+            appliances.forEach(app => {
+                options.push({
+                    label: `Buy ${app.id.replace('_', ' ').toUpperCase()} ($${app.price})`,
+                    action: 'buy',
+                    itemId: app.id,
+                    price: app.price,
+                    tileType: app.tileType
+                });
+            });
+        }
+
+        if (options.length > 0) {
+            state.menu = {
+                active: true,
+                options: options,
+                selectedIndex: 0,
+                x: state.x,
+                y: state.y
+            };
         }
     }
 

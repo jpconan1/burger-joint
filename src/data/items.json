@@ -8,11 +8,12 @@
                 "maxCount": 12,
                 "price": 50,
                 "toolRequirement": "HANDS",
-                "isEssential": true
+                "isEssential": true,
+                "unlocked": false
             },
             "item": {
                 "id": "beef_patty",
-                "category": "patty",
+                "category": "topping",
                 "toolRequirement": "HANDS",
                 "nudge": 5,
                 "partTexture": "beef_patty-part.png",
@@ -52,7 +53,8 @@
                 "id": "bun_box",
                 "maxCount": 32,
                 "price": 30,
-                "isEssential": true
+                "isEssential": true,
+                "unlocked": false
             },
             "item": {
                 "id": "plain_bun",
@@ -71,7 +73,8 @@
                 "id": "tomato_box",
                 "maxCount": 25,
                 "price": 20,
-                "ages": true
+                "ages": true,
+                "unlocked": false
             },
             "item": {
                 "id": "tomato",
@@ -79,14 +82,6 @@
                 "texture": "tomato.png",
                 "slicing": {
                     "result": "tomato_slice"
-                },
-                "aging": {
-                    "spoilAge": 6,
-                    "spoiledItem": "tomato_old",
-                    "stages": {
-                        "2": "tomato-wilt1.png",
-                        "4": "tomato-wilt2.png"
-                    }
                 }
             },
             "slice": {
@@ -116,7 +111,8 @@
                 "id": "lettuce_box",
                 "maxCount": 6,
                 "price": 25,
-                "ages": true
+                "ages": true,
+                "unlocked": false
             },
             "item": {
                 "id": "lettuce_head",
@@ -129,14 +125,6 @@
                     "tool": "HANDS",
                     "result": "lettuce_leaf",
                     "charges": 1
-                },
-                "aging": {
-                    "spoilAge": 3,
-                    "spoiledItem": "lettuce_head_old",
-                    "stages": {
-                        "1": "lettuce-head-wilt1.png",
-                        "2": "lettuce-head-wilt2.png"
-                    }
                 }
             },
             "slice": {
@@ -184,6 +172,7 @@
                     "type": "Box",
                     "maxCount": 3,
                     "price": 20,
+                    "unlocked": false,
                     "produces": "fry_bag"
                 },
                 {
@@ -294,7 +283,9 @@
                 "id": "side_cup_box",
                 "maxCount": 50,
                 "price": 15,
-                "unlocked": true
+                "unlocked": false,
+                "classification": "helper",
+                "helperUnlockCriteria": "side"
             },
             "item": {
                 "id": "side_cup",
@@ -311,6 +302,7 @@
                     "type": "Box",
                     "maxCount": 1,
                     "price": 40,
+                    "unlocked": false,
                     "produces": "soda_syrup"
                 },
                 {
@@ -351,10 +343,7 @@
                     "maxCount": 3,
                     "price": 10,
                     "produces": "mayo_bag",
-                    "unlockCondition": {
-                        "type": "appliance",
-                        "target": "dispenser"
-                    }
+                    "unlocked": false
                 },
                 {
                     "id": "mayo_bag",
@@ -460,7 +449,8 @@
                 "id": "onion_box",
                 "maxCount": 25,
                 "price": 20,
-                "ages": false
+                "ages": false,
+                "unlocked": false
             },
             "item": {
                 "id": "onion",
@@ -468,14 +458,6 @@
                 "texture": "onion.png",
                 "slicing": {
                     "result": "onion_slice"
-                },
-                "aging": {
-                    "spoilAge": 6,
-                    "spoiledItem": "onion_old",
-                    "stages": {
-                        "2": "onion-wilt1.png",
-                        "4": "onion-wilt2.png"
-                    }
                 }
             },
             "slice": {
@@ -524,7 +506,8 @@
                 "id": "cheddar_box",
                 "maxCount": 4,
                 "price": 40,
-                "produces": "cheddar_block"
+                "produces": "cheddar_block",
+                "unlocked": false
             },
             "item": {
                 "id": "cheddar_block",
@@ -579,6 +562,7 @@
                 "maxCount": 30,
                 "price": 15,
                 "ages": false,
+                "unlocked": false,
                 "textures": {
                     "base": "pickle_box-closed.png",
                     "rules": [
@@ -673,10 +657,7 @@
                     "maxCount": 3,
                     "price": 10,
                     "produces": "bbq_bag",
-                    "unlockCondition": {
-                        "type": "appliance",
-                        "target": "dispenser"
-                    }
+                    "unlocked": false
                 },
                 {
                     "id": "bbq_bag",
@@ -709,10 +690,7 @@
                     "maxCount": 3,
                     "price": 10,
                     "produces": "burger_sauce_bag",
-                    "unlockCondition": {
-                        "type": "appliance",
-                        "target": "dispenser"
-                    }
+                    "unlocked": false
                 },
                 {
                     "id": "burger_sauce_bag",
@@ -745,10 +723,7 @@
                     "maxCount": 3,
                     "price": 10,
                     "produces": "ketchup_bag",
-                    "unlockCondition": {
-                        "type": "appliance",
-                        "target": "dispenser"
-                    }
+                    "unlocked": false
                 },
                 {
                     "id": "ketchup_bag",
@@ -779,7 +754,9 @@
                 "maxCount": 50,
                 "price": 15,
                 "produces": "drink_cup",
-                "unlocked": true
+                "unlocked": false,
+                "classification": "helper",
+                "helperUnlockCriteria": "drink"
             },
             "item": {
                 "id": "drink_cup",
@@ -797,10 +774,7 @@
                     "maxCount": 1,
                     "price": 40,
                     "produces": "hetap_syrup",
-                    "unlockCondition": {
-                        "type": "appliance",
-                        "target": "soda_fountain"
-                    }
+                    "unlocked": false
                 },
                 {
                     "id": "hetap_syrup",
@@ -837,9 +811,9 @@
                 "id": "insert",
                 "type": "Ingredient",
                 "category": "tool",
+                "unlocked": false,
                 "texture": "insert.png",
-                "partTexture": "insert-part.png",
-                "price": 20
+                "partTexture": "insert-part.png"
             }
         },
         {
@@ -875,7 +849,7 @@
             },
             "item": {
                 "id": "chicken_patty",
-                "category": "patty",
+                "category": "topping",
                 "toolRequirement": "HANDS",
                 "nudge": 5,
                 "partTexture": "chicken_patty-part.png",
@@ -918,10 +892,7 @@
                     "maxCount": 3,
                     "price": 20,
                     "produces": "sweet_potato_fry_bag",
-                    "unlockCondition": {
-                        "type": "appliance",
-                        "target": "fryer"
-                    }
+                    "unlocked": false
                 },
                 {
                     "id": "sweet_potato_fry_bag",
@@ -1032,6 +1003,7 @@
                 "maxCount": 12,
                 "price": 35,
                 "ages": false,
+                "unlocked": false,
                 "texture": "bacon_box-closed.png"
             },
             "item": {
@@ -1077,7 +1049,8 @@
                 "id": "swiss_box",
                 "maxCount": 4,
                 "price": 40,
-                "produces": "swiss_block"
+                "produces": "swiss_block",
+                "unlocked": false
             },
             "item": {
                 "id": "swiss_block",
@@ -1134,10 +1107,7 @@
                     "maxCount": 1,
                     "price": 40,
                     "produces": "orange_syrup",
-                    "unlockCondition": {
-                        "type": "appliance",
-                        "target": "soda_fountain"
-                    }
+                    "unlocked": false
                 },
                 {
                     "id": "orange_syrup",
@@ -1177,10 +1147,7 @@
                     "maxCount": 1,
                     "price": 40,
                     "produces": "dr_matt_syrup",
-                    "unlockCondition": {
-                        "type": "appliance",
-                        "target": "soda_fountain"
-                    }
+                    "unlocked": false
                 },
                 {
                     "id": "dr_matt_syrup",
@@ -1220,10 +1187,7 @@
                     "maxCount": 1,
                     "price": 40,
                     "produces": "grape_syrup",
-                    "unlockCondition": {
-                        "type": "appliance",
-                        "target": "soda_fountain"
-                    }
+                    "unlocked": false
                 },
                 {
                     "id": "grape_syrup",
@@ -1263,10 +1227,7 @@
                     "maxCount": 1,
                     "price": 40,
                     "produces": "gingie_syrup",
-                    "unlockCondition": {
-                        "type": "appliance",
-                        "target": "soda_fountain"
-                    }
+                    "unlocked": false
                 },
                 {
                     "id": "gingie_syrup",

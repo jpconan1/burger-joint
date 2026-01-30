@@ -439,19 +439,34 @@ export class Player {
                         return;
                     }
 
-                    // 2. Dispense Logic (To Burger)
-                    if (this.heldItem.category === 'burger' || this.heldItem.definitionId.includes('burger')) {
+                    // 2. Dispense Logic (To Burger or Bun)
+                    const isBurger = this.heldItem.category === 'burger' || this.heldItem.definitionId.includes('burger');
+                    const isBun = this.heldItem.category === 'bun';
+
+                    if (isBurger || isBun) {
                         const contents = insert.state.contents || [];
                         if (contents.length > 0) {
                             const slice = contents.pop();
 
-                            // Dispense to burger
-                            const newBurger = new ItemInstance(this.heldItem.definitionId);
-                            newBurger.state = JSON.parse(JSON.stringify(this.heldItem.state));
-                            if (!newBurger.state.toppings) newBurger.state.toppings = [];
-                            newBurger.state.toppings.push(slice);
+                            let targetBurger = this.heldItem;
 
-                            this.heldItem = newBurger;
+                            // Convert Bun to Burger if needed
+                            if (isBun) {
+                                targetBurger = new ItemInstance('plain_burger');
+                                targetBurger.state.bun = this.heldItem;
+                                targetBurger.state.toppings = [];
+                            } else {
+                                // Clone existing burger to ensure state mutation safety (though not strictly necessary if we mutate held)
+                                // Only clone if we want to follow immutable patterns, but here we can mutate heldItem directly or replace it.
+                                // The existing code replaced it:
+                                const newBurger = new ItemInstance(this.heldItem.definitionId);
+                                newBurger.state = JSON.parse(JSON.stringify(this.heldItem.state));
+                                targetBurger = newBurger;
+                            }
+
+                            this._addIngredientToBurger(targetBurger, slice);
+
+                            this.heldItem = targetBurger;
                             console.log(`Added ${slice.definitionId} from insert to burger.`);
                             return;
                         }
@@ -623,6 +638,39 @@ export class Player {
         }
 
         // INSERT LOGIC (Placement with Interact Key on generic counters)
+        // Also Handle Dispensing if holding a Burger/Bun (INTERACT KEY DISPENSE)
+        if (target && target.definitionId === 'insert') {
+            const isBurger = this.heldItem && (this.heldItem.category === 'burger' || this.heldItem.definitionId.includes('burger'));
+            const isBun = this.heldItem && (this.heldItem.category === 'bun');
+
+            if (isBurger || isBun) {
+                const contents = target.state.contents || [];
+                if (contents.length > 0) {
+                    const slice = contents.pop();
+
+                    let targetBurger = this.heldItem;
+
+                    // Convert Bun to Burger
+                    if (isBun) {
+                        targetBurger = new ItemInstance('plain_burger'); // Default composite ID
+                        targetBurger.state.bun = this.heldItem;
+                        targetBurger.state.toppings = [];
+                    } else {
+                        // Clone for safety
+                        const newBurger = new ItemInstance(this.heldItem.definitionId);
+                        newBurger.state = JSON.parse(JSON.stringify(this.heldItem.state));
+                        targetBurger = newBurger;
+                    }
+
+                    this._addIngredientToBurger(targetBurger, slice);
+
+                    this.heldItem = targetBurger;
+                    console.log(`Added ${slice.definitionId} from insert to burger (Interact).`);
+                    return;
+                }
+            }
+        }
+
         if (this.heldItem && this.heldItem.definitionId === 'insert') {
             // Check for placement on empty counter (that is NOT a cutting board, as that is handled below, and NOT fryer)
             if (!target && cell.type.holdsItems && cell.type.id !== 'GARBAGE' && cell.type.id !== 'CUTTING_BOARD' && cell.type.id !== 'FRYER') {
@@ -879,27 +927,21 @@ export class Player {
 
         let newBurger = null;
 
-        // Check if holding a burger (Composite item or specific ID for now)
-        // We really want to support applying to any burger.
-        // Let's use the generic "burger" category check if possible, or fallback to IDs.
-        // The definitions use "category": "burger".
-
         const isBurger = this.heldItem.category === 'burger' || this.heldItem.definitionId.includes('burger');
+        // Support applying sauce to a plain Bun -> Converts to Burger
+        const isBun = this.heldItem.category === 'bun';
 
-        if (isBurger) {
-            // Create New Burger Instance (Clone)
-            // If we already have a generic cloning method, use it. For now, manual.
-            // We can assume 'plain_burger' as base if we preserve state, OR just clone the current definition?
-            // Actually, if we use a dynamic "burger" definition, we should just clone the current item and modify state.
-            // BUT, some burgers have specific IDs (burger_tomato). 
-            // Ideally we move to a single 'burger' ID with varied state.
-
-            // For now, let's keep the ID if it's a known one, or default to 'plain_burger' if uncertain.
-            // Actually, `ItemInstance(this.heldItem.definitionId)` doesn't clone state.
-
-            newBurger = new ItemInstance(this.heldItem.definitionId);
-            // Clone State
-            newBurger.state = JSON.parse(JSON.stringify(this.heldItem.state));
+        if (isBurger || isBun) {
+            if (isBun) {
+                // Convert Bun to Burger
+                newBurger = new ItemInstance('plain_burger');
+                newBurger.state.bun = this.heldItem; // Use the held bun (preserves state like age)
+                newBurger.state.toppings = [];
+            } else {
+                // Already a Burger - Clone it
+                newBurger = new ItemInstance(this.heldItem.definitionId);
+                newBurger.state = JSON.parse(JSON.stringify(this.heldItem.state));
+            }
 
             // Append Sauce to toppings
             if (!newBurger.state.toppings) newBurger.state.toppings = [];
@@ -907,28 +949,6 @@ export class Player {
             // Create Sauce Item
             const sauceItem = new ItemInstance(sauceId);
             newBurger.state.toppings.push(sauceItem);
-
-            // CHANGE ID? 
-            // Legacy logic changed ID to 'burger_mayo' etc. 
-            // Ideally we shouldn't change ID, just state. Renderer handles it?
-            // Renderer uses `drawBurger` if definitionId includes 'burger'.
-            // So keeping the ID is fine.
-            // Exception: The old logic explicitly changed IDs (e.g. 'plain_burger' -> 'burger_mayo').
-            // If we don't change ID, will it look different?
-            // `drawBurger` renders toppings dynamically. So YES, it should work without ID change!
-            // However, to ensure "burger_mayo" specific textures (if any static ones exist/fallback) work...
-            // The old logic was: 'plain_burger' -> 'burger_mayo'.
-            // If we apply 'bbq', there is no 'burger_bbq' definition. So we MUST rely on dynamic rendering.
-            // So let's NOT change the ID, and trust dynamic rendering.
-
-            // SIDE EFFECT: If we don't change ID, does the order system recognize it?
-            // Order system likely checks contents/toppings now?
-            // Checking `OrderSystem.js` (mental check): It likely checks matching ingredients.
-            // If the order expects 'burger_mayo' (composite), and we have 'plain_burger' + mayo topping...
-            // I need to check if `OrderSystem` matches based on composition.
-            // The prompt history says "Data-Driven Order System" was worked on.
-            // It moved to `definitions.js` orderConfig.
-            // So it likely checks "does the burger contain X".
 
             console.log(`Added ${sauceId} to burger`);
         }
@@ -1174,24 +1194,12 @@ export class Player {
         }
 
         if (burgerBase && itemToAdd) {
-            // Check: If adding patty, does burger already have one?
-            if (isCookedPatty(itemToAdd) && burgerBase.state.patty) {
-                console.log("Burger already has a patty!");
-                return null;
-            }
-
             console.log(`Adding ${itemToAdd.definitionId} to Burger`);
 
             const newBurger = new ItemInstance(burgerBase.definitionId);
             newBurger.state = JSON.parse(JSON.stringify(burgerBase.state));
 
-            if (isCookedPatty(itemToAdd)) {
-                newBurger.state.patty = itemToAdd;
-            } else {
-                if (!newBurger.state.toppings) newBurger.state.toppings = [];
-                newBurger.state.toppings.push(itemToAdd);
-            }
-
+            this._addIngredientToBurger(newBurger, itemToAdd);
             return newBurger;
         }
 
@@ -1211,14 +1219,8 @@ export class Player {
             const burger = new ItemInstance('plain_burger');
             burger.state.bun = bunBase;
             burger.state.toppings = [];
-            burger.state.patty = null;
 
-            if (isCookedPatty(itemToAdd)) {
-                burger.state.patty = itemToAdd;
-            } else {
-                burger.state.toppings.push(itemToAdd);
-            }
-
+            this._addIngredientToBurger(burger, itemToAdd);
             return burger;
         }
 
@@ -1325,9 +1327,11 @@ export class Player {
         // 1. Validate Held Item is a Sauce Bag
         if (!this.heldItem || this.heldItem.definition.category !== 'sauce_refill') return false;
 
-        // 2. Validate Target is a Burger
+        // 2. Validate Target is a Burger or Bun
         const isBurger = targetItem.category === 'burger' || targetItem.definitionId.includes('burger');
-        if (!isBurger) return false;
+        const isBun = targetItem.category === 'bun';
+
+        if (!isBurger && !isBun) return false;
 
         // 3. Check Charges
         const charges = this.heldItem.state.charges !== undefined ? this.heldItem.state.charges : 15;
@@ -1351,6 +1355,26 @@ export class Player {
         // 5. Apply Sauce (Modify Target State in place)
         // Since targetItem is the object on the counter (cell.object), modifying it matches expectation.
 
+        // Conversion Logic: Bun -> Burger
+        if (isBun) {
+            console.log("Converting Bun to Burger for sauce application...");
+            const oldBunState = targetItem.state;
+
+            // Mutate Target into Burger
+            targetItem.definitionId = 'plain_burger';
+
+            // Re-init State
+            // Note: ItemInstance doesn't handle re-init of existing object automatically, so we do it manually.
+            // We need a bun object in the burger state.
+            const bunInstance = new ItemInstance('plain_bun');
+            bunInstance.state = { ...oldBunState }; // Preserve aging/state
+
+            targetItem.state = {
+                bun: bunInstance,
+                toppings: []
+            };
+        }
+
         // Ensure toppings array exists
         if (!targetItem.state.toppings) targetItem.state.toppings = [];
 
@@ -1363,5 +1387,11 @@ export class Player {
         console.log(`Applied sauce. Bag charges remaining: ${this.heldItem.state.charges}`);
 
         return true;
+    }
+
+    _addIngredientToBurger(burgerItem, feedItem) {
+        // Flattened Stacking Logic: Everything goes into toppings.
+        if (!burgerItem.state.toppings) burgerItem.state.toppings = [];
+        burgerItem.state.toppings.push(feedItem);
     }
 }

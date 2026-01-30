@@ -1,1 +1,152 @@
-export const DEFAULT_LEVEL = { "width": 14, "height": 10, "cells": [[{ "typeId": "WALL", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }, { "typeId": "CUTTING_BOARD", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }, { "typeId": "SHUTTER_DOOR", "state": { "id": "kitchen_shutter", "targetRoom": "fridge", "targetDoorId": "fridge_exit", "isOpen": true }, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }], [{ "typeId": "WALL", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }], [{ "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": { "definitionId": "bun_box", "state": { "isOpen": false, "count": 32, "isFlat": false } } }, { "typeId": "COUNTER", "state": {}, "object": { "definitionId": "patty_box", "state": { "isOpen": false, "count": 12, "isFlat": false } } }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }], [{ "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": { "definitionId": "wrapper_box", "state": { "isOpen": false, "count": 100, "isFlat": false } } }, { "typeId": "COUNTER", "state": {}, "object": { "definitionId": "bag_box", "state": { "isOpen": false, "count": 20, "isFlat": false } } }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "STOVE", "state": { "isOn": false, "cookingSpeed": 2000 }, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }], [{ "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }], [{ "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }], [{ "typeId": "WALL", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }], [{ "typeId": "WALL", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "CUTTING_BOARD", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "COUNTER", "state": {}, "object": null }], [{ "typeId": "WALL", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "FLOOR", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }], [{ "typeId": "WALL", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }, { "typeId": "TICKET_WHEEL", "state": {}, "object": null }, { "typeId": "SERVICE", "state": {}, "object": null }, { "typeId": "SERVICE", "state": {}, "object": null }, { "typeId": "SERVICE", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }, { "typeId": "WALL", "state": {}, "object": null }]] };
+export const DEFAULT_LEVEL = {
+    "width": 8,
+    "height": 4,
+    "cells": [
+        [
+            { "typeId": "PRINTER", "state": {}, "object": null },
+            { "typeId": "SHUTTER_DOOR", "state": { "id": "kitchen_shutter", "targetRoom": "store_room", "targetDoorId": "store_exit", "isOpen": true }, "object": null },
+            { "typeId": "STOVE", "state": {}, "object": null },
+            { "typeId": "FRYER", "state": {}, "object": null },
+            { "typeId": "DISPENSER", "state": {}, "object": null },
+            { "typeId": "CUTTING_BOARD", "state": {}, "object": null },
+            { "typeId": "COUNTER", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        [
+            { "typeId": "TICKET_WHEEL", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "OFFICE_DOOR", "state": { "id": "kitchen_office_door", "targetRoom": "office", "targetDoorId": "office_exit", "isOpen": true }, "object": null }
+        ],
+        [
+            { "typeId": "SERVICE", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "GARBAGE", "state": {}, "object": null }
+        ],
+        [
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "SODA_FOUNTAIN", "state": { "facing": 0 }, "object": null },
+            { "typeId": "COUNTER", "state": { "facing": 2 }, "object": null },
+            { "typeId": "COUNTER", "state": { "facing": 2 }, "object": null },
+            { "typeId": "COUNTER", "state": { "facing": 2 }, "object": null },
+            { "typeId": "COUNTER", "state": { "facing": 2 }, "object": null },
+            { "typeId": "COUNTER", "state": { "facing": 2 }, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ]
+    ]
+};
+
+export const DEFAULT_STORE_ROOM = {
+    "width": 5,
+    "height": 8,
+    "cells": [
+        // Row 0
+        [
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 0 }, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        // Row 1
+        [
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 3 }, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 1 }, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        // Row 2
+        [
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 3 }, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 1 }, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        // Row 3
+        [
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 3 }, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 1 }, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        // Row 4
+        [
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 3 }, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 1 }, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        // Row 5
+        [
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 3 }, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 1 }, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        // Row 6
+        [
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 3 }, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "DELIVERY_TILE", "state": { "facing": 1 }, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        // Row 7
+        [
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "SHUTTER_DOOR", "state": { "id": "store_exit", "targetRoom": "main", "targetDoorId": "kitchen_shutter", "isOpen": true }, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ]
+    ]
+};
+
+export const DEFAULT_OFFICE_ROOM = {
+    "width": 4,
+    "height": 4,
+    "cells": [
+        // Row 0: Wall, Reno, Computer, Wall
+        [
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "RENO", "state": {}, "object": null },
+            { "typeId": "COMPUTER", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        // Row 1: Office Door, Floor, Floor, Menu
+        [
+            { "typeId": "OFFICE_DOOR", "state": { "id": "office_exit", "targetRoom": "main", "targetDoorId": "kitchen_office_door", "isOpen": true }, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "MENU", "state": {}, "object": null }
+        ],
+        // Row 2: Counter, Floor, Floor, Counter
+        [
+            { "typeId": "COUNTER", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "COUNTER", "state": {}, "object": null }
+        ],
+        // Row 3: Wall, Exit, Counter, Wall
+        [
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "EXIT_DOOR", "state": {}, "object": null },
+            { "typeId": "COUNTER", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ]
+    ]
+};

@@ -61,6 +61,20 @@ export class OrderSystem {
         // 2. Generate Base Customers
         const customers = [];
         for (let i = 0; i < customerCount; i++) {
+            // First customer always orders 2 plain burgers for tutorial consistency if Day 1
+            if (dayNumber === 1 && i === 0) {
+                customers.push({
+                    burger: { base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] }, // Will be duplicated or pushed twice logically? 
+                    // No, customer profile is one person's order. We want a GROUP order.
+                    // The loop below groups them.
+                    items: []
+                });
+                // Push a second identical customer to ensure they get grouped (due to high merge chance or forced grouping?)
+                // Actually, let's just make the FIRST PROFILE match the desired complexity, or force the group logic.
+                // Better: Force the first TICKET (later in step 3) to strictly be what we want.
+                // let's just push randoms here and overwrite later.
+                // customers.push(this.generateCustomerProfile(menuConfig));
+            }
             customers.push(this.generateCustomerProfile(menuConfig));
         }
 
@@ -81,9 +95,27 @@ export class OrderSystem {
             tickets.push(this.createTicketFromCustomers(ticketCustomers, tickets.length + 1));
         }
 
+        // Force First Ticket on Day 1 to be 2 Basic Burgers
+        if (dayNumber === 1 && tickets.length > 0) {
+            const tutTicket = new Ticket(1);
+            const tutBag = new Bag();
+            tutBag.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
+            tutBag.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
+            tutBag.payout = this.calculateBagPayout(tutBag);
+            tutTicket.addBag(tutBag);
+
+            tickets[0] = tutTicket;
+        }
+
         // 4. Shuffle Ticket Queue
         for (let j = tickets.length - 1; j > 0; j--) {
+            // Day 1: Don't shuffle the first ticket (index 0) so our tutorial order stays first
+            if (dayNumber === 1 && j === 0) continue;
+
             const k = Math.floor(Math.random() * (j + 1));
+            // Day 1: Lock index 0
+            if (dayNumber === 1 && k === 0) continue;
+
             [tickets[j], tickets[k]] = [tickets[k], tickets[j]]; // Swap
         }
 
@@ -126,7 +158,7 @@ export class OrderSystem {
         if (!menuConfig || !menuConfig.burgers || menuConfig.burgers.length === 0) {
             console.error("Invalid Menu Config!");
             // Fallback
-            order.burger = { base: 'Burger', bun: 'plain_bun', patty: 'beef_patty', modifications: [] };
+            order.burger = { base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] };
             return order;
         }
 
@@ -151,10 +183,11 @@ export class OrderSystem {
             });
         }
 
+
+
         order.burger = {
             base: burgerDef.name || 'Burger',
             bun: burgerDef.bun || 'plain_bun',
-            patty: burgerDef.patty || 'beef_patty',
             modifications: mods
         };
 
@@ -217,9 +250,8 @@ export class OrderSystem {
         let cost = 0;
         let complexity = 1; // Base
 
-        // Bun & Patty
+        // Bun
         cost += INGREDIENT_COSTS[burger.bun] || 1.0;
-        cost += INGREDIENT_COSTS[burger.patty] || 3.0;
 
         // Toppings
         if (burger.modifications) {
@@ -413,6 +445,7 @@ export class Bag {
         const requiredBurgers = [...this.burgers];
 
         for (const reqBurger of requiredBurgers) {
+            const requestedMods = reqBurger.modifications || [];
             const burgerIndex = contents.findIndex(item => {
                 if (!item.definitionId.includes('burger')) return false;
 
@@ -421,14 +454,13 @@ export class Bag {
                 const reqBun = reqBurger.bun || 'plain_bun';
                 if (itemBun !== reqBun) return false;
 
-                // B. Check Patty Type
-                const itemPatty = (item.state.patty && item.state.patty.definitionId) || 'beef_patty';
-                const reqPatty = reqBurger.patty || 'beef_patty';
-                if (itemPatty !== reqPatty) return false;
+                // B. (Removed Patty Type Check - it is now in toppings)
 
-                // C. Compare modifications
-                const requestedMods = reqBurger.modifications || [];
-                const actualToppings = (item.state.toppings || []).map(t => {
+                // C. Compare contents (Toppings + Patty)
+                // Use the burger's own state toppings
+                const burgerToppings = item.state.toppings || [];
+
+                const actualToppings = burgerToppings.map(t => {
                     if (typeof t === 'string') {
                         if (t === 'mayo') return 'mayo';
                         return t;
@@ -463,8 +495,16 @@ export class Bag {
                 // Also Base Ingredients are valid? (Bun/Patty are separate)
                 // What about 'tomato_slice' vs 'tomato'? handled above.
 
+                // Strict check for unauthorized extra toppings
+                // RELAXED: Allow extra toppings for now to prevent player frustration with optional items (e.g. Mayo)
+
                 const extraTop = actualToppings.find(act => !validToppings.has(act));
-                if (extraTop) return false;
+                if (extraTop) {
+                    // console.log(`Rejecting due to extra topping: ${extraTop}`);
+                    return false;
+                }
+
+
 
                 return true;
             });
@@ -479,7 +519,6 @@ export class Bag {
         if (contents.length > 0) {
             return false;
         }
-
         return true;
     }
 }

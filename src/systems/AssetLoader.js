@@ -1,3 +1,5 @@
+import { TILE_SIZE } from '../constants.js';
+
 export class AssetLoader {
     constructor() {
         this.assets = new Map();
@@ -32,8 +34,23 @@ export class AssetLoader {
             const img = new Image();
             img.src = `/assets/${filename}`;
             img.onload = () => {
-                this.assets.set(filename, img);
-                resolve(img);
+                if ((img.width > TILE_SIZE || img.height > TILE_SIZE) && !filename.includes('/')) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = TILE_SIZE;
+                    canvas.height = TILE_SIZE;
+                    const ctx = canvas.getContext('2d');
+
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+
+                    ctx.drawImage(img, 0, 0, TILE_SIZE, TILE_SIZE);
+
+                    this.assets.set(filename, canvas);
+                    resolve(canvas);
+                } else {
+                    this.assets.set(filename, img);
+                    resolve(img);
+                }
             };
             img.onerror = () => {
                 console.error(`Failed to load image: ${filename}`);

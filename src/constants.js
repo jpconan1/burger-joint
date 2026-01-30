@@ -26,7 +26,7 @@ export const ASSETS = {
         SODA_FOUNTAIN_FULL: 'soda_fountain-full.png',
         SODA_FOUNTAIN_WARNING: 'soda_fountain-warning.png',
         SODA_FOUNTAIN_FILLING: 'soda_fountain-filling.png',
-        SODA_FOUNTAIN_DONE: 'soda_fountain-done.png',
+
         SODA_SIGN: 'soda-sign.png',
         HETAP_SIGN: 'hetap-sign.png',
         SHUTTER_TILE_OPEN: 'shutter_tile-open.png',
@@ -148,8 +148,9 @@ export const ASSETS = {
         HANDS: 'hands.png',
     },
     UI: {
-        ORDER_TICKET: 'order_ticket.png',
-        SELECTOR: 'selector.png',
+        INSERT_LABEL: 'insert-label.png',
+        ORDER_TICKET: 'ui/order_ticket.png',
+        SELECTOR: 'ui/selector.png',
         BUY_BUTTON: 'buy_button.png',
         RENO_BUILD_MODE: 'build-mode-button.png',
         RENO_EXPAND: 'expand-button.png',
@@ -185,6 +186,20 @@ export const ASSETS = {
         STAR_FILLED: 'star.png',
         STAR_EMPTY: 'star_outline_w.png',
         GREEN_ARROW: 'ui/green_arrow.png',
+        MENU_BUTTON_IDLE: 'ui/menu_button-idle.png',
+        MENU_BUTTON_SELECTED: 'ui/menu_button-selected.png',
+        BUILD_BUTTON_IDLE: 'ui/build_button-idle.png',
+        BUILD_BUTTON_SELECTED: 'ui/build_button-selected.png',
+        SUPPLY_METER: 'ui/supply_meter.png',
+        GAME_BORDER_TOP_LEFT: 'ui/game_border-top-left.png',
+        GAME_BORDER_TOP_RIGHT: 'ui/game_border-top-right.png',
+        GAME_BORDER_BOTTOM_LEFT: 'ui/game_border-bottom-left.png',
+        GAME_BORDER_BOTTOM_RIGHT: 'ui/game_border-bottom-right.png',
+        GAME_BORDER_TOP: 'ui/game_border-top-row.png',
+        GAME_BORDER_BOTTOM: 'ui/game_border-bottom-row.png',
+        GAME_BORDER_LEFT: 'ui/game_border-left-column.png',
+        GAME_BORDER_RIGHT: 'ui/game_border-right-column.png',
+        CRUMPLED_PAPER_BACKGROUND: 'ui/crumpled_paper_background.png',
     },
     AUDIO: {
         SONG1_INTRO: 'audio/song1-intro.wav',
@@ -197,6 +212,12 @@ export const ASSETS = {
         SONG4_LOOP: 'audio/song4.wav',
         TITLE_THEME: 'audio/title-theme.wav',
         PRINTER: 'audio/printer.wav',
+    },
+    TUTORIAL: {
+        BUBBLE: 'tutorial/bubble.png', // Placeholder for the sprite sheet
+        BUBBLE_TOP: 'tutorial/bubble-top.png',
+        BUBBLE_BOTTOM: 'tutorial/bubble-bottom.png',
+        // Add more here as needed, e.g. BUBBLE_ARROW: 'tutorial/bubble_arrow.png'
     }
 };
 

@@ -1,4 +1,4 @@
-import itemsData from './items.json';
+import itemsData from './items.json' with { type: 'json' };
 
 export const ItemType = {
     Box: 'Box',

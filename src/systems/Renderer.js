@@ -1,5 +1,7 @@
 import { TILE_SIZE, GRID_WIDTH, GRID_HEIGHT, ASSETS, TAG_LAYOUTS } from '../constants.js';
 import { DEFINITIONS } from '../data/definitions.js';
+import { SPRITE_DEFINITIONS } from '../data/sprite_definitions.js';
+import { TutorialOverlay } from '../renderers/TutorialOverlay.js';
 
 export class Renderer {
     constructor(canvasId, assetLoader) {
@@ -7,9 +9,11 @@ export class Renderer {
         this.canvas.id = canvasId;
         this.ctx = this.canvas.getContext('2d');
         this.assetLoader = assetLoader;
+        this.tutorialOverlay = new TutorialOverlay();
 
         // Initialize canvas to full window size
         this.resizeCanvas();
+
 
         // Listen for window resize
         window.addEventListener('resize', () => {
@@ -56,6 +60,7 @@ export class Renderer {
         this.ctx.translate(this.offsetX, this.offsetY);
 
         // 1. Draw Floor/Walls (Base Layer)
+        const progressBars = [];
         for (let y = 0; y < gameState.grid.height; y++) {
             for (let x = 0; x < gameState.grid.width; x++) {
                 const cell = gameState.grid.getCell(x, y);
@@ -216,7 +221,7 @@ export class Renderer {
                     else if (cell.state.status === 'full') tileTexture = ASSETS.TILES.SODA_FOUNTAIN_FULL;
                     else if (cell.state.status === 'warning') tileTexture = ASSETS.TILES.SODA_FOUNTAIN_WARNING;
                     else if (cell.state.status === 'filling') tileTexture = ASSETS.TILES.SODA_FOUNTAIN_FILLING;
-                    else if (cell.state.status === 'done') tileTexture = ASSETS.TILES.SODA_FOUNTAIN_DONE;
+                    else if (cell.state.status === 'done') tileTexture = ASSETS.TILES.SODA_FOUNTAIN_EMPTY;
                 }
 
                 if (cell.type.id === 'SHUTTER_DOOR') {
@@ -287,6 +292,11 @@ export class Renderer {
                     }
                 }
 
+                // 1.55 Draw Finished Soda (Overlay)
+                if (cell.type.id === 'SODA_FOUNTAIN' && cell.state && cell.state.status === 'done') {
+                    this.drawEntity(ASSETS.OBJECTS.SODA, x, y);
+                }
+
                 // 1.6 Draw Reno Lock Overlay
                 if (cell.type.id === 'RENO_LOCKED') {
                     this.drawTile(ASSETS.TILES.LOCKED, x, y);
@@ -337,7 +347,7 @@ export class Renderer {
                                 }
                             }
                             const pct = Math.min(item.state.cookingProgress / max, 1);
-                            this.drawProgressBar(x, y, pct);
+                            progressBars.push({ x, y, pct });
                         }
                     }
 
@@ -349,7 +359,7 @@ export class Renderer {
                         if (item.state.cookingProgress > 0) {
                             const max = stageDef.duration || 2000;
                             const pct = Math.min(item.state.cookingProgress / max, 1);
-                            this.drawProgressBar(x, y, pct);
+                            progressBars.push({ x, y, pct });
                         }
                     }
                 }
@@ -366,7 +376,7 @@ export class Renderer {
                             }
                         }
                         const pct = Math.min(cell.state.timer / max, 1);
-                        this.drawProgressBar(x, y, pct);
+                        progressBars.push({ x, y, pct });
                     }
                 }
 
@@ -375,7 +385,7 @@ export class Renderer {
                     if (cell.state && cell.state.status === 'filling') {
                         const max = cell.state.fillDuration || 3000;
                         const pct = Math.min((cell.state.timer || 0) / max, 1);
-                        this.drawProgressBar(x, y, pct);
+                        progressBars.push({ x, y, pct });
                     }
                 }
 
@@ -426,6 +436,97 @@ export class Renderer {
             }
         }
 
+        // 3.2 Draw Game Border
+        if (gameState.grid) {
+            const gridPixelWidth = gameState.grid.width * TILE_SIZE;
+            const gridPixelHeight = gameState.grid.height * TILE_SIZE;
+
+            // Helper to draw a side piece masked to a specific length
+            const drawSide = (textureName, x, y, length, isVertical) => {
+                const img = this.assetLoader.get(textureName);
+                if (!img) return;
+
+                if (isVertical) {
+                    // Vertical Side (Left/Right)
+                    // Clip height to 'length'
+                    // Draw at (x, y) with full width, clipped height
+                    this.ctx.drawImage(img,
+                        0, 0, img.width, length, // Source
+                        x, y, img.width, length  // Destination
+                    );
+                } else {
+                    // Horizontal Side (Top/Bottom)
+                    // Clip width to 'length'
+                    this.ctx.drawImage(img,
+                        0, 0, length, img.height, // Source
+                        x, y, length, img.height  // Destination
+                    );
+                }
+            };
+
+            // Helper to draw a corner
+            const drawCorner = (textureName, x, y) => {
+                const img = this.assetLoader.get(textureName);
+                if (img) this.ctx.drawImage(img, x, y);
+            };
+
+            // Fetch dimensions for positioning (using one of the images to determine thickness)
+            // We assume the corners and sides line up. 
+            // Top/Bottom thickness = height of top/bottom images
+            // Left/Right thickness = width of left/right images
+            const topImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_TOP);
+            const leftImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_LEFT);
+            // Even if they aren't loaded yet, the loop will just skip or draw nothing, 
+            // but we need them for offset calc.
+
+            if (topImg && leftImg) {
+                const topHeight = topImg.height;
+                const leftWidth = leftImg.width;
+
+                // We also need right/bottom dimensions for full box, but usually symmetry applies.
+                // Let's get them to be safe or assume symmetry if needed.
+                const rightImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_RIGHT);
+                const bottomImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_BOTTOM);
+                // const rightWidth = rightImg ? rightImg.width : leftWidth;
+                // const bottomHeight = bottomImg ? bottomImg.height : topHeight;
+
+                // Bring the border in by one tile, then push it out 8px
+                const inset = TILE_SIZE - 7;
+
+                // Calculate the "inner" rectangle that the border edges should adhere to
+                const innerX = inset;
+                const innerY = inset;
+                const innerWidth = gridPixelWidth - (inset * 2);
+                const innerHeight = gridPixelHeight - (inset * 2);
+
+                // 1. Draw Sides
+                // Top (centered on X grid, above Y of inner rect)
+                drawSide(ASSETS.UI.GAME_BORDER_TOP, innerX, innerY - topHeight, innerWidth, false);
+
+                // Bottom (centered on X grid, below Y of inner rect)
+                drawSide(ASSETS.UI.GAME_BORDER_BOTTOM, innerX, innerY + innerHeight, innerWidth, false);
+
+                // Left (centered on Y grid, left of X of inner rect)
+                drawSide(ASSETS.UI.GAME_BORDER_LEFT, innerX - leftWidth, innerY, innerHeight, true);
+
+                // Right (centered on Y grid, right of X of inner rect)
+                drawSide(ASSETS.UI.GAME_BORDER_RIGHT, innerX + innerWidth, innerY, innerHeight, true);
+
+                // 2. Draw Corners
+                // Top-Left
+                drawCorner(ASSETS.UI.GAME_BORDER_TOP_LEFT, innerX - leftWidth, innerY - topHeight);
+
+                // Top-Right
+                drawCorner(ASSETS.UI.GAME_BORDER_TOP_RIGHT, innerX + innerWidth, innerY - topHeight);
+
+                // Bottom-Left
+                drawCorner(ASSETS.UI.GAME_BORDER_BOTTOM_LEFT, innerX - leftWidth, innerY + innerHeight);
+
+                // Bottom-Right
+                drawCorner(ASSETS.UI.GAME_BORDER_BOTTOM_RIGHT, innerX + innerWidth, innerY + innerHeight);
+            }
+        }
+
         // 3.5 Draw Lighting Effect
         if (gameState.grid && gameState.queueFinishedTime) {
             const elapsed = Date.now() - gameState.queueFinishedTime;
@@ -443,6 +544,11 @@ export class Renderer {
                 gameState.ratingPopup.render(this.ctx, this.assetLoader);
             }
         }
+
+        // Draw Defered Progress Bars (So they are on top of borders/lighting)
+        progressBars.forEach(pb => {
+            this.drawProgressBar(pb.x, pb.y, pb.pct);
+        });
 
         this.ctx.restore();
 
@@ -467,11 +573,37 @@ export class Renderer {
             // console.log("Renderer: Calling renderRenoScreen");
             this.renderRenoScreen(gameState);
         }
-        if (gameState.gameState === 'MENU_CUSTOM') {
+        if (gameState.menuSystem) {
             gameState.menuSystem.render(this);
         }
 
         this.drawControlsHelp(gameState);
+
+        // Render Tutorial Overlay
+        if (this.tutorialOverlay) {
+            this.tutorialOverlay.render(this, gameState);
+        }
+
+        // Render Build Mode UI (Global Space)
+        if (gameState.gameState === 'BUILD_MODE' && gameState.placementState) {
+            this.renderPlacementCursor(gameState.placementState);
+            this.drawPlacementHUD(gameState.placementState, gameState);
+            if (gameState.placementState.menu) {
+                this.renderBuildMenu(gameState.placementState.menu);
+            }
+        }
+    }
+
+    findTileByType(gameState, typeId) {
+        if (!gameState.grid) return null;
+        for (let y = 0; y < gameState.grid.height; y++) {
+            for (let x = 0; x < gameState.grid.width; x++) {
+                if (gameState.grid.getCell(x, y).type.id === typeId) {
+                    return { x, y };
+                }
+            }
+        }
+        return null;
     }
 
     drawServiceTimer(gridX, gridY, percent) {
@@ -679,6 +811,8 @@ export class Renderer {
                             // Nudge up 12px more relative to the top insert
                             const contentY = baseY + yOffset - 12;
                             this.ctx.drawImage(imgContent, baseX, contentY, TILE_SIZE, TILE_SIZE);
+
+
                         }
                     }
                 }
@@ -687,6 +821,14 @@ export class Renderer {
                 // Only if needed? User asked for "sandwiching" so I assume partTexture is the front.
                 const imgPart = this.assetLoader.get(partTexture);
                 if (imgPart) this.ctx.drawImage(imgPart, baseX, baseY + yOffset, TILE_SIZE, TILE_SIZE);
+
+                // 4. Draw Age Label (stuck to insert)
+                if (contents && contents.length > 0 && contents[0].age === 1) {
+                    const imgLabel = this.assetLoader.get(ASSETS.UI.INSERT_LABEL);
+                    if (imgLabel) {
+                        this.ctx.drawImage(imgLabel, baseX, baseY + yOffset, TILE_SIZE, TILE_SIZE);
+                    }
+                }
 
             } else {
                 // Non-top items: Just draw the partTexture to simulate the stack depth
@@ -784,6 +926,55 @@ export class Renderer {
         }
     }
 
+    drawAnimatedSprite(defId, x, y, startTime = 0, overridePixelX = null, overridePixelY = null) {
+        const def = SPRITE_DEFINITIONS[defId];
+        if (!def) return;
+
+        // Resolve Texture
+        let textureName = def.texture;
+
+        const img = this.assetLoader.get(textureName);
+        if (!img) return;
+
+        // Calculate Frame
+        const elapsed = Date.now() - startTime;
+        let frameIndex = 0;
+
+        if (def.loop) {
+            // Line Boil / Loop
+            const totalFrames = def.frameCount;
+            const period = totalFrames * (def.duration || 100);
+            const t = elapsed % period;
+            frameIndex = Math.floor(t / (def.duration || 100));
+        } else {
+            const totalFrames = def.frameCount;
+            frameIndex = Math.floor(elapsed / (def.duration || 100));
+            if (frameIndex >= totalFrames) frameIndex = totalFrames - 1;
+        }
+
+        const fw = def.frameWidth;
+        const fh = def.frameHeight;
+        const sx = frameIndex * fw;
+        const sy = 0;
+
+        let destX, destY;
+
+        if (overridePixelX !== null && overridePixelY !== null) {
+            destX = overridePixelX;
+            destY = overridePixelY;
+        } else {
+            // Grid-based default behavior
+            destX = x * TILE_SIZE;
+            destY = y * TILE_SIZE;
+            const offsetX = (TILE_SIZE - fw) / 2;
+            const offsetY = (TILE_SIZE - fh) / 2;
+            destX += offsetX;
+            destY += offsetY;
+        }
+
+        this.ctx.drawImage(img, sx, sy, fw, fh, destX, destY, fw, fh);
+    }
+
 
 
     renderTitleScreen(selection = 0) {
@@ -792,38 +983,81 @@ export class Renderer {
             this.resizeCanvas();
         }
 
-        this.ctx.fillStyle = '#222';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        const bgImg = this.assetLoader.get(ASSETS.UI.CRUMPLED_PAPER_BACKGROUND);
+        if (bgImg) {
+            this.ctx.drawImage(bgImg, 0, 0, this.canvas.width, this.canvas.height);
+        } else {
+            this.ctx.fillStyle = '#e1d2d2'; // Fallback to light paper color
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
 
-        this.ctx.fillStyle = '#fff';
-        this.ctx.font = '40px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('Burger Joint', this.canvas.width / 2, this.canvas.height / 3 - 20);
-
-        this.ctx.font = '24px Arial';
-
+        // Title
+        this.ctx.save();
         const centerX = this.canvas.width / 2;
-        const startY = this.canvas.height / 2;
-        const spacing = 40;
+        const titleY = this.canvas.height / 3 - 40;
+
+        this.ctx.translate(centerX, titleY);
+        this.ctx.rotate(-5 * Math.PI / 180); // Slight tilt
+
+        this.ctx.font = '900 80px "Inter", sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.lineJoin = 'round';
+        this.ctx.miterLimit = 2; // Fix spikes
+
+        // Stroke
+        // Stroke
+        this.ctx.lineWidth = 42; // SUPER THICK
+        this.ctx.strokeStyle = '#000';
+        this.ctx.strokeText('BURGER JOINT!', 0, 0);
+
+        // Fill
+        this.ctx.fillStyle = '#fff';
+        this.ctx.fillText('BURGER JOINT!', 0, 0);
+
+        this.ctx.restore();
+
+        // Options
+        this.ctx.font = '900 40px "Inter", sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.lineWidth = 28;
+        this.ctx.lineJoin = 'round';
+        this.ctx.strokeStyle = '#000';
+
+        const startY = this.canvas.height / 2 + 30; // Push down a bit
+        const spacing = 60;
 
         const options = ['New Game', 'Settings'];
 
         options.forEach((opt, index) => {
             const y = startY + (index * spacing);
-            if (selection === index) {
-                this.ctx.fillStyle = '#ffd700';
-                this.ctx.fillText(`> ${opt} <`, centerX, y);
-            } else {
-                this.ctx.fillStyle = '#888';
-                this.ctx.fillText(opt, centerX, y);
+            const isSelected = (selection === index);
+
+            this.ctx.strokeText(opt, centerX, y);
+
+            this.ctx.fillStyle = isSelected ? '#00FF7F' : '#fff'; // Spring Green if selected
+            this.ctx.fillText(opt, centerX, y);
+
+            if (isSelected) {
+                // Double stroke for selected? Or just color change. Color change is requested.
             }
         });
 
         // Controls hint
-        this.ctx.font = '14px Arial';
-        this.ctx.fillStyle = '#444';
-        this.ctx.fillText('WASD / Arrows to Navigate', centerX, this.canvas.height - 60);
-        this.ctx.fillText('ENTER / SPACE to Select', centerX, this.canvas.height - 40);
+        this.ctx.font = '900 18px "Inter", sans-serif';
+        this.ctx.lineWidth = 12;
+        this.ctx.fillStyle = '#fff';
+
+        const hintY = this.canvas.height - 40;
+        const hintText1 = 'WASD / Arrows to Navigate';
+        const hintText2 = 'ENTER / SPACE to Select';
+
+        this.ctx.strokeText(hintText1, centerX, hintY - 25);
+        this.ctx.fillText(hintText1, centerX, hintY - 25);
+
+        this.ctx.strokeText(hintText2, centerX, hintY);
+        this.ctx.fillText(hintText2, centerX, hintY);
     }
 
     renderSettingsMenu(state, settings) {
@@ -833,10 +1067,15 @@ export class Renderer {
         }
 
         // state: { selectedIndex, rebindingAction }
-        this.ctx.fillStyle = '#111';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        const bgImg = this.assetLoader.get(ASSETS.UI.CRUMPLED_PAPER_BACKGROUND);
+        if (bgImg) {
+            this.ctx.drawImage(bgImg, 0, 0, this.canvas.width, this.canvas.height);
+        } else {
+            this.ctx.fillStyle = '#e1d2d2';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
 
-        this.ctx.fillStyle = '#fff';
+        this.ctx.fillStyle = '#000';
         this.ctx.textAlign = 'center';
 
         this.ctx.font = '32px Arial';
@@ -845,7 +1084,7 @@ export class Renderer {
         // 1. Audio Settings
         this.ctx.textAlign = 'left';
         this.ctx.font = '24px Arial';
-        this.ctx.fillStyle = '#aaa';
+        this.ctx.fillStyle = '#333';
         this.ctx.fillText("Audio", 100, 100);
 
         const audioOptions = [
@@ -863,11 +1102,11 @@ export class Renderer {
             const val = settings.preferences[opt.key];
 
             if (isSelected) {
-                this.ctx.fillStyle = '#333';
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
                 this.ctx.fillRect(100, currentY - 25, this.canvas.width - 200, rowHeight);
-                this.ctx.fillStyle = '#ffd700';
+                this.ctx.fillStyle = '#d35400';
             } else {
-                this.ctx.fillStyle = '#aaa';
+                this.ctx.fillStyle = '#444';
             }
 
             this.ctx.font = '20px Monospace';
@@ -875,7 +1114,7 @@ export class Renderer {
 
             this.ctx.textAlign = 'right';
             const statusText = val ? "ON" : "OFF";
-            this.ctx.fillStyle = val ? '#0f0' : '#f00';
+            this.ctx.fillStyle = val ? '#27ae60' : '#c0392b'; // Darker Green/Red
             this.ctx.fillText(statusText, this.canvas.width - 120, currentY);
 
             this.ctx.textAlign = 'left';
@@ -885,7 +1124,7 @@ export class Renderer {
         // 2. Controls
         currentY += 20; // Spacer
         this.ctx.font = '24px Arial';
-        this.ctx.fillStyle = '#aaa';
+        this.ctx.fillStyle = '#333';
         this.ctx.fillText("Key Bindings", 100, currentY);
         currentY += 40;
 
@@ -907,11 +1146,11 @@ export class Renderer {
             const y = currentY;
 
             if (isSelected) {
-                this.ctx.fillStyle = '#333';
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
                 this.ctx.fillRect(100, y - 25, this.canvas.width - 200, rowHeight);
-                this.ctx.fillStyle = '#ffd700';
+                this.ctx.fillStyle = '#d35400';
             } else {
-                this.ctx.fillStyle = '#aaa';
+                this.ctx.fillStyle = '#444';
             }
 
             // Action Name
@@ -923,7 +1162,7 @@ export class Renderer {
             this.ctx.textAlign = 'right';
             let keyParams = bindings[action];
             if (isRebinding) {
-                this.ctx.fillStyle = '#0f0';
+                this.ctx.fillStyle = '#27ae60';
                 this.ctx.fillText('PRESS KEY...', this.canvas.width - 120, y);
             } else {
                 // Formatting key code
@@ -937,7 +1176,7 @@ export class Renderer {
 
         // Instructions
         this.ctx.textAlign = 'center';
-        this.ctx.fillStyle = '#666';
+        this.ctx.fillStyle = '#333';
         this.ctx.font = '16px Arial';
         this.ctx.fillText('Use Arrows/WASD to Navigate. ENTER to Rebind. ESC to Back.', this.canvas.width / 2, this.canvas.height - 30);
     }
@@ -1198,6 +1437,9 @@ export class Renderer {
     renderPlacementCursor(state) {
         if (!state.active) return;
 
+        // Debugging Cursor Visibility
+        // console.log(`Rendering Cursor: X=${state.x}, Y=${state.y}, Active=${state.active}`);
+
         // This method renders the cursor which belongs to the GRID coordinates.
         // We must apply the same offset!
 
@@ -1205,6 +1447,9 @@ export class Renderer {
         this.ctx.translate(this.offsetX, this.offsetY);
 
         const img = this.assetLoader.get(ASSETS.UI.SELECTOR);
+        if (!img) {
+            console.warn("Cursor Image (SELECTOR) not found in AssetLoader!");
+        }
         if (img) {
             // Pulse effect?
             const pulse = 1.0 + Math.sin(Date.now() / 200) * 0.1;
@@ -1229,6 +1474,14 @@ export class Renderer {
                     this.ctx.drawImage(tImg, state.x * TILE_SIZE, state.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                     this.ctx.restore();
                 }
+            }
+
+            // Draw attached object ghost on top
+            if (state.heldItem.attachedObject) {
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.5;
+                this.drawObject(state.heldItem.attachedObject, state.x, state.y);
+                this.ctx.restore();
             }
         }
 
@@ -1954,7 +2207,7 @@ export class Renderer {
         this.drawBurgerPixels(item, px, py);
     }
 
-    drawBurgerPixels(item, px, py, scale = 1.0) {
+    drawBurgerPixels(item, px, py, scale = 1.0, ctx = this.ctx) {
         const drawSize = TILE_SIZE * scale;
 
         // 0. Wrapped State - Override everything else
@@ -1963,7 +2216,7 @@ export class Renderer {
             // Fallback to wrapper texture if specific wrapped burger asset missing? 
             // Better to rely on the defined asset.
             if (wrappedImg) {
-                this.ctx.drawImage(wrappedImg, px, py, drawSize, drawSize);
+                ctx.drawImage(wrappedImg, px, py, drawSize, drawSize);
             }
             return;
         }
@@ -1986,7 +2239,7 @@ export class Renderer {
         // 1. Bottom Bun
         const bunBottomImg = this.assetLoader.get(bottomTexName);
         if (bunBottomImg) {
-            this.ctx.drawImage(bunBottomImg, px, py, drawSize, drawSize);
+            ctx.drawImage(bunBottomImg, px, py, drawSize, drawSize);
         }
 
         let yOffset = 0; // Moves UP (negative Y)
@@ -2037,16 +2290,13 @@ export class Renderer {
             if (texName) {
                 const img = this.assetLoader.get(texName);
                 if (img) {
-                    this.ctx.drawImage(img, px, py - yOffset, drawSize, drawSize);
+                    ctx.drawImage(img, px, py - yOffset, drawSize, drawSize);
                     yOffset += nudge;
                 }
             }
         };
 
-        // 2. Patty (Always distinct and first)
-        if (item.state.patty) {
-            drawLayer(item.state.patty);
-        }
+
 
         // 3. Toppings (Iterate in order)
         if (item.state.toppings && Array.isArray(item.state.toppings)) {
@@ -2058,7 +2308,7 @@ export class Renderer {
         // 4. Top Bun
         const bunTopImg = this.assetLoader.get(topTexName);
         if (bunTopImg) {
-            this.ctx.drawImage(bunTopImg, px, py - yOffset, drawSize, drawSize);
+            ctx.drawImage(bunTopImg, px, py - yOffset, drawSize, drawSize);
         }
     }
 }
