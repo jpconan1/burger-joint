@@ -23,6 +23,7 @@ export class Renderer {
         // Store offsets for other methods (like cursor) to use
         this.offsetX = 0;
         this.offsetY = 0;
+        this.zoomLevel = 1.0;
 
         document.getElementById('app').appendChild(this.canvas);
     }
@@ -47,8 +48,8 @@ export class Renderer {
         this.offsetY = 0;
 
         if (gameState.grid) {
-            const gridPixelWidth = gameState.grid.width * TILE_SIZE;
-            const gridPixelHeight = gameState.grid.height * TILE_SIZE;
+            const gridPixelWidth = gameState.grid.width * TILE_SIZE * this.zoomLevel;
+            const gridPixelHeight = gameState.grid.height * TILE_SIZE * this.zoomLevel;
 
             this.offsetX = Math.floor((this.canvas.width - gridPixelWidth) / 2);
             this.offsetY = Math.floor((this.canvas.height - gridPixelHeight) / 2);
@@ -58,6 +59,7 @@ export class Renderer {
 
         this.ctx.save();
         this.ctx.translate(this.offsetX, this.offsetY);
+        this.ctx.scale(this.zoomLevel, this.zoomLevel);
 
         // 1. Draw Floor/Walls (Base Layer)
         const progressBars = [];
@@ -2310,5 +2312,9 @@ export class Renderer {
         if (bunTopImg) {
             ctx.drawImage(bunTopImg, px, py - yOffset, drawSize, drawSize);
         }
+    }
+
+    setZoom(level) {
+        this.zoomLevel = level;
     }
 }
