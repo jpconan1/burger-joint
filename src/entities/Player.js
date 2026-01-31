@@ -17,9 +17,20 @@ export class Player {
 
         // Direction State
         this.facing = { x: 0, y: 1 }; // Default down
+
+        // Appliance Holding State
+        this.heldAppliance = null;
     }
 
     move(dx, dy, grid) {
+        // Feature: Turn before Move when holding appliance
+        if (this.heldAppliance) {
+            if (this.facing.x !== dx || this.facing.y !== dy) {
+                this.facing = { x: dx, y: dy };
+                return true; // We "moved" (turned)
+            }
+        }
+
         // Always update facing direction on input
         this.facing = { x: dx, y: dy };
 
@@ -45,6 +56,18 @@ export class Player {
     actionPickUp(grid) {
         const cell = this.getTargetCell(grid);
         if (!cell) return;
+
+        // APPLIANCE PLACEMENT (Tap/Press to Put Down)
+        if (this.heldAppliance) {
+            this.actionPlaceAppliance(grid);
+            return;
+        }
+
+        // APPLIANCE PLACEMENT (Tap/Press to Put Down)
+        if (this.heldAppliance) {
+            this.actionPlaceAppliance(grid);
+            return;
+        }
 
         // DIRECT SAUCE APPLICATION (Pick Up Key)
         // If holding sauce bag and targeting burger -> Apply
@@ -339,6 +362,13 @@ export class Player {
             if (!cell.object) {
                 // Garbage Logic
                 if (cell.type.id === 'GARBAGE') {
+                    // Feature: Empty Insert without trashing it
+                    if (this.heldItem.definitionId === 'insert') {
+                        this.heldItem.state.contents = [];
+                        console.log("Emptied insert into trash");
+                        return;
+                    }
+
                     console.log(`Trashed item: ${this.heldItem.definitionId}`);
                     this.heldItem = null;
                     return;
@@ -389,6 +419,11 @@ export class Player {
                     this.heldItem = null;
                 }
             } else {
+                // Feature: Pick Up into Held Insert
+                if (this.heldItem.definitionId === 'insert') {
+                    if (this._handleInsertPickup(cell, cell.object)) return;
+                }
+
                 // Try putting back into box first
                 if (cell.object.type === ItemType.Box) {
                     if (this._handleBoxPutBack(cell.object, this.heldItem)) {
@@ -672,6 +707,16 @@ export class Player {
         }
 
         if (this.heldItem && this.heldItem.definitionId === 'insert') {
+            // Feature: Empty Insert into Trash (Interact Key)
+            if (cell.type.id === 'GARBAGE') {
+                this.heldItem.state.contents = [];
+                console.log("Emptied insert into trash (Interact)");
+                return;
+            }
+
+            // Feature: Pick Up into Insert (Interact Key)
+            if (target && this._handleInsertPickup(cell, target)) return;
+
             // Check for placement on empty counter (that is NOT a cutting board, as that is handled below, and NOT fryer)
             if (!target && cell.type.holdsItems && cell.type.id !== 'GARBAGE' && cell.type.id !== 'CUTTING_BOARD' && cell.type.id !== 'FRYER') {
                 cell.object = this.heldItem;
@@ -1393,5 +1438,165 @@ export class Player {
         // Flattened Stacking Logic: Everything goes into toppings.
         if (!burgerItem.state.toppings) burgerItem.state.toppings = [];
         burgerItem.state.toppings.push(feedItem);
+    }
+
+    _isInsertable(item) {
+        if (!item) return false;
+        const def = item.definition || {};
+        const isCookedBacon = item.definitionId === 'bacon' && item.state.cook_level === 'cooked';
+        return def.isSlice || def.category === 'topping' || def.category === 'patty' || isCookedBacon;
+    }
+
+    _handleInsertPickup(cell, target) {
+        const insert = this.heldItem;
+        let itemToTake = null;
+        let updateSource = null;
+
+        // 1. Simple Item
+        if (target instanceof ItemInstance || target.type === undefined) {
+            if (this._isInsertable(target)) {
+                itemToTake = target;
+                updateSource = () => { cell.object = null; };
+            }
+        }
+        // 2. Box (If contains insertable)
+        else if (target.type === ItemType.Box) {
+            if (target.state.isOpen && target.state.count > 0) {
+                const prodId = target.definition.produces;
+                // Create temp Item to check definition/insertability
+                const tempItem = new ItemInstance(prodId);
+                if (this._isInsertable(tempItem)) {
+                    itemToTake = tempItem;
+                    updateSource = () => {
+                        target.state.count--;
+                        if (target.state.age) itemToTake.state.age = target.state.age;
+                    };
+                }
+            }
+        }
+
+        if (itemToTake) {
+            const contents = insert.state.contents || [];
+            if (contents.length >= 50) {
+                console.log("Insert is full!");
+                return true; // Handled
+            }
+
+            if (contents.length > 0) {
+                if (contents[0].definitionId !== itemToTake.definitionId) {
+                    console.log(`Cannot mix ${itemToTake.definitionId} with ${contents[0].definitionId} in insert.`);
+                    return true; // Handled
+                }
+            }
+
+            // Execute
+            updateSource();
+            if (!insert.state.contents) insert.state.contents = [];
+            insert.state.contents.push(itemToTake);
+            console.log(`Picked up ${itemToTake.definitionId} into insert.`);
+            return true;
+        }
+        return false;
+    }
+
+    // New: Action to Pick Up Appliance (Triggered by 500ms Hold)
+    actionPickUpAppliance(grid, game) {
+        // Can only pick up if we are NOT holding an item (except maybe if we assimilate it?)
+        if (this.heldItem) {
+            console.log("Hands full! Cannot pick up appliance.");
+            return;
+        }
+
+        if (this.heldAppliance) {
+            console.log("Already holding an appliance.");
+            return;
+        }
+
+        const targetX = this.x + this.facing.x;
+        const targetY = this.y + this.facing.y;
+        const cell = grid.getCell(targetX, targetY);
+
+        if (!cell) return;
+
+        // Logic adapted from ConstructionSystem.js (Lines 189-217)
+        const isAppliance = cell.type.id !== 'FLOOR' && cell.type.id !== 'WALL' && !cell.type.isDoor && !cell.type.isExit;
+
+        if (isAppliance) {
+            const tileTypeId = cell.type.id;
+            const savedState = cell.state ? JSON.parse(JSON.stringify(cell.state)) : null;
+
+            // Find definition
+            const shopItem = game.shopItems.find(i => i.tileType === tileTypeId);
+
+            if (shopItem) {
+                this.heldAppliance = {
+                    id: shopItem.id,
+                    tileType: tileTypeId,
+                    savedState: savedState,
+                    attachedObject: cell.object // Save item on top
+                };
+
+                // Log what we are picking up
+                console.log("Picking up " + tileTypeId);
+
+                // Clear from Grid
+                grid.setTileType(targetX, targetY, TILE_TYPES.FLOOR);
+
+                // IMPORTANT: Clear the object from the grid so it moves with the cursor
+                if (cell.object) {
+                    cell.object = null;
+                }
+
+                game.updateCapabilities();
+                console.log("Picked up appliance: " + shopItem.id);
+                game.addFloatingText("Picked Up!", this.x, this.y, '#ffffff');
+            }
+        }
+    }
+
+    // New: Action to Place Appliance
+    actionPlaceAppliance(grid) {
+        if (!this.heldAppliance) return;
+
+        const targetX = this.x + this.facing.x;
+        const targetY = this.y + this.facing.y;
+        const cell = grid.getCell(targetX, targetY);
+
+        if (!cell) return;
+
+        console.log("Trying to place on " + cell.type.id);
+
+        // Validation (Target must be FLOOR)
+        if (cell.type.id !== 'FLOOR') {
+            console.log("Cannot place here. Blocked by " + cell.type.id);
+            return;
+        }
+
+        // Cannot place on top of items (unless we implement swapping logic later, simpler to block)
+        if (cell.object) {
+            console.log("Cannot place here. Blocked by object.");
+            return;
+        }
+
+        // Place it!
+        // We need TILE_TYPES reference. Imported at top.
+        const typeDef = TILE_TYPES[this.heldAppliance.tileType];
+        if (typeDef) {
+            grid.setTileType(targetX, targetY, typeDef);
+
+            // Restore State
+            const newCell = grid.getCell(targetX, targetY);
+            if (this.heldAppliance.savedState && newCell.state) {
+                Object.assign(newCell.state, this.heldAppliance.savedState);
+            }
+
+            // Restore attached object
+            if (this.heldAppliance.attachedObject) {
+                newCell.object = this.heldAppliance.attachedObject;
+            }
+
+            this.heldAppliance = null;
+            console.log("Placed appliance.");
+        }
     }
 }

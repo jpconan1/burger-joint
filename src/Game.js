@@ -1,5 +1,7 @@
 import { ASSETS, TILE_TYPES, GRID_WIDTH, GRID_HEIGHT } from './constants.js';
 import { CAPABILITY, DEFINITIONS } from './data/definitions.js';
+import { EXPANSIONS } from './data/expansions.js';
+import { STAR_CRITERIA } from './data/starCriteria.js';
 import { SCORING_CONFIG } from './data/scoringConfig.js';
 import { AssetLoader } from './systems/AssetLoader.js';
 import { Renderer } from './systems/Renderer.js';
@@ -52,6 +54,16 @@ export class Game {
         });
 
         this.keys = {};
+        window.addEventListener('keydown', (e) => {
+            // Shift + P: Print/Export Layout
+            if (e.shiftKey && e.code === 'KeyP') {
+                console.log("--- EXPORTED LAYOUT ---");
+                const layout = this.grid.serialize();
+                console.log(JSON.stringify(layout, null, 4));
+                console.log("-----------------------");
+                this.addFloatingText("Layout exported to Console!", this.player.x, this.player.y, '#00ff00');
+            }
+        });
         this.isViewingOrders = false;
         this.orderSystem = new OrderSystem();
         this.dayNumber = 0;
@@ -196,6 +208,9 @@ export class Game {
         // Progression
         this.earnedServiceStar = false; // Star 3 (Performance)
         this.currentDayPerfect = true;
+        this.starLevel = 0;
+        this.unlockedStars = new Set();
+        this.appliedExpansions = new Set();
 
         this.storage = {}; // Store for unplaced appliances: { 'counter': 2, 'fryer': 1 }
 
@@ -519,6 +534,9 @@ export class Game {
         this.storage = {}; // Reset Storage
         this.dayNumber = 0;
         this.earnedServiceStar = false;
+        this.starLevel = 0;
+        this.unlockedStars.clear();
+        this.appliedExpansions.clear();
 
         // Reset Shop Items (Unlocks)
         // Reset Shop Items (Unlocks)
@@ -788,6 +806,137 @@ export class Game {
         this.addFloatingText("Kitchen Expanded!", this.player.x, this.player.y, '#ffff00');
 
         // Save
+        this.saveLevel();
+    }
+
+    checkStarCriteria() {
+        console.log("Checking Star Criteria...");
+        STAR_CRITERIA.forEach(crit => {
+            // Skip if already unlocked
+            if (this.unlockedStars.has(crit.id)) return;
+
+            // Check Condition
+            if (crit.check(this)) {
+                console.log(`Star Condition Met: ${crit.name}`);
+                this.unlockedStars.add(crit.id);
+                this.starLevel = this.unlockedStars.size;
+
+                // UX Feedback
+                this.addFloatingText(`Star Earned: ${crit.name}!`, this.player.x, this.player.y - 30, '#ffd700');
+                if (this.audioSystem) this.audioSystem.playSFX(ASSETS.AUDIO.SUCCESS || 'select'); // Fallback sound
+            }
+        });
+    }
+
+    checkExpansions() {
+        console.log(`Checking Expansions (Current Stars: ${this.starLevel})...`);
+        EXPANSIONS.forEach(exp => {
+            if (this.appliedExpansions.has(exp.id)) return;
+
+            if (this.starLevel >= exp.unlockCondition.stars) {
+                this.applyExpansion(exp);
+            }
+        });
+    }
+
+    applyExpansion(exp) {
+        console.log(`Applying Expansion: ${exp.name}`);
+
+        if (exp.layout) {
+            // 1. Capture existing objects and tiles from the current grid (Preserve State)
+            const currentObjMap = [];
+            const currentGrid = this.rooms['main'];
+
+            // Capture Dimensions
+            const oldWidth = currentGrid.width;
+            const oldHeight = currentGrid.height;
+
+            if (currentGrid) {
+                for (let y = 0; y < currentGrid.height; y++) {
+                    for (let x = 0; x < currentGrid.width; x++) {
+                        const cell = currentGrid.getCell(x, y);
+                        // Save object, tile type, and state
+                        if (cell) {
+                            currentObjMap.push({
+                                x,
+                                y,
+                                object: cell.object,
+                                tile: cell.type,
+                                state: JSON.parse(JSON.stringify(cell.state || {})) // Deep copy state
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Apply new layout
+            // This replaces the current 'main' room grid
+            const newGrid = new Grid(exp.layout.width, exp.layout.height);
+            newGrid.deserialize(exp.layout);
+            this.rooms['main'] = newGrid;
+            this.grid = this.rooms['main']; // Update active grid
+
+            // 2. Restore objects and tiles to the new grid
+            currentObjMap.forEach(item => {
+                let newX = item.x;
+                let newY = item.y;
+
+                // Edge Detection: Relative Mapping
+                // If item was on the far right, map to new far right
+                if (item.x === oldWidth - 1) {
+                    newX = newGrid.width - 1;
+                }
+                // If item was on the bottom, map to new bottom
+                if (item.y === oldHeight - 1) {
+                    newY = newGrid.height - 1;
+                }
+
+                // Check if the target cell exists
+                const targetCell = newGrid.getCell(newX, newY);
+
+                if (targetCell) {
+                    // Identify preserve-worthy tiles (Appliances/User placed)
+                    const preservedTiles = ['COUNTER', 'SERVICE', 'STOVE', 'CUTTING_BOARD', 'DISPENSER', 'FRYER', 'SODA_FOUNTAIN', 'TICKET_WHEEL', 'PRINTER', 'COMPUTER'];
+                    // Identify structural tiles that should NOT be overwritten
+                    // Note: FLOOR is overwritable, so not included here.
+                    const structuralTiles = ['WALL', 'SHUTTER_DOOR', 'OFFICE_DOOR', 'OFFICE_DOOR_CLOSED', 'EXIT_DOOR', 'GARBAGE'];
+
+                    // 1. Restore the Tile (Appliance) if applicable
+                    // Checks:
+                    // - Old tile was an appliance
+                    // - Target slot is not a structural element (Wall/Door) in the new layout
+                    if (preservedTiles.includes(item.tile.id) && !structuralTiles.includes(targetCell.type.id)) {
+                        targetCell.type = item.tile;
+                        targetCell.state = item.state; // Restore state (branding, cooking progress, etc.)
+                    }
+
+                    // 2. Restore the Object
+                    if (item.object) {
+                        // Only place object if the (potentially restored) tile supports it
+                        // Or strictly force it if we trust the old state?
+                        if (targetCell.type.holdsItems || targetCell.type.id === 'FLOOR') {
+                            targetCell.object = item.object;
+                        } else {
+                            console.warn(`Could not restore object at ${newX},${newY} - Tile ${targetCell.type.id} does not hold items.`);
+                        }
+                    }
+                } else {
+                    console.warn(`Could not restore item at ${item.x},${item.y} -> ${newX},${newY} (Cell invalid)`);
+                }
+            });
+
+            // Reset player position safely
+            this.player.x = 2;
+            this.player.y = 2;
+        } else {
+            // Fallback to old heuristic or do nothing
+            console.log("No layout defined for expansion, using legacy expansion.");
+            const currentGrid = this.rooms['main'];
+            currentGrid.expandInterior(currentGrid.width - 1, currentGrid.height - 1);
+        }
+
+        this.appliedExpansions.add(exp.id);
+        this.addFloatingText(`Kitchen Expanded: ${exp.name}!`, this.player.x, this.player.y, '#00ff00');
         this.saveLevel();
     }
 
@@ -1251,7 +1400,13 @@ export class Game {
         // Update Persistent Stats
         if (this.dayNumber > 0) {
             this.earnedServiceStar = this.currentDayPerfect;
+
+            // Periodically Check Star Criteria
+            this.checkStarCriteria();
         }
+
+        // Check for Expansions
+        this.checkExpansions();
 
         // Show Rating Popup
         this.ratingPopup.show(starCount, this.dailyStarBreakdown);
@@ -1476,6 +1631,11 @@ export class Game {
 
 
 
+        if (this.gameState === 'APPLIANCE_SWAP') {
+            this.handleApplianceSwapInput(event);
+            return;
+        }
+
         if (this.gameState === 'COMPUTER_ORDERING') {
             this.handleComputerInput(event);
             return;
@@ -1524,6 +1684,10 @@ export class Game {
 
 
         if (code === this.settings.getBinding(ACTIONS.PICK_UP)) {
+            // Block normal pickup if we just triggered the hold action (Appliance Pickup)
+            // This prevents "putting it down" in the next frame due to key repeat
+            if (this.pickupActionTriggered) return;
+
             if (this.isViewingOrders) {
                 const penalty = this.activeTickets.length * 20; // $20 per unfinished ticket
                 this.money -= penalty;
@@ -2082,13 +2246,141 @@ export class Game {
                 }
             } else {
                 // Standard Game Render (PLAYING, and all Overlay Menus)
-                if (this.gameState === 'PLAYING') {
-                    this.update(dt);
+                if (this.gameState === 'PLAYING' || this.gameState === 'APPLIANCE_SWAP') {
+                    if (this.gameState === 'PLAYING') {
+                        this.update(dt);
+                    }
+                    // After Hours Interaction Check
+                    // "after the resturant closes, the player gets a new ability"
+                    // Condition: Queue Finished (After Hours)
+                    // Note: isDayActive is false here, so we only check queueFinishedTime
+                    if (this.queueFinishedTime) {
+                        const pickUpKeys = [this.settings.getBinding(ACTIONS.PICK_UP), 'Space'];
+                        const interactKey = this.settings.getBinding(ACTIONS.INTERACT);
+
+                        // 1. Pickup Appliance Check
+                        const isPickupHeld = Object.keys(this.keys || {}).some(k => this.keys[k] && (k === pickUpKeys[0] || k === 'Space'));
+
+                        if (isPickupHeld) {
+                            this.pickupKeyHeldDuration = (this.pickupKeyHeldDuration || 0) + dt;
+                            if (this.pickupKeyHeldDuration >= 500 && !this.pickupActionTriggered) {
+                                console.log("Triggering Appliance Pickup!");
+                                this.player.actionPickUpAppliance(this.grid, this);
+                                this.pickupActionTriggered = true;
+                            }
+                        } else {
+                            this.pickupKeyHeldDuration = 0;
+                            this.pickupActionTriggered = false;
+                        }
+
+                        // 2. Change Appliance Check (Swap)
+                        const isInteractHeld = this.keys && this.keys[interactKey];
+                        if (isInteractHeld) {
+                            this.interactKeyHeldDuration = (this.interactKeyHeldDuration || 0) + dt;
+                            if (this.interactKeyHeldDuration >= 500 && !this.swappingActionTriggered && this.gameState === 'PLAYING') {
+                                console.log("Triggering Appliance Swap!");
+                                this.initiateApplianceSwap();
+                                this.swappingActionTriggered = true;
+                            }
+                        } else {
+                            this.interactKeyHeldDuration = 0;
+                            this.swappingActionTriggered = false;
+                        }
+
+                        // Clear waiting flag if in SWAP mode and key released
+                        if (this.gameState === 'APPLIANCE_SWAP' && this.swappingState && this.swappingState.waitingForRelease) {
+                            if (!isInteractHeld) {
+                                this.swappingState.waitingForRelease = false;
+                            }
+                        }
+                    }
                 }
                 this.renderer.render(this);
             }
         }
         requestAnimationFrame((t) => this.loop(t));
+    }
+
+    initiateApplianceSwap() {
+        const grid = this.rooms[this.currentRoomId];
+        const targetX = this.player.x + this.player.facing.x;
+        const targetY = this.player.y + this.player.facing.y;
+        const cell = grid.getCell(targetX, targetY);
+
+        if (!cell) return;
+
+        // Define cyclable appliance types
+        const cyclable = [
+            'COUNTER',
+            'CUTTING_BOARD',
+            'DISPENSER',
+            'FRYER',
+            'SODA_FOUNTAIN',
+            'STOVE'
+        ];
+
+        if (cyclable.includes(cell.type.id)) {
+            this.gameState = 'APPLIANCE_SWAP';
+            this.swappingState = {
+                x: targetX,
+                y: targetY,
+                options: cyclable,
+                currentIndex: cyclable.indexOf(cell.type.id),
+                waitingForRelease: true
+            };
+
+            // Add visual feedback?
+            this.addFloatingText("Swap Mode!", targetX, targetY, '#ffff00');
+        }
+    }
+
+    handleApplianceSwapInput(event) {
+        if (!this.swappingState) {
+            this.gameState = 'PLAYING';
+            return;
+        }
+
+        const LEFT = this.settings.getBinding(ACTIONS.MOVE_LEFT);
+        const RIGHT = this.settings.getBinding(ACTIONS.MOVE_RIGHT);
+        const INTERACT = this.settings.getBinding(ACTIONS.INTERACT);
+
+        const isLeft = event.code === LEFT || event.code === 'ArrowLeft';
+        const isRight = event.code === RIGHT || event.code === 'ArrowRight';
+        const isSet = event.code === INTERACT || event.code === 'Enter';
+
+        if (event.type === 'keydown') {
+            if (isLeft || isRight) {
+                let idx = this.swappingState.currentIndex;
+                if (isLeft) idx--;
+                else idx++;
+
+                // Wrap
+                if (idx < 0) idx = this.swappingState.options.length - 1;
+                if (idx >= this.swappingState.options.length) idx = 0;
+
+                this.swappingState.currentIndex = idx;
+
+                // Apply Immediately
+                const newTypeId = this.swappingState.options[idx];
+                const grid = this.rooms[this.currentRoomId];
+
+                // Let's safe set:
+                const newType = TILE_TYPES[newTypeId];
+                if (newType) {
+                    grid.setTileType(this.swappingState.x, this.swappingState.y, newType);
+                    this.updateCapabilities();
+                }
+            } else if (isSet) {
+                // Prevent immediate set if holding from initiation
+                if (this.swappingState.waitingForRelease) return;
+
+                // Confirm and Exit
+                this.gameState = 'PLAYING';
+                this.swappingState = null;
+                this.addFloatingText("Set!", this.player.x, this.player.y, '#00ff00');
+            }
+
+        }
     }
 
     saveLevel() {
@@ -2108,6 +2400,9 @@ export class Game {
                 unlockedItems: this.shopItems.filter(i => i.unlocked).map(i => i.id),
                 storage: this.storage,
                 earnedServiceStar: this.earnedServiceStar,
+                starLevel: this.starLevel,
+                unlockedStars: Array.from(this.unlockedStars),
+                appliedExpansions: Array.from(this.appliedExpansions),
                 pendingOrders: this.pendingOrders,
                 rooms: {}
             };
@@ -2190,6 +2485,17 @@ export class Game {
 
             if (typeof data.earnedServiceStar === 'boolean') {
                 this.earnedServiceStar = data.earnedServiceStar;
+            }
+            if (typeof data.starLevel === 'number') {
+                this.starLevel = data.starLevel;
+            }
+            if (Array.isArray(data.unlockedStars)) {
+                this.unlockedStars = new Set(data.unlockedStars);
+                // Ensure starLevel sync
+                this.starLevel = this.unlockedStars.size;
+            }
+            if (Array.isArray(data.appliedExpansions)) {
+                this.appliedExpansions = new Set(data.appliedExpansions);
             }
 
             // Re-sort shop items

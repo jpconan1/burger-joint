@@ -35,11 +35,11 @@ export const DEFAULT_LEVEL = {
         [
             { "typeId": "WALL", "state": {}, "object": null },
             { "typeId": "SODA_FOUNTAIN", "state": { "facing": 0 }, "object": null },
-            { "typeId": "COUNTER", "state": { "facing": 2 }, "object": null },
-            { "typeId": "COUNTER", "state": { "facing": 2 }, "object": null },
-            { "typeId": "COUNTER", "state": { "facing": 2 }, "object": null },
-            { "typeId": "COUNTER", "state": { "facing": 2 }, "object": null },
-            { "typeId": "COUNTER", "state": { "facing": 2 }, "object": null },
+            { "typeId": "COUNTER", "state": {}, "object": null },
+            { "typeId": "COUNTER", "state": {}, "object": null },
+            { "typeId": "COUNTER", "state": {}, "object": null },
+            { "typeId": "COUNTER", "state": {}, "object": null },
+            { "typeId": "COUNTER", "state": {}, "object": null },
             { "typeId": "WALL", "state": {}, "object": null }
         ]
     ]

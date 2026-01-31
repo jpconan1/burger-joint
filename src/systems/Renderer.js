@@ -1,4 +1,4 @@
-import { TILE_SIZE, GRID_WIDTH, GRID_HEIGHT, ASSETS, TAG_LAYOUTS } from '../constants.js';
+import { TILE_SIZE, GRID_WIDTH, GRID_HEIGHT, ASSETS, TAG_LAYOUTS, TILE_TYPES } from '../constants.js';
 import { DEFINITIONS } from '../data/definitions.js';
 import { SPRITE_DEFINITIONS } from '../data/sprite_definitions.js';
 import { TutorialOverlay } from '../renderers/TutorialOverlay.js';
@@ -61,21 +61,48 @@ export class Renderer {
         this.ctx.translate(this.offsetX, this.offsetY);
         this.ctx.scale(this.zoomLevel, this.zoomLevel);
 
+        // Helper to check for counter connections
+        const isCounter = (id) => id === 'COUNTER';
+
         // 1. Draw Floor/Walls (Base Layer)
         const progressBars = [];
+
+        // Pass 1: Draw ALL Floors first to avoid occlusion issues with 2.5D sorting
+        for (let y = 0; y < gameState.grid.height; y++) {
+            for (let x = 0; x < gameState.grid.width; x++) {
+                this.drawTile(ASSETS.TILES.FLOOR, x, y);
+            }
+        }
         for (let y = 0; y < gameState.grid.height; y++) {
             for (let x = 0; x < gameState.grid.width; x++) {
                 const cell = gameState.grid.getCell(x, y);
 
-                // Layer 0: Always draw floor background
-                this.drawTile(ASSETS.TILES.FLOOR, x, y);
+                // Layer 0: Floor drawn in Pass 1
 
-                // Special Case: Service Counter needs a visual counter underneath
-                if (cell.type.id === 'SERVICE') {
-                    this.drawTile(ASSETS.TILES.COUNTER, x, y);
+                // Auto-tiling Logic for COUNTER and SERVICE base
+                if (cell.type.id === 'COUNTER') {
+                    // Calculate Bitmask
+                    // N=1, E=2, S=4, W=8
+                    let mask = 0;
+
+                    // North
+                    if (y > 0 && isCounter(gameState.grid.getCell(x, y - 1).type.id)) mask |= 1;
+                    // East
+                    if (x < gameState.grid.width - 1 && isCounter(gameState.grid.getCell(x + 1, y).type.id)) mask |= 2;
+                    // South
+                    if (y < gameState.grid.height - 1 && isCounter(gameState.grid.getCell(x, y + 1).type.id)) mask |= 4;
+                    // West
+                    if (x > 0 && isCounter(gameState.grid.getCell(x - 1, y).type.id)) mask |= 8;
+
+                    this.drawAutoTile(ASSETS.TILES.COUNTER_SHEET, x, y, mask, ASSETS.TILES.COUNTER);
                 }
 
                 let tileTexture = cell.type.texture;
+
+                // Prevent double-drawing COUNTER (handled by auto-tile above)
+                if (cell.type.id === 'COUNTER') {
+                    tileTexture = null;
+                }
 
                 // If the tile is just a floor, we don't need to draw it again on top
                 if (cell.type.id === 'FLOOR') {
@@ -248,6 +275,16 @@ export class Renderer {
                     }
                 }
 
+
+
+                if (cell.state && cell.state.facing !== undefined) {
+                    const rotation = cell.state.facing * (Math.PI / 2);
+                    this.drawRotatedTile(tileTexture, x, y, rotation);
+                } else {
+                    this.drawTile(tileTexture, x, y);
+                }
+
+                // 1.45 Draw Service Timer (Overlay)
                 if (cell.type.id === 'SERVICE') {
                     if (gameState.isPrepTime && gameState.maxPrepTime > 0) {
                         const pct = Math.max(0, gameState.prepTime / gameState.maxPrepTime);
@@ -268,13 +305,6 @@ export class Renderer {
                             }
                         }
                     }
-                }
-
-                if (cell.state && cell.state.facing !== undefined) {
-                    const rotation = cell.state.facing * (Math.PI / 2);
-                    this.drawRotatedTile(tileTexture, x, y, rotation);
-                } else {
-                    this.drawTile(tileTexture, x, y);
                 }
 
                 // 1.5 Draw Soda Fountain Sign (Overlay)
@@ -334,7 +364,23 @@ export class Renderer {
                                 overrideTexture = cell.object.definition.cookingTexture;
                             }
                         }
-                        this.drawObject(cell.object, x, y, overrideTexture);
+                        let yOffset = 0;
+                        if (cell.type.id === 'COUNTER') {
+                            yOffset = -29;
+                        }
+
+                        let alpha = 1.0;
+                        if (gameState.player && cell.type.id === 'COUNTER') {
+                            const playerX = Math.round(gameState.player.x);
+                            const playerY = Math.round(gameState.player.y);
+                            if (playerX === x && playerY === y - 1) {
+                                alpha = 0.5;
+                            }
+                        }
+
+                        this.ctx.globalAlpha = alpha;
+                        this.drawObject(cell.object, x, y, overrideTexture, yOffset);
+                        this.ctx.globalAlpha = 1.0;
                     }
 
                     // Cooking Progress Bar (Stove)
@@ -404,6 +450,11 @@ export class Renderer {
                     this.drawServiceHint(x, y, gameState, cell.object);
                 }
             }
+
+            // Draw Player if in this row (Z-sorting)
+            if (gameState.player && Math.floor(gameState.player.y) === y) {
+                this.drawPlayer(gameState);
+            }
         }
 
         // Draw Expand Button (Build Mode)
@@ -413,30 +464,7 @@ export class Renderer {
             this.drawTile(ASSETS.UI.RENO_EXPAND, topRightX, topRightY);
         }
 
-        // 3. Draw Player
-        if (gameState.player) {
-            this.drawEntity(gameState.player.texture, gameState.player.x, gameState.player.y);
-
-            // Draw Tool
-            if (gameState.player.toolTexture) {
-                // Calculate rotation based on facing direction
-                // Default sprite updates usually point Up (0 rad) or Right. 
-                // Assuming Up is default 0 rotation for assets. 
-                // atan2(y, x) -> Right=0, Down=PI/2, Left=PI, Up=-PI/2
-                // Adj: Up -> 0 => +PI/2
-                const rotation = Math.atan2(gameState.player.facing.y, gameState.player.facing.x) + Math.PI / 2;
-                this.drawRotatedEntity(gameState.player.toolTexture, gameState.player.x, gameState.player.y, rotation);
-            }
-
-            // Draw Held Item
-            if (gameState.player.heldItem) {
-                // Draw item on top of player (or slightly offset?)
-                // PlateUp usually holds items in front or above head. 
-                // Since this is top down 2D, let's draw it centered but maybe slightly scaled?
-                // Or just on top for now.
-                this.drawEntity(gameState.player.heldItem, gameState.player.x, gameState.player.y);
-            }
-        }
+        // 3. Draw Player: Handled in render loop (Z-sorted)
 
         // 3.2 Draw Game Border
         if (gameState.grid) {
@@ -579,6 +607,17 @@ export class Renderer {
             gameState.menuSystem.render(this);
         }
 
+        if (gameState.gameState === 'APPLIANCE_SWAP' && gameState.swappingState) {
+            this.ctx.save();
+            this.ctx.translate(this.offsetX, this.offsetY); // transform to grid
+            this.ctx.scale(this.zoomLevel, this.zoomLevel);
+
+            const { x, y } = gameState.swappingState;
+            this.drawTile(ASSETS.UI.BUTTON_ARROWS, x, y);
+
+            this.ctx.restore();
+        }
+
         this.drawControlsHelp(gameState);
 
         // Render Tutorial Overlay
@@ -592,6 +631,46 @@ export class Renderer {
             this.drawPlacementHUD(gameState.placementState, gameState);
             if (gameState.placementState.menu) {
                 this.renderBuildMenu(gameState.placementState.menu);
+            }
+        }
+    }
+
+    drawPlayer(gameState) {
+        if (gameState.player) {
+            this.drawEntity(gameState.player.texture, gameState.player.x, gameState.player.y);
+
+            // Draw Tool
+            if (gameState.player.toolTexture) {
+                const rotation = Math.atan2(gameState.player.facing.y, gameState.player.facing.x) + Math.PI / 2;
+                this.drawRotatedEntity(gameState.player.toolTexture, gameState.player.x, gameState.player.y, rotation);
+            }
+
+            // Draw Held Item (ItemInstance)
+            if (gameState.player.heldItem) {
+                this.drawEntity(gameState.player.heldItem, gameState.player.x, gameState.player.y);
+            }
+
+            // Draw Held Appliance (New)
+            if (gameState.player.heldAppliance) {
+                const app = gameState.player.heldAppliance;
+                // Draw Appliance Texture
+                const texName = TILE_TYPES[app.tileType] ? TILE_TYPES[app.tileType].texture : null;
+                // Use drawObject logic or manual draw
+                if (texName) {
+                    const img = this.assetLoader.get(texName);
+                    if (img) {
+                        // Draw slightly offset (lifted)
+                        this.ctx.drawImage(img, gameState.player.x * TILE_SIZE, gameState.player.y * TILE_SIZE - 20, TILE_SIZE, TILE_SIZE);
+                    }
+                }
+
+                // Draw Attached Object on top
+                if (app.attachedObject) {
+                    this.ctx.save();
+                    this.ctx.translate(0, -20);
+                    this.drawObject(app.attachedObject, gameState.player.x, gameState.player.y);
+                    this.ctx.restore();
+                }
             }
         }
     }
@@ -654,31 +733,31 @@ export class Renderer {
         this.ctx.fillRect(px + 1, py + 1, (w - 2) * percent, h - 2);
     }
 
-    drawTile(textureName, x, y) {
+    drawTile(textureName, x, y, yOffset = 0) {
         if (!textureName) return;
         const img = this.assetLoader.get(textureName);
         if (img) {
-            this.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            this.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE + yOffset, TILE_SIZE, TILE_SIZE);
         }
     }
 
-    drawObject(object, x, y, overrideTexture = null) {
+    drawObject(object, x, y, overrideTexture = null, yOffset = 0) {
         if (!object) return;
 
         // Dynamic Burger Rendering
         if (object.type === 'Composite' && object.definitionId !== 'burger_old' && (object.definitionId.includes('burger') || object.state.bun)) {
-            this.drawBurger(object, x, y);
+            this.drawBurger(object, x, y, yOffset);
             return;
         }
 
         if (object.type === 'Box') {
-            this.drawBox(object, x, y);
+            this.drawBox(object, x, y, yOffset);
             return;
         }
 
         // Stackable Inserts
         if (object.definitionId === 'insert') {
-            this.drawInsertStack(object, x, y);
+            this.drawInsertStack(object, x, y, 1.0, yOffset);
             return;
         }
 
@@ -687,23 +766,23 @@ export class Renderer {
         const img = this.assetLoader.get(textureName);
         if (img) {
             // Objects also align to grid
-            this.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            this.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE + yOffset, TILE_SIZE, TILE_SIZE);
         }
     }
 
-    drawBox(object, x, y) {
+    drawBox(object, x, y, yOffset = 0) {
         // 1. Data-Driven Override: 
         // If the item definition has explicit texture rules (e.g. custom jar stages),
         // we trust getTexture() to return the correct full asset and skip generic compositing.
         if (object.definition.textures) {
             const tex = object.getTexture();
-            this.drawTile(tex, x, y);
+            this.drawTile(tex, x, y, yOffset);
             return;
         }
 
         if (object.state.isOpen) {
             // Draw open box base
-            this.drawTile(ASSETS.OBJECTS.OPEN_BOX, x, y);
+            this.drawTile(ASSETS.OBJECTS.OPEN_BOX, x, y, yOffset);
 
             // Draw contents
             const def = DEFINITIONS[object.definitionId];
@@ -745,18 +824,42 @@ export class Renderer {
                             const scale = 0.75;
                             const size = TILE_SIZE * scale;
                             const offset = (TILE_SIZE - size) / 2;
-                            this.ctx.drawImage(img, x * TILE_SIZE + offset, y * TILE_SIZE + offset, size, size);
+                            this.ctx.drawImage(img, x * TILE_SIZE + offset, y * TILE_SIZE + offset + yOffset, size, size);
                         }
                     }
                 }
             }
         } else {
             // Closed Box - use existing texture logic (e.g. patty_box-closed.png)
-            this.drawTile(object.texture, x, y);
+            this.drawTile(object.texture, x, y, yOffset);
         }
     }
 
-    drawInsertStack(item, x, y, scale = 1.0) {
+    drawAutoTile(sheetName, x, y, mask, fallbackTexture) {
+        const img = this.assetLoader.get(sheetName);
+        if (!img) {
+            // Fallback to single tile if sheet not found
+            if (fallbackTexture) this.drawTile(fallbackTexture, x, y);
+            return;
+        }
+
+        // Calculate source coordinates
+        // Grid is 4x4.
+        // Col = mask % 4
+        // Row = floor(mask / 4)
+        const col = mask % 4;
+        const row = Math.floor(mask / 4);
+
+        const sx = col * TILE_SIZE;
+        const sy = row * TILE_SIZE;
+
+        this.ctx.drawImage(img,
+            sx, sy, TILE_SIZE, TILE_SIZE, // Source (Sheet)
+            x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE // Destination (Canvas)
+        );
+    }
+
+    drawInsertStack(item, x, y, scale = 1.0, yOffset = 0) {
         const count = item.state.count || 1;
         const contents = item.state.contents;
 
@@ -764,7 +867,7 @@ export class Renderer {
 
         // Scale handling (Centered)
         const cx = x * TILE_SIZE + TILE_SIZE / 2;
-        const cy = y * TILE_SIZE + TILE_SIZE / 2;
+        const cy = y * TILE_SIZE + TILE_SIZE / 2 + yOffset;
         this.ctx.translate(cx, cy);
         this.ctx.scale(scale, scale);
         // Reset manual translate for loop
@@ -2203,9 +2306,9 @@ export class Renderer {
         }
     }
 
-    drawBurger(item, x, y) {
+    drawBurger(item, x, y, yOffset = 0) {
         const px = x * TILE_SIZE;
-        const py = y * TILE_SIZE;
+        const py = y * TILE_SIZE + yOffset;
         this.drawBurgerPixels(item, px, py);
     }
 

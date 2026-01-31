@@ -70,11 +70,11 @@ export class RatingPopup {
 
         // 2. Breakdown Data
         const starMessages = [
-            "Late orders!",
-            "No sides available",
-            "No drinks available",
-            "Menu too simple - Complexity 15 required",
-            "Serve a menu with Complexity 30 to win!"
+            "Perfect Day Required!",
+            "Need 2+ Burgers on Menu",
+            "Need a Side or Drink",
+            "Menu Complexity 15+ Required",
+            "Menu Complexity 30+ Required"
         ];
 
         const starSize = 48;

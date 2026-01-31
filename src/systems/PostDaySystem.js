@@ -166,6 +166,104 @@ export class PostDaySystem {
         }));
     }
 
+    calculateAutoRestock() {
+        console.log("Calculating Auto-Restock...");
+        const menu = this.game.menuSystem.getMenu();
+        if (!menu) return;
+
+        // 1. Determine Target Quantities
+        const day = this.game.dayNumber || 0;
+        const customerCount = 10 + (Math.max(0, day) * 3);
+        const safetyFactor = 1.5;
+        const targetServings = Math.ceil(customerCount * safetyFactor);
+
+        const ensureSupply = (itemId, unitsPerBox, targetUnits) => {
+            const currentUnits = this.getBoxedSupplyCount(itemId);
+
+            if (currentUnits < targetUnits) {
+                const deficit = targetUnits - currentUnits;
+                const boxesNeeded = Math.ceil(deficit / unitsPerBox);
+
+                if (boxesNeeded > 0) {
+                    if (!this.game.pendingOrders) this.game.pendingOrders = [];
+                    console.log(`Auto-Restock: Low on ${itemId} (${currentUnits}/${targetUnits}). Ordering ${boxesNeeded} boxes.`);
+                    this.game.pendingOrders.push({ id: itemId, qty: boxesNeeded });
+                }
+            }
+        };
+
+        // 2. Check Essentials (Always needed)
+        ensureSupply('bun_box', 32, targetServings);
+        ensureSupply('patty_box', 12, targetServings);
+        ensureSupply('wrapper_box', 100, targetServings);
+        ensureSupply('bag_box', 50, targetServings);
+
+        // 3. Check Menu Dependencies
+        const scanItem = (itemId) => {
+            let currentId = itemId;
+            let supplyBoxId = null;
+
+            let ptr = currentId;
+            let steps = 0;
+            while (steps < 5) {
+                const def = DEFINITIONS[ptr];
+                if (def && def.type === 'Box') {
+                    supplyBoxId = ptr;
+                    break;
+                }
+                const parent = this.game.itemDependencyMap[ptr];
+                if (parent) {
+                    ptr = parent;
+                } else {
+                    break;
+                }
+                steps++;
+            }
+
+            if (supplyBoxId) {
+                const boxDef = DEFINITIONS[supplyBoxId];
+                if (!boxDef) return;
+                const boxCount = boxDef.maxCount || 1;
+                let specificTarget = targetServings;
+
+                const itemDef = DEFINITIONS[itemId];
+
+                if (itemId.includes('fry') || itemId.includes('fries')) {
+                    specificTarget = Math.ceil(targetServings / 6);
+                } else if (itemId.includes('soda') || itemId.includes('drink') || (itemDef && (itemDef.category === 'drink' || itemDef.category === 'hetap' || (itemDef.orderConfig && itemDef.orderConfig.type === 'drink')))) {
+                    specificTarget = 1;
+                } else if (itemId.includes('tomato')) {
+                    specificTarget = Math.ceil(targetServings / 5);
+                } else if (itemId.includes('lettuce')) {
+                    specificTarget = Math.ceil(targetServings / 8);
+                } else if (itemId.includes('onion')) {
+                    specificTarget = Math.ceil(targetServings / 5);
+                } else if (itemId.includes('pickle')) {
+                    specificTarget = Math.ceil(targetServings / 5);
+                } else if (itemId.includes('cheese')) {
+                    specificTarget = Math.ceil(targetServings / 10);
+                } else if (itemId.includes('sauce') || itemId.includes('ketchup') || itemId.includes('mayo') || itemId.includes('bbq')) {
+                    specificTarget = 1;
+                } else if (itemId.includes('syrup')) {
+                    specificTarget = 1;
+                }
+
+                ensureSupply(supplyBoxId, boxCount, specificTarget);
+            }
+        };
+
+        if (menu.burgers) {
+            menu.burgers.forEach(b => {
+                if (b.bun) scanItem(b.bun);
+                if (b.toppings) {
+                    Object.keys(b.toppings).forEach(tId => scanItem(tId));
+                }
+            });
+        }
+        if (menu.sides) menu.sides.forEach(sId => scanItem(sId));
+        if (menu.drinks) menu.drinks.forEach(dId => scanItem(dId));
+    }
+
     handleInput(event, settings) {
         const interactKey = settings ? settings.getBinding('INTERACT') : 'KeyE';
 
@@ -446,6 +544,7 @@ export class PostDaySystem {
             } else if (col === 2) { // Next Day
                 const isLocked = this.dailyRewards.length > 0 && !this.rewardClaimed;
                 if (!isLocked) {
+                    this.calculateAutoRestock();
                     this.game.startDay();
                     this.cleanupDOM();
                 } else {

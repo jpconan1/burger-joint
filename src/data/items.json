@@ -13,7 +13,7 @@
             },
             "item": {
                 "id": "beef_patty",
-                "category": "topping",
+                "category": "patty",
                 "toolRequirement": "HANDS",
                 "nudge": 5,
                 "partTexture": "beef_patty-part.png",
@@ -849,7 +849,7 @@
             },
             "item": {
                 "id": "chicken_patty",
-                "category": "topping",
+                "category": "patty",
                 "toolRequirement": "HANDS",
                 "nudge": 5,
                 "partTexture": "chicken_patty-part.png",
