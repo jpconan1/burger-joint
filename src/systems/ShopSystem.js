@@ -376,7 +376,7 @@ export class ShopSystem {
                     else if (applianceId === 'fryer' && activeTileTypes.has('FRYER')) unlocked = true;
                     else if (applianceId === 'soda_fountain' && activeTileTypes.has('SODA_FOUNTAIN')) unlocked = true;
                     else if (applianceId === 'dispenser' && activeTileTypes.has('DISPENSER')) unlocked = true;
-                    else if (applianceId === 'stove' && activeTileTypes.has('STOVE')) unlocked = true;
+                    else if (applianceId === 'grill' && activeTileTypes.has('GRILL')) unlocked = true;
                 } else if (def.unlockCondition.type === 'star') {
                     if (def.unlockCondition.target === 3 && this.game.earnedServiceStar) {
                         unlocked = true;

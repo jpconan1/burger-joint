@@ -88,6 +88,7 @@ export class Game {
 
         // Visual Feedback
         this.floatingTexts = [];
+        this.effects = [];
 
         // Ordering System
         this.shopItems = [];
@@ -101,7 +102,7 @@ export class Game {
         // 1. Supplies (Dynamic from DEFINITIONS)
         Object.keys(DEFINITIONS).forEach(defId => {
             const def = DEFINITIONS[defId];
-            if (def.type === 'Box' && def.price) {
+            if ((def.type === 'Box' || def.type === 'SauceContainer') && def.price) {
                 // Determine 'unlocked' status based on explicit flag or default
                 // Essential items are always unlocked
                 const essentialItems = ['patty_box', 'bun_box', 'wrapper_box', 'bag_box'];
@@ -178,7 +179,7 @@ export class Game {
             { id: 'dispenser', price: SCORING_CONFIG.PRICES.dispenser, type: 'appliance', unlocked: true, tileType: 'DISPENSER', uiAsset: 'RENO_ICON_DISPENSER' },
             { id: 'fryer', price: SCORING_CONFIG.PRICES.fryer, type: 'appliance', unlocked: true, tileType: 'FRYER', uiAsset: 'RENO_ICON_FRYER' },
             { id: 'soda_fountain', price: SCORING_CONFIG.PRICES.soda_fountain, type: 'appliance', unlocked: true, tileType: 'SODA_FOUNTAIN', uiAsset: 'RENO_ICON_SODA_FOUNTAIN' },
-            { id: 'stove', price: SCORING_CONFIG.PRICES.stove, type: 'appliance', unlocked: true, tileType: 'STOVE' },
+            { id: 'grill', price: SCORING_CONFIG.PRICES.grill, type: 'appliance', unlocked: true, tileType: 'GRILL' },
         ];
 
         // Add manual items (Inserts)
@@ -213,6 +214,7 @@ export class Game {
         this.appliedExpansions = new Set();
 
         this.storage = {}; // Store for unplaced appliances: { 'counter': 2, 'fryer': 1 }
+        this.autoUpgradedAppliances = new Set();
 
         // Dependency Map for Ingredients (Child -> Parent)
         this.itemDependencyMap = {};
@@ -436,6 +438,9 @@ export class Game {
         }
         // ---------------------------
 
+        // Check for Auto-Upgrade of Appliances (Counter -> Appliance)
+        this.checkApplianceUpgrade(itemDef);
+
         this.addFloatingText("Reward Unlocked!", this.player.x, this.player.y, '#ffd700');
 
         // Transition handled by PostDaySystem
@@ -537,6 +542,7 @@ export class Game {
         this.starLevel = 0;
         this.unlockedStars.clear();
         this.appliedExpansions.clear();
+        this.autoUpgradedAppliances.clear();
 
         // Reset Shop Items (Unlocks)
         // Reset Shop Items (Unlocks)
@@ -646,7 +652,7 @@ export class Game {
         // CAPABILITY.BASIC_BURGER: Stove + Patty (Box/Item) + Bun (Box/Item)
         const hasPatty = activeDefIds.has('patty_box') || activeDefIds.has('beef_patty');
         const hasBun = activeDefIds.has('bun_box') || activeDefIds.has('plain_bun');
-        if (activeTileTypes.has('STOVE') && hasPatty && hasBun) {
+        if (activeTileTypes.has('GRILL') && hasPatty && hasBun) {
             this.capabilities.add(CAPABILITY.BASIC_BURGER);
         }
 
@@ -896,7 +902,7 @@ export class Game {
 
                 if (targetCell) {
                     // Identify preserve-worthy tiles (Appliances/User placed)
-                    const preservedTiles = ['COUNTER', 'SERVICE', 'STOVE', 'CUTTING_BOARD', 'DISPENSER', 'FRYER', 'SODA_FOUNTAIN', 'TICKET_WHEEL', 'PRINTER', 'COMPUTER'];
+                    const preservedTiles = ['COUNTER', 'SERVICE', 'GRILL', 'CUTTING_BOARD', 'DISPENSER', 'FRYER', 'SODA_FOUNTAIN', 'TICKET_WHEEL', 'PRINTER', 'COMPUTER'];
                     // Identify structural tiles that should NOT be overwritten
                     // Note: FLOOR is overwritable, so not included here.
                     const structuralTiles = ['WALL', 'SHUTTER_DOOR', 'OFFICE_DOOR', 'OFFICE_DOOR_CLOSED', 'EXIT_DOOR', 'GARBAGE'];
@@ -1005,7 +1011,7 @@ export class Game {
         // Unlock Logic
         const unlocks = [];
         if (item.id === 'cutting_board') unlocks.push('tomato_box');
-        if (item.id === 'dispenser') unlocks.push('mayo_box');
+        if (item.id === 'dispenser') unlocks.push('mayo_bag');
         if (item.id === 'fryer') unlocks.push('fry_box', 'side_cup_box');
         if (item.id === 'soda_fountain') unlocks.push('syrup_box', 'drink_cup_box');
 
@@ -1184,8 +1190,8 @@ export class Game {
                         }
                         cell.object = null;
                     }
-                    // 2. Stovetop
-                    else if (cell.type.id === 'STOVE') {
+                    // 2. Grill
+                    else if (cell.type.id === 'GRILL') {
                         if (cell.state) {
                             cell.state.cookingProgress = 0;
                         }
@@ -1244,8 +1250,8 @@ export class Game {
         // Note: We NO LONGER clear the fridge. Persistance!
 
         // Spawn ordered items into VALID EMPTY spots
-        // We need to find all counters in the fridge/office that are EMPTY
-        const emptyCounters = [];
+        // Spawn ordered items into VALID spots (Empty first, then overwrite oldest)
+        const deliveryTiles = [];
 
         ['store_room', 'office'].forEach(roomId => {
             const room = this.rooms[roomId];
@@ -1253,34 +1259,49 @@ export class Game {
                 for (let y = 0; y < room.height; y++) {
                     for (let x = 0; x < room.width; x++) {
                         const c = room.getCell(x, y);
-                        if (c.type.id === 'DELIVERY_TILE' && !c.object) {
-                            emptyCounters.push(c);
+                        if (c.type.id === 'DELIVERY_TILE') {
+                            deliveryTiles.push(c);
                         }
                     }
                 }
             }
         });
 
-        // Populate sequentially into empty slots
-        let counterIndex = 0;
-
-        for (const shopItem of this.shopItems) {
-            if (shopItem.type !== 'supply') continue;
-            const itemId = shopItem.id;
+        // Populate sequentially
+        for (const itemId of Object.keys(this.cart)) {
             const qty = this.cart[itemId];
 
-            if (qty > 0) {
-                for (let i = 0; i < qty; i++) {
-                    if (counterIndex < emptyCounters.length) {
-                        const cell = emptyCounters[counterIndex];
-                        const instance = new ItemInstance(itemId);
-                        // Custom Insert Logic: Spawn stack of 3
-                        if (itemId === 'insert') {
-                            instance.state.count = 3;
-                        }
-                        cell.object = instance;
-                        counterIndex++;
+            if (!qty || qty <= 0) continue;
+
+            const def = DEFINITIONS[itemId];
+            if (!def) continue;
+
+            for (let i = 0; i < qty; i++) {
+                let targetTile = deliveryTiles.find(c => !c.object);
+
+                // If no empty tile, find the oldest occupied one
+                if (!targetTile) {
+                    const occupied = deliveryTiles.filter(c => c.object);
+                    if (occupied.length > 0) {
+                        // Sort by timestamp (ascending -> oldest first)
+                        // Treat undefined (legacy items) as 0 (very old)
+                        occupied.sort((a, b) => {
+                            const ta = a.object.timestamp || 0;
+                            const tb = b.object.timestamp || 0;
+                            return ta - tb;
+                        });
+                        targetTile = occupied[0];
+                        console.log(`Overwriting oldest box at ${targetTile.x},${targetTile.y}`);
                     }
+                }
+
+                if (targetTile) {
+                    const instance = new ItemInstance(itemId);
+                    // Custom Insert Logic: Spawn stack of 3
+                    if (itemId === 'insert') {
+                        instance.state.count = 3;
+                    }
+                    targetTile.object = instance;
                 }
             }
         }
@@ -1684,6 +1705,8 @@ export class Game {
 
 
         if (code === this.settings.getBinding(ACTIONS.PICK_UP)) {
+            if (event.repeat) return; // Disable turbo for Pick Up
+
             // Block normal pickup if we just triggered the hold action (Appliance Pickup)
             // This prevents "putting it down" in the next frame due to key repeat
             if (this.pickupActionTriggered) return;
@@ -1705,6 +1728,8 @@ export class Game {
         }
 
         if (code === this.settings.getBinding(ACTIONS.INTERACT)) {
+            if (event.repeat) return; // Disable turbo for Interact
+
             const facingCell = this.player.getTargetCell(this.grid);
             if (facingCell && facingCell.type.id === 'COMPUTER') {
                 this.gameState = 'COMPUTER_ORDERING';
@@ -1747,7 +1772,24 @@ export class Game {
             const moved = this.player.move(dx, dy, this.grid);
             if (moved) {
                 // Check if we stepped onto a door
+                // Check if we stepped onto a door
                 const cell = this.grid.getCell(this.player.x, this.player.y);
+                const isDoor = cell && (cell.type.isDoor || cell.type.id === 'EXIT_DOOR');
+
+                // DUST EFFECT
+                // Spawn dust at previous location (approximate based on direction)
+                // Skip if entering a door to avoid dust persisting in the wrong location in the new room
+                if (!isDoor) {
+                    this.addEffect({
+                        type: 'dust',
+                        x: this.player.x - dx,
+                        y: this.player.y - dy,
+                        rotation: Math.atan2(dy, dx) - Math.PI, // Base orientation is Left (PI)
+                        startTime: Date.now(),
+                        duration: 300
+                    });
+                }
+
                 if (cell && cell.type.isDoor) {
                     this.handleDoorTraversal(cell);
                 } else if (cell && cell.type.id === 'EXIT_DOOR') {
@@ -1775,76 +1817,122 @@ export class Game {
 
     handleDoorTraversal(cell) {
         const state = cell.state;
-        if (!state || !state.targetRoom || !state.targetDoorId) {
-            console.error("Door missing definition:", state);
-            return;
-        }
 
-        // Locked logic
-        if (state.hasOwnProperty('isOpen') && !state.isOpen) {
-            return;
-        }
+        // Play SFX
+        this.audioSystem.playSFX(ASSETS.AUDIO.DOOR);
 
-        const nextRoomId = state.targetRoom;
-        const targetDoorId = state.targetDoorId;
-        const nextRoom = this.rooms[nextRoomId];
+        if (state && state.targetRoom && state.targetDoorId) {
+            const targetRoomId = state.targetRoom;
+            const targetDoorId = state.targetDoorId;
 
-        if (!nextRoom) {
-            console.error("Target room not found:", nextRoomId);
-            return;
-        }
+            const targetGrid = this.rooms[targetRoomId];
+            if (targetGrid) {
+                // Find target door in target grid
+                let targetX = -1;
+                let targetY = -1;
 
-        // Find the target door in the new room
-        let spawnX = 1; // Fallback
-        let spawnY = 1;
-        let found = false;
-
-        for (let y = 0; y < nextRoom.height; y++) {
-            for (let x = 0; x < nextRoom.width; x++) {
-                const c = nextRoom.getCell(x, y);
-                if (c.type.isDoor && c.state.id === targetDoorId) {
-                    spawnX = x;
-                    spawnY = y;
-                    found = true;
-                    break;
+                for (let y = 0; y < targetGrid.height; y++) {
+                    for (let x = 0; x < targetGrid.width; x++) {
+                        const c = targetGrid.getCell(x, y);
+                        // Check state ID match
+                        if (c.state && c.state.id === targetDoorId) {
+                            targetX = x;
+                            targetY = y;
+                            break;
+                        }
+                    }
+                    if (targetX !== -1) break;
                 }
-            }
-            if (found) break;
-        }
 
-        if (!found) {
-            console.warn(`Target door '${targetDoorId}' not found in room '${nextRoomId}'. Spawning at safe default.`);
-            // Fallback: Find ANY walkable tile
-            for (let y = 0; y < nextRoom.height; y++) {
-                for (let x = 0; x < nextRoom.width; x++) {
-                    const c = nextRoom.getCell(x, y);
-                    if (c.type.walkable) {
-                        spawnX = x;
-                        spawnY = y;
-                        found = true;
+                if (targetX !== -1) {
+                    // TELEPORT PLAYER
+                    this.currentRoomId = targetRoomId;
+                    this.grid = targetGrid;
+                    this.player.x = targetX;
+                    this.player.y = targetY;
+
+                    // Automatically step 'off' the door in the direction it faces (or towards center?)
+                    // For now, just placing on the door is fine. The move logic handles moving off.
+                    // But to prevent immediate re-trigger, we might want to push them 1 tile.
+                    // Let's assume Doors are on edges.
+                    // If x=0, move Right. If x=width-1, move Left.
+                    // If y=0, move Down. If y=height-1, move Up.
+                    if (targetX === 0) this.player.x += 1;
+                    else if (targetX === targetGrid.width - 1) this.player.x -= 1;
+                    else if (targetY === 0) this.player.y += 1;
+                    else if (targetY === targetGrid.height - 1) this.player.y -= 1;
+
+                    // Save state
+                    this.saveLevel();
+                } else {
+                    console.error("Target door not found:", targetDoorId);
+                }
+            } else {
+                console.error("Target room not found:", targetRoomId);
+            }
+        }
+    }
+
+    checkApplianceUpgrade(itemDef) {
+        if (!itemDef) return;
+
+        // Define Triggers
+        const choppingTriggers = ['tomato_box', 'pickle_box', 'onion_box', 'cheddar_box', 'swiss_box'];
+        const fryerTriggers = ['fry_box', 'sweet_fry_box', 'chicken_patty_box'];
+
+        // Dynamic Triggers
+        const isDrinkTrigger = itemDef.category === 'syrup' || (itemDef.produces && DEFINITIONS[itemDef.produces] && DEFINITIONS[itemDef.produces].category === 'syrup');
+        const isSauceTrigger = itemDef.type === 'SauceContainer' || itemDef.category === 'sauce_refill' ||
+            (itemDef.produces && DEFINITIONS[itemDef.produces] && (DEFINITIONS[itemDef.produces].type === 'SauceContainer' || DEFINITIONS[itemDef.produces].category === 'sauce_refill'));
+
+        let targetAppliance = null;
+
+        if (choppingTriggers.includes(itemDef.id)) targetAppliance = 'CUTTING_BOARD';
+        else if (fryerTriggers.includes(itemDef.id)) targetAppliance = 'FRYER';
+        else if (isDrinkTrigger) targetAppliance = 'SODA_FOUNTAIN';
+        else if (isSauceTrigger) targetAppliance = 'DISPENSER';
+
+        if (targetAppliance) {
+            if (this.autoUpgradedAppliances.has(targetAppliance)) return;
+
+            console.log(`Attempting Auto-Upgrade for ${targetAppliance}...`);
+
+            const room = this.rooms['main'];
+            if (!room) return;
+
+            let placed = false;
+            // Find empty counter
+            for (let y = 0; y < room.height; y++) {
+                for (let x = 0; x < room.width; x++) {
+                    const cell = room.getCell(x, y);
+                    if (cell.type.id === 'COUNTER' && !cell.object) {
+                        // Upgrade!
+                        // Upgrade!
+                        room.setTileType(x, y, TILE_TYPES[targetAppliance]);
+
+                        // Default state init (facing, etc)
+                        if (cell.state) cell.state.facing = 0;
+
+                        this.addFloatingText("Kitchen Upgraded!", x, y, '#00ff00');
+                        placed = true;
                         break;
                     }
                 }
-                if (found) break;
+                if (placed) break;
+            }
+
+            if (placed) {
+                this.autoUpgradedAppliances.add(targetAppliance);
+                // Also unlock the appliance in the shop if not already (logic usually handles this separately, but safe to ensure)
+                const appItem = this.shopItems.find(i => i.tileType === targetAppliance);
+                if (appItem) appItem.unlocked = true;
+
+                this.updateCapabilities();
+                this.saveLevel();
             }
         }
-
-        // Perform Switch
-        this.currentRoomId = nextRoomId;
-        this.grid = nextRoom;
-        this.player.x = spawnX;
-        this.player.y = spawnY;
-
-
-
-        console.log(`Switched to room: ${nextRoomId}`);
-        // Auto-save on room transition
-        // Auto-save on room transition
-        this.saveLevel();
-
-        // Capabilities shouldn't change on room switch usually, but good to ensure consistency? 
-        // No, capabilities are global based on ALL rooms. No change needed here.
     }
+
 
     update(dt) {
         if (!dt) return;
@@ -1869,6 +1957,14 @@ export class Game {
         this.floatingTexts.forEach(ft => {
             ft.life -= dt / 1000;
         });
+
+        // Effects Update
+        if (this.effects) {
+            this.effects = this.effects.filter(e => {
+                const elapsed = Date.now() - e.startTime;
+                return elapsed < e.duration;
+            });
+        }
 
         // Ticket Arrival Logic
         if (this.isDayActive) {
@@ -1957,8 +2053,8 @@ export class Game {
                 for (let x = 0; x < room.width; x++) {
                     const cell = room.getCell(x, y);
 
-                    // Stove Logic
-                    if (cell.type.id === 'STOVE') {
+                    // Grill Logic
+                    if (cell.type.id === 'GRILL') {
                         const item = cell.object;
                         // Check if item has cooking definition
                         if (item && item.definition.cooking && item.definition.cooking.stages) {
@@ -2254,7 +2350,7 @@ export class Game {
                     // "after the resturant closes, the player gets a new ability"
                     // Condition: Queue Finished (After Hours)
                     // Note: isDayActive is false here, so we only check queueFinishedTime
-                    if (this.queueFinishedTime) {
+                    if (true) { // Restriction removed: Allow appliance interaction anytime
                         const pickUpKeys = [this.settings.getBinding(ACTIONS.PICK_UP), 'Space'];
                         const interactKey = this.settings.getBinding(ACTIONS.INTERACT);
 
@@ -2309,6 +2405,12 @@ export class Game {
 
         if (!cell) return;
 
+        // Restriction: Cannot swap if there is an item on top
+        if (cell.object) {
+            this.addFloatingText("Remove item first!", targetX, targetY, '#ff0000');
+            return;
+        }
+
         // Define cyclable appliance types
         const cyclable = [
             'COUNTER',
@@ -2316,7 +2418,7 @@ export class Game {
             'DISPENSER',
             'FRYER',
             'SODA_FOUNTAIN',
-            'STOVE'
+            'GRILL'
         ];
 
         if (cyclable.includes(cell.type.id)) {
@@ -2403,6 +2505,8 @@ export class Game {
                 starLevel: this.starLevel,
                 unlockedStars: Array.from(this.unlockedStars),
                 appliedExpansions: Array.from(this.appliedExpansions),
+                autoUpgradedAppliances: Array.from(this.autoUpgradedAppliances),
+                pendingOrders: this.pendingOrders,
                 pendingOrders: this.pendingOrders,
                 rooms: {}
             };
@@ -2497,6 +2601,9 @@ export class Game {
             if (Array.isArray(data.appliedExpansions)) {
                 this.appliedExpansions = new Set(data.appliedExpansions);
             }
+            if (Array.isArray(data.autoUpgradedAppliances)) {
+                this.autoUpgradedAppliances = new Set(data.autoUpgradedAppliances);
+            }
 
             // Re-sort shop items
             this.sortShopItems();
@@ -2550,5 +2657,9 @@ export class Game {
 
     handleRenoInput(event) {
         this.shopSystem.handleRenoInput(event);
+    }
+
+    addEffect(effect) {
+        this.effects.push(effect);
     }
 }

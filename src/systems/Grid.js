@@ -30,7 +30,7 @@ export class Grid {
         if (cell) {
             cell.type = tileType;
             // Initialize Default State based on Type
-            if (tileType.id === 'STOVE') {
+            if (tileType.id === 'GRILL') {
                 cell.state = {
                     isOn: false,
                     isOn: false,

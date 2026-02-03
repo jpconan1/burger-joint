@@ -63,6 +63,7 @@ export class Renderer {
 
         // Helper to check for counter connections
         const isCounter = (id) => id === 'COUNTER';
+        const isGrill = (id) => id === 'GRILL';
 
         // 1. Draw Floor/Walls (Base Layer)
         const progressBars = [];
@@ -71,6 +72,96 @@ export class Renderer {
         for (let y = 0; y < gameState.grid.height; y++) {
             for (let x = 0; x < gameState.grid.width; x++) {
                 this.drawTile(ASSETS.TILES.FLOOR, x, y);
+            }
+        }
+        // 1.5 Draw Game Border (Moved here to be behind objects)
+        if (gameState.grid) {
+            const gridPixelWidth = gameState.grid.width * TILE_SIZE;
+            const gridPixelHeight = gameState.grid.height * TILE_SIZE;
+
+            // Helper to draw a side piece masked to a specific length
+            const drawSide = (textureName, x, y, length, isVertical) => {
+                const img = this.assetLoader.get(textureName);
+                if (!img) return;
+
+                if (isVertical) {
+                    // Vertical Side (Left/Right)
+                    // Clip height to 'length'
+                    // Draw at (x, y) with full width, clipped height
+                    this.ctx.drawImage(img,
+                        0, 0, img.width, length, // Source
+                        x, y, img.width, length  // Destination
+                    );
+                } else {
+                    // Horizontal Side (Top/Bottom)
+                    // Clip width to 'length'
+                    this.ctx.drawImage(img,
+                        0, 0, length, img.height, // Source
+                        x, y, length, img.height  // Destination
+                    );
+                }
+            };
+
+            // Helper to draw a corner
+            const drawCorner = (textureName, x, y) => {
+                const img = this.assetLoader.get(textureName);
+                if (img) this.ctx.drawImage(img, x, y);
+            };
+
+            // Fetch dimensions for positioning (using one of the images to determine thickness)
+            // We assume the corners and sides line up. 
+            // Top/Bottom thickness = height of top/bottom images
+            // Left/Right thickness = width of left/right images
+            const topImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_TOP);
+            const leftImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_LEFT);
+            // Even if they aren't loaded yet, the loop will just skip or draw nothing, 
+            // but we need them for offset calc.
+
+            if (topImg && leftImg) {
+                const topHeight = topImg.height;
+                const leftWidth = leftImg.width;
+
+                // We also need right/bottom dimensions for full box, but usually symmetry applies.
+                // Let's get them to be safe or assume symmetry if needed.
+                const rightImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_RIGHT);
+                const bottomImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_BOTTOM);
+                // const rightWidth = rightImg ? rightImg.width : leftWidth;
+                // const bottomHeight = bottomImg ? bottomImg.height : topHeight;
+
+                // Bring the border in by one tile, then push it out 8px
+                const inset = TILE_SIZE - 7;
+
+                // Calculate the "inner" rectangle that the border edges should adhere to
+                const innerX = inset;
+                const innerY = inset;
+                const innerWidth = gridPixelWidth - (inset * 2);
+                const innerHeight = gridPixelHeight - (inset * 2);
+
+                // 1. Draw Sides
+                // Top (centered on X grid, above Y of inner rect)
+                drawSide(ASSETS.UI.GAME_BORDER_TOP, innerX, innerY - topHeight, innerWidth, false);
+
+                // Bottom (centered on X grid, below Y of inner rect)
+                drawSide(ASSETS.UI.GAME_BORDER_BOTTOM, innerX, innerY + innerHeight, innerWidth, false);
+
+                // Left (centered on Y grid, left of X of inner rect)
+                drawSide(ASSETS.UI.GAME_BORDER_LEFT, innerX - leftWidth, innerY, innerHeight, true);
+
+                // Right (centered on Y grid, right of X of inner rect)
+                drawSide(ASSETS.UI.GAME_BORDER_RIGHT, innerX + innerWidth, innerY, innerHeight, true);
+
+                // 2. Draw Corners
+                // Top-Left
+                drawCorner(ASSETS.UI.GAME_BORDER_TOP_LEFT, innerX - leftWidth, innerY - topHeight);
+
+                // Top-Right
+                drawCorner(ASSETS.UI.GAME_BORDER_TOP_RIGHT, innerX + innerWidth, innerY - topHeight);
+
+                // Bottom-Left
+                drawCorner(ASSETS.UI.GAME_BORDER_BOTTOM_LEFT, innerX - leftWidth, innerY + innerHeight);
+
+                // Bottom-Right
+                drawCorner(ASSETS.UI.GAME_BORDER_BOTTOM_RIGHT, innerX + innerWidth, innerY + innerHeight);
             }
         }
         for (let y = 0; y < gameState.grid.height; y++) {
@@ -97,10 +188,24 @@ export class Renderer {
                     this.drawAutoTile(ASSETS.TILES.COUNTER_SHEET, x, y, mask, ASSETS.TILES.COUNTER);
                 }
 
+                if (cell.type.id === 'GRILL') {
+                    // Auto-tiling Logic for GRILL (East-West only)
+                    // Mask: West=1, East=2
+                    // 0: Solo, 1: West Conn, 2: East Conn, 3: Pipe (Both)
+                    let mask = 0;
+
+                    // West
+                    if (x > 0 && isGrill(gameState.grid.getCell(x - 1, y).type.id)) mask |= 1;
+                    // East
+                    if (x < gameState.grid.width - 1 && isGrill(gameState.grid.getCell(x + 1, y).type.id)) mask |= 2;
+
+                    this.drawAutoTile(ASSETS.TILES.GRILL_SHEET, x, y, mask, ASSETS.TILES.STOVE_OFF);
+                }
+
                 let tileTexture = cell.type.texture;
 
                 // Prevent double-drawing COUNTER (handled by auto-tile above)
-                if (cell.type.id === 'COUNTER') {
+                if (cell.type.id === 'COUNTER' || cell.type.id === 'GRILL') {
                     tileTexture = null;
                 }
 
@@ -135,9 +240,26 @@ export class Renderer {
                         }
                     }
                 }
-                if (cell.type.id === 'STOVE') {
-                    tileTexture = ASSETS.TILES.STOVE_ON;
+                if (cell.type.id === 'GARBAGE') {
+                    this.drawTile(ASSETS.TILES.GARBAGE, x, y);
+
+                    if (cell.state && cell.state.trashedItem) {
+                        const item = cell.state.trashedItem;
+                        this.ctx.save();
+                        const cx = x * TILE_SIZE + TILE_SIZE / 2;
+                        const cy = y * TILE_SIZE + TILE_SIZE / 2 - 24; // Nudge up 50% (relative to center/height)
+                        this.ctx.translate(cx, cy);
+                        this.ctx.rotate(cell.state.trashedItemRotation || 0);
+                        this.ctx.scale(0.75, 0.75);
+                        this.drawObject(item, -0.5, -0.5);
+                        this.ctx.restore();
+                    }
+
+                    this.drawTile(ASSETS.TILES.GARBAGE_FRONT, x, y);
+                    tileTexture = null;
                 }
+
+
 
                 if (cell.type.id === 'CUTTING_BOARD') {
                     // 1. Manually Draw the Base Board
@@ -183,11 +305,7 @@ export class Renderer {
 
                         const bagImg = this.assetLoader.get(bagTexture);
                         if (bagImg) {
-                            // Scaled down 40% (0.6 scale), nudged 8 pixels left, 5 pixels down
-                            const scale = 0.6;
-                            const size = TILE_SIZE * scale;
-                            const offset = (TILE_SIZE - size) / 2;
-                            this.ctx.drawImage(bagImg, x * TILE_SIZE + offset - 8, y * TILE_SIZE + offset + 5, size, size);
+                            this.ctx.drawImage(bagImg, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                         }
 
                         // 2. Select Overlay based on charges
@@ -357,7 +475,7 @@ export class Renderer {
                     if (!isFrying) {
                         let overrideTexture = null;
                         // Check for Stove Cooking Texture Override
-                        if (cell.type.id === 'STOVE' && cell.object && cell.object.definition.cookingTexture) {
+                        if (cell.type.id === 'GRILL' && cell.object && cell.object.definition.cookingTexture) {
                             // Only use override if currently "raw" (cooking process uses this state)
                             // If cooked, it usually switches to 'patty-cooked.png' via internal rules
                             if (cell.object.state.cook_level === 'raw') {
@@ -370,11 +488,21 @@ export class Renderer {
                         }
 
                         let alpha = 1.0;
-                        if (gameState.player && cell.type.id === 'COUNTER') {
-                            const playerX = Math.round(gameState.player.x);
-                            const playerY = Math.round(gameState.player.y);
-                            if (playerX === x && playerY === y - 1) {
-                                alpha = 0.5;
+                        if (cell.type.id === 'COUNTER') {
+                            if (gameState.player) {
+                                const playerX = Math.round(gameState.player.x);
+                                const playerY = Math.round(gameState.player.y);
+                                if (playerX === x && playerY === y - 1) {
+                                    alpha = 0.5;
+                                }
+                            }
+
+                            // If there is a service counter above this counter, fade items so we can see the service counter
+                            if (y > 0) {
+                                const tileAbove = gameState.grid.getCell(x, y - 1);
+                                if (tileAbove && tileAbove.type.id === 'SERVICE') {
+                                    alpha = 0.5;
+                                }
                             }
                         }
 
@@ -384,7 +512,7 @@ export class Renderer {
                     }
 
                     // Cooking Progress Bar (Stove)
-                    if (cell.type.id === 'STOVE') {
+                    if (cell.type.id === 'GRILL') {
                         const item = cell.object;
                         if (item.state && item.state.cookingProgress > 0 && item.state.cook_level === 'raw') {
                             let max = cell.state.cookingSpeed || 2000;
@@ -437,8 +565,8 @@ export class Renderer {
                     }
                 }
 
-                // 2.7 Draw Box Quantity (only if open)
-                if (cell.object && cell.object.type === 'Box' && cell.object.state && cell.object.state.isOpen) {
+                // 2.7 Draw Box Quantity (Always, regardless of state)
+                if (cell.object && cell.object.type === 'Box' && cell.object.state) {
                     const count = cell.object.state.count;
                     if (count !== undefined) {
                         this.drawTinyNumber(x, y, count);
@@ -466,96 +594,7 @@ export class Renderer {
 
         // 3. Draw Player: Handled in render loop (Z-sorted)
 
-        // 3.2 Draw Game Border
-        if (gameState.grid) {
-            const gridPixelWidth = gameState.grid.width * TILE_SIZE;
-            const gridPixelHeight = gameState.grid.height * TILE_SIZE;
 
-            // Helper to draw a side piece masked to a specific length
-            const drawSide = (textureName, x, y, length, isVertical) => {
-                const img = this.assetLoader.get(textureName);
-                if (!img) return;
-
-                if (isVertical) {
-                    // Vertical Side (Left/Right)
-                    // Clip height to 'length'
-                    // Draw at (x, y) with full width, clipped height
-                    this.ctx.drawImage(img,
-                        0, 0, img.width, length, // Source
-                        x, y, img.width, length  // Destination
-                    );
-                } else {
-                    // Horizontal Side (Top/Bottom)
-                    // Clip width to 'length'
-                    this.ctx.drawImage(img,
-                        0, 0, length, img.height, // Source
-                        x, y, length, img.height  // Destination
-                    );
-                }
-            };
-
-            // Helper to draw a corner
-            const drawCorner = (textureName, x, y) => {
-                const img = this.assetLoader.get(textureName);
-                if (img) this.ctx.drawImage(img, x, y);
-            };
-
-            // Fetch dimensions for positioning (using one of the images to determine thickness)
-            // We assume the corners and sides line up. 
-            // Top/Bottom thickness = height of top/bottom images
-            // Left/Right thickness = width of left/right images
-            const topImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_TOP);
-            const leftImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_LEFT);
-            // Even if they aren't loaded yet, the loop will just skip or draw nothing, 
-            // but we need them for offset calc.
-
-            if (topImg && leftImg) {
-                const topHeight = topImg.height;
-                const leftWidth = leftImg.width;
-
-                // We also need right/bottom dimensions for full box, but usually symmetry applies.
-                // Let's get them to be safe or assume symmetry if needed.
-                const rightImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_RIGHT);
-                const bottomImg = this.assetLoader.get(ASSETS.UI.GAME_BORDER_BOTTOM);
-                // const rightWidth = rightImg ? rightImg.width : leftWidth;
-                // const bottomHeight = bottomImg ? bottomImg.height : topHeight;
-
-                // Bring the border in by one tile, then push it out 8px
-                const inset = TILE_SIZE - 7;
-
-                // Calculate the "inner" rectangle that the border edges should adhere to
-                const innerX = inset;
-                const innerY = inset;
-                const innerWidth = gridPixelWidth - (inset * 2);
-                const innerHeight = gridPixelHeight - (inset * 2);
-
-                // 1. Draw Sides
-                // Top (centered on X grid, above Y of inner rect)
-                drawSide(ASSETS.UI.GAME_BORDER_TOP, innerX, innerY - topHeight, innerWidth, false);
-
-                // Bottom (centered on X grid, below Y of inner rect)
-                drawSide(ASSETS.UI.GAME_BORDER_BOTTOM, innerX, innerY + innerHeight, innerWidth, false);
-
-                // Left (centered on Y grid, left of X of inner rect)
-                drawSide(ASSETS.UI.GAME_BORDER_LEFT, innerX - leftWidth, innerY, innerHeight, true);
-
-                // Right (centered on Y grid, right of X of inner rect)
-                drawSide(ASSETS.UI.GAME_BORDER_RIGHT, innerX + innerWidth, innerY, innerHeight, true);
-
-                // 2. Draw Corners
-                // Top-Left
-                drawCorner(ASSETS.UI.GAME_BORDER_TOP_LEFT, innerX - leftWidth, innerY - topHeight);
-
-                // Top-Right
-                drawCorner(ASSETS.UI.GAME_BORDER_TOP_RIGHT, innerX + innerWidth, innerY - topHeight);
-
-                // Bottom-Left
-                drawCorner(ASSETS.UI.GAME_BORDER_BOTTOM_LEFT, innerX - leftWidth, innerY + innerHeight);
-
-                // Bottom-Right
-                drawCorner(ASSETS.UI.GAME_BORDER_BOTTOM_RIGHT, innerX + innerWidth, innerY + innerHeight);
-            }
-        }
 
         // 3.5 Draw Lighting Effect
         if (gameState.grid && gameState.queueFinishedTime) {
@@ -579,6 +618,8 @@ export class Renderer {
         progressBars.forEach(pb => {
             this.drawProgressBar(pb.x, pb.y, pb.pct);
         });
+
+        this.drawEffects(gameState);
 
         this.ctx.restore();
 
@@ -2419,5 +2460,43 @@ export class Renderer {
 
     setZoom(level) {
         this.zoomLevel = level;
+    }
+    drawEffects(gameState) {
+        if (!gameState.effects) return;
+
+        gameState.effects.forEach(effect => {
+            if (effect.type === 'dust') {
+                const img = this.assetLoader.get(ASSETS.EFFECTS.DUST_SHEET);
+                if (!img) return;
+
+                const elapsed = Date.now() - effect.startTime;
+                const totalFrames = 6;
+                const frameDuration = effect.duration / totalFrames;
+                const currentFrame = Math.floor(elapsed / frameDuration);
+
+                if (currentFrame >= totalFrames) return;
+
+                const frameWidth = img.width / totalFrames;
+                const frameHeight = img.height;
+
+                const sx = currentFrame * frameWidth;
+                const sy = 0;
+
+                const x = effect.x * TILE_SIZE;
+                const y = effect.y * TILE_SIZE;
+
+                this.ctx.save();
+                // Translate to center of the tile
+                this.ctx.translate(x + TILE_SIZE / 2, y + TILE_SIZE / 2);
+
+                if (effect.rotation) {
+                    this.ctx.rotate(effect.rotation);
+                }
+
+                // Draw centered relative to the translation
+                this.ctx.drawImage(img, sx, sy, frameWidth, frameHeight, -TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
+                this.ctx.restore();
+            }
+        });
     }
 }

@@ -112,14 +112,10 @@ export class PostDaySystem {
 
             let included = false;
             if (isToppingSource(def)) {
-                if (def.id === 'chicken_patty_box' && !hasFryer) {
-                    included = false;
-                } else {
-                    included = true;
-                }
-            } else if (hasFryer && isSideSource(def)) {
                 included = true;
-            } else if (hasFountain && isDrinkSource(def)) {
+            } else if (isSideSource(def)) {
+                included = true;
+            } else if (isDrinkSource(def)) {
                 included = true;
             }
 
@@ -178,7 +174,36 @@ export class PostDaySystem {
         const targetServings = Math.ceil(customerCount * safetyFactor);
 
         const ensureSupply = (itemId, unitsPerBox, targetUnits) => {
-            const currentUnits = this.getBoxedSupplyCount(itemId);
+            let currentUnits = this.getBoxedSupplyCount(itemId);
+
+            // --- USER REQUEST: Check installed syrups ---
+            if (itemId.includes('syrup')) {
+                const syrupBoxDef = DEFINITIONS[itemId];
+                const syrupId = syrupBoxDef ? syrupBoxDef.produces : null;
+
+                if (syrupId) {
+                    // Scan Soda Fountains
+                    Object.values(this.game.rooms).forEach(room => {
+                        for (let y = 0; y < room.height; y++) {
+                            for (let x = 0; x < room.width; x++) {
+                                const c = room.getCell(x, y);
+                                if (c.type.id === 'SODA_FOUNTAIN' && c.object && c.object.definitionId === syrupId) {
+                                    // Check if half full
+                                    // Assume max charges is available in definition or state
+                                    // Syrups usually have charges. ItemInstance init sets it from Def.
+                                    // If not in state, look at def.initialState
+                                    const maxCharges = (DEFINITIONS[syrupId].initialState && DEFINITIONS[syrupId].initialState.charges) || 10;
+                                    const currentCharges = c.object.state.charges || 0;
+
+                                    if (currentCharges > maxCharges / 2) {
+                                        currentUnits += 1; // Count as 1 full unit (box equivalent)
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
 
             if (currentUnits < targetUnits) {
                 const deficit = targetUnits - currentUnits;
@@ -194,7 +219,7 @@ export class PostDaySystem {
 
         // 2. Check Essentials (Always needed)
         ensureSupply('bun_box', 32, targetServings);
-        ensureSupply('patty_box', 12, targetServings);
+        ensureSupply('patty_box', 24, targetServings);
         ensureSupply('wrapper_box', 100, targetServings);
         ensureSupply('bag_box', 50, targetServings);
 
@@ -207,7 +232,7 @@ export class PostDaySystem {
             let steps = 0;
             while (steps < 5) {
                 const def = DEFINITIONS[ptr];
-                if (def && def.type === 'Box') {
+                if (def && (def.type === 'Box' || def.type === 'SauceContainer')) {
                     supplyBoxId = ptr;
                     break;
                 }
@@ -221,9 +246,14 @@ export class PostDaySystem {
             }
 
             if (supplyBoxId) {
-                const boxDef = DEFINITIONS[supplyBoxId];
+                let boxDef = DEFINITIONS[supplyBoxId];
                 if (!boxDef) return;
-                const boxCount = boxDef.maxCount || 1;
+
+                // --- USER REQUEST: Sauce Bags only (No Boxes) ---
+                // Removed since boxes are deleted from items.json now.
+                // The item we found should be the bag itself if dependencies are correct.
+
+                const boxCount = (boxDef.type === 'Box') ? (boxDef.maxCount || 1) : 1;
                 let specificTarget = targetServings;
 
                 const itemDef = DEFINITIONS[itemId];
@@ -246,6 +276,8 @@ export class PostDaySystem {
                     specificTarget = 1;
                 } else if (itemId.includes('syrup')) {
                     specificTarget = 1;
+                } else if (itemId.includes('bacon')) {
+                    specificTarget = Math.ceil(targetServings / 3);
                 }
 
                 ensureSupply(supplyBoxId, boxCount, specificTarget);
@@ -289,8 +321,9 @@ export class PostDaySystem {
         let nextCol = this.selection.col;
 
         // Navigation Config
+        const showReroll = hasRewards && !this.rewardClaimed;
         const rowConfig = {
-            0: { count: this.dailyRewards.length + (hasRewards ? 1 : 0), exists: hasRewards && !this.rewardClaimed }, // +1 for Reroll
+            0: { count: this.dailyRewards.length + (showReroll ? 1 : 0), exists: hasRewards }, // +1 for Reroll if available
             1: { count: this.supplyItems.length, exists: this.supplyItems.length > 0 }, // Supply Items
             2: { count: 3, exists: true } // Edit Kitchen, Edit Menu, Next Day
         };
@@ -484,21 +517,11 @@ export class PostDaySystem {
 
             const reward = this.dailyRewards[col];
             if (reward && !reward.claimed) {
-                if (!this.rewardClaimed) {
-                    this.game.grantDailyReward(reward.def);
-                    reward.claimed = true;
-                    this.rewardClaimed = true;
-                    this.game.addFloatingText("Claimed!", this.game.player.x, this.game.player.y, '#ffd700');
-                    this.generateSupplyItems();
-
-                    if (this.supplyItems.length > 0) {
-                        this.selection = { row: 1, col: 0 };
-                    } else {
-                        this.selection = { row: 2, col: 2 };
-                    }
-                } else {
-                    this.game.addFloatingText("Already picked a reward", this.game.player.x, this.game.player.y, '#ff0000');
-                }
+                this.game.grantDailyReward(reward.def);
+                reward.claimed = true;
+                this.rewardClaimed = true;
+                this.game.addFloatingText("Claimed!", this.game.player.x, this.game.player.y, '#ffd700');
+                this.generateSupplyItems();
             }
         } else if (row === 1) {
             // SUPPLY ORDER
@@ -665,7 +688,8 @@ export class PostDaySystem {
 
         // Row 0: Rewards (Add Reroll Button)
         const rewardsWithReroll = [...this.dailyRewards];
-        if (rewardsWithReroll.length > 0) {
+        // Only show Reroll if nothing has been claimed yet
+        if (rewardsWithReroll.length > 0 && !this.rewardClaimed) {
             rewardsWithReroll.push({ isReroll: true, claimed: false });
         }
         this.updateRowDOM('pd-row-0', rewardsWithReroll, 0);
@@ -755,13 +779,9 @@ export class PostDaySystem {
                 else el.classList.remove('claimed');
 
                 // Dim others if one is claimed
-                if (this.rewardClaimed && !items[index].claimed) {
-                    el.style.opacity = '0.5';
-                    el.style.filter = 'grayscale(100%)';
-                } else {
-                    el.style.opacity = '1';
-                    el.style.filter = 'none';
-                }
+                // (Disabled: Allow multiple picks)
+                el.style.opacity = '1';
+                el.style.filter = 'none';
             }
         });
     }
@@ -852,7 +872,10 @@ export class PostDaySystem {
         `;
     }
 
-    getBoxedSupplyCount(itemId) {
+    getBoxedSupplyCount(itemId, checked = new Set()) {
+        if (checked.has(itemId)) return 0;
+        checked.add(itemId);
+
         // Count ONLY items in boxes (or full boxes in cart/pending)
         // itemId should be the Box ID (e.g. patty_box)
         const def = DEFINITIONS[itemId];
@@ -860,7 +883,7 @@ export class PostDaySystem {
 
         let count = 0;
 
-        // 1. Scan Rooms for Boxes
+        // 1. Scan Rooms for this Item
         Object.values(this.game.rooms).forEach(room => {
             if (!room) return;
             for (let y = 0; y < room.height; y++) {
@@ -868,16 +891,20 @@ export class PostDaySystem {
                     const cell = room.getCell(x, y);
                     const obj = cell.object;
                     if (obj) {
-                        // Check if it's the box itself
-                        if (obj.definitionId === itemId && obj.state && obj.state.count !== undefined) {
-                            count += obj.state.count;
+                        // Check if it's the item itself
+                        if (obj.definitionId === itemId) {
+                            if (obj.state && obj.state.count !== undefined) {
+                                count += obj.state.count;
+                            } else {
+                                count += 1;
+                            }
                         }
                     }
                 }
             }
         });
 
-        // 2. Add Cart content (Full Boxes)
+        // 2. Add Cart content (Full Boxes/Items)
         const inCart = this.game.cart[itemId] || 0;
         count += inCart * perBox;
 
@@ -886,6 +913,23 @@ export class PostDaySystem {
             const pending = this.game.pendingOrders.find(o => o.id === itemId);
             if (pending) {
                 count += pending.qty * perBox;
+            }
+        }
+
+        // 4. Recursive Upstream Check (Check Parent Box)
+        // If we are looking for 'ketchup_bag', also count them inside 'ketchup_box'
+        if (this.game && this.game.itemDependencyMap) {
+            const parentId = this.game.itemDependencyMap[itemId];
+            if (parentId) {
+                const parentDef = DEFINITIONS[parentId];
+                // Only follow if parent is a Box (container of this item)
+                if (parentDef && parentDef.type === 'Box') {
+                    // Start from parent count. 
+                    // Note: ensureSupply/logic usually sums up atomic units (patties, bags). 
+                    // getBoxedSupplyCount for a Box returns the sum of items inside it.
+                    // So we can just add the result directly.
+                    count += this.getBoxedSupplyCount(parentId, checked);
+                }
             }
         }
 

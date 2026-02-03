@@ -42,7 +42,7 @@ export const SCORING_CONFIG = {
         dispenser: 125,
         fryer: 100,
         soda_fountain: 200,
-        stove: 100,
+        grill: 100,
 
         // Actions
         expansion: 50

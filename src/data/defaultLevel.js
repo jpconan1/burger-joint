@@ -5,10 +5,10 @@ export const DEFAULT_LEVEL = {
         [
             { "typeId": "PRINTER", "state": {}, "object": null },
             { "typeId": "SHUTTER_DOOR", "state": { "id": "kitchen_shutter", "targetRoom": "store_room", "targetDoorId": "store_exit", "isOpen": true }, "object": null },
-            { "typeId": "STOVE", "state": {}, "object": null },
-            { "typeId": "FRYER", "state": {}, "object": null },
-            { "typeId": "DISPENSER", "state": {}, "object": null },
-            { "typeId": "CUTTING_BOARD", "state": {}, "object": null },
+            { "typeId": "GRILL", "state": {}, "object": null },
+            { "typeId": "GRILL", "state": {}, "object": null },
+            { "typeId": "GRILL", "state": {}, "object": null },
+            { "typeId": "COUNTER", "state": {}, "object": null },
             { "typeId": "COUNTER", "state": {}, "object": null },
             { "typeId": "WALL", "state": {}, "object": null }
         ],
@@ -34,7 +34,7 @@ export const DEFAULT_LEVEL = {
         ],
         [
             { "typeId": "WALL", "state": {}, "object": null },
-            { "typeId": "SODA_FOUNTAIN", "state": { "facing": 0 }, "object": null },
+            { "typeId": "COUNTER", "state": { "facing": 0 }, "object": null },
             { "typeId": "COUNTER", "state": {}, "object": null },
             { "typeId": "COUNTER", "state": {}, "object": null },
             { "typeId": "COUNTER", "state": {}, "object": null },

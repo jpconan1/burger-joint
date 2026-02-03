@@ -34,7 +34,7 @@ const isPattyCooking = (gameState) => {
     for (let y = 0; y < mainRoom.height; y++) {
         for (let x = 0; x < mainRoom.width; x++) {
             const cell = mainRoom.getCell(x, y);
-            if (cell.type.id === 'STOVE' && cell.object && cell.object.definitionId === 'beef_patty') {
+            if (cell.type.id === 'GRILL' && cell.object && cell.object.definitionId === 'beef_patty') {
                 return true;
             }
         }
@@ -254,14 +254,14 @@ export const TUTORIAL_STEPS = [
     {
         id: 'cook_patty',
         text: "Cook!\n[PICK_UP]",
-        targetType: 'STOVE',
+        targetType: 'GRILL',
         completionPredicate: (gameState) => {
             if (!gameState.grid) return false;
             // Complete if there is a COOKED patty on any stove tile
             for (let y = 0; y < gameState.grid.height; y++) {
                 for (let x = 0; x < gameState.grid.width; x++) {
                     const cell = gameState.grid.getCell(x, y);
-                    if (cell.type.id === 'STOVE' && cell.object &&
+                    if (cell.type.id === 'GRILL' && cell.object &&
                         cell.object.definitionId === 'beef_patty' &&
                         cell.object.state.cook_level === 'cooked') {
                         return true;
@@ -273,7 +273,29 @@ export const TUTORIAL_STEPS = [
         predicate: (gameState, entity) => {
             if (gameState.dayNumber !== 1) return false;
             // Only show if holding a patty
-            return gameState.player.heldItem && gameState.player.heldItem.definitionId === 'beef_patty';
+            if (!gameState.player.heldItem || gameState.player.heldItem.definitionId !== 'beef_patty') return false;
+
+            // Find all grills to identify the middle one
+            const grills = [];
+            if (gameState.grid) {
+                for (let y = 0; y < gameState.grid.height; y++) {
+                    for (let x = 0; x < gameState.grid.width; x++) {
+                        const cell = gameState.grid.getCell(x, y);
+                        if (cell.type.id === 'GRILL') {
+                            grills.push({ x, y, cell });
+                        }
+                    }
+                }
+            }
+
+            if (grills.length === 0) return false;
+
+            // Sort by x position
+            grills.sort((a, b) => a.x - b.x);
+
+            // Target the middle grill
+            const middleIndex = Math.floor((grills.length - 1) / 2);
+            return entity === grills[middleIndex].cell;
         }
     },
     {

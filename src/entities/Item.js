@@ -11,6 +11,7 @@ export class ItemInstance {
         }
 
         this.state = {};
+        this.timestamp = Date.now();
         this._initializeState();
     }
 

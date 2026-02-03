@@ -27,7 +27,7 @@ export const EXPANSIONS = [
                         "object": null
                     },
                     {
-                        "typeId": "STOVE",
+                        "typeId": "GRILL",
                         "state": {
                             "cookingProgress": 0
                         },
@@ -308,7 +308,7 @@ export const EXPANSIONS = [
                         "object": null
                     },
                     {
-                        "typeId": "STOVE",
+                        "typeId": "GRILL",
                         "state": {
                             "cookingProgress": 0
                         },
@@ -676,7 +676,7 @@ export const EXPANSIONS = [
                         "object": null
                     },
                     {
-                        "typeId": "STOVE",
+                        "typeId": "GRILL",
                         "state": {
                             "cookingProgress": 0
                         },
@@ -1239,7 +1239,7 @@ export const EXPANSIONS = [
                         "object": null
                     },
                     {
-                        "typeId": "STOVE",
+                        "typeId": "GRILL",
                         "state": {
                             "cookingProgress": 0
                         },
@@ -1921,7 +1921,7 @@ export const EXPANSIONS = [
                         "object": null
                     },
                     {
-                        "typeId": "STOVE",
+                        "typeId": "GRILL",
                         "state": {
                             "cookingProgress": 0
                         },

@@ -80,6 +80,7 @@ export class TutorialOverlay {
                         targetY: target.y,
                         text: formattedText
                     });
+                    break; // Only show one bubble per step type
                 }
             }
         }

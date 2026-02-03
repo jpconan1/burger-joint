@@ -9,6 +9,7 @@ export const ASSETS = {
         COUNTER: 'counter-tile.png',
         COUNTER_SHEET: 'ui/counter_sheet.png',
         SERVICE: 'service_counter.png',
+        GRILL_SHEET: 'sheets/grill_sheet.png',
         STOVE_OFF: 'stovetop-off.png',
         STOVE_ON: 'stovetop-on.png',
         CUTTING_BOARD: 'cutting_board.png',
@@ -41,6 +42,7 @@ export const ASSETS = {
         TICKET_WHEEL_FRAME1: 'ticket_wheel-frame1.png',
         TICKET_WHEEL_FRAME2: 'ticket_wheel-frame2.png',
         GARBAGE: 'garbage-tile.png',
+        GARBAGE_FRONT: 'garbage-tile-front.png',
         OFFICE_DOOR: 'office_door.png',
         COMPUTER: 'computer.png',
         EXIT_DOOR: 'exit_door.png',
@@ -51,6 +53,10 @@ export const ASSETS = {
         DELIVERY_TILE: 'delivery-tile.png',
         MENU: 'menu.png',
         PREP: 'prep.png',
+        DUST_SHEET: 'sheets/dust_sheet.png',
+    },
+    EFFECTS: {
+        DUST_SHEET: 'sheets/dust_sheet.png'
     },
     OBJECTS: {
 
@@ -247,9 +253,9 @@ export const TILE_TYPES = {
         walkable: false,
         holdsItems: true, // Specifically for burgers, can refine later
     },
-    STOVE: {
-        id: 'STOVE',
-        texture: ASSETS.TILES.STOVE_OFF,
+    GRILL: {
+        id: 'GRILL',
+        texture: ASSETS.TILES.GRILL_SHEET, // Will be auto-tiled
         walkable: false,
         holdsItems: true,
         cooking: true,

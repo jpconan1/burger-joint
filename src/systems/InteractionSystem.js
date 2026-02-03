@@ -1,0 +1,146 @@
+import { InteractionHandlers } from './InteractionHandlers.js';
+import { INTERACTION_MAPPING } from '../data/interactions.js';
+import { ItemType } from '../data/definitions.js';
+
+export class InteractionSystem {
+
+    static handleInteract(player, grid) {
+        const cell = player.getTargetCell(grid);
+        if (!cell) return false;
+
+        // 1. Context Specific (Tile)
+        if (this._dispatch('interact', cell.type.id, player, cell, grid, 'TILES')) return true;
+
+        // 1.5. Generic Container Deal (Box/Insert/Bag -> Counter/Item)
+        if (InteractionHandlers.handle_container_deal(player, cell)) return true;
+
+        // 2. Item Specific (Target Object)
+        if (cell.object) {
+            // Special Box Handling
+            if (cell.object.type === ItemType.Box) {
+                if (InteractionHandlers.box_interact(player, cell)) return true;
+            }
+
+            if (this._dispatch('interact', cell.object.definitionId, player, cell.object, cell, 'ITEMS')) return true;
+
+            // 3. Generic Burger Handling (Unwrap or Modify)
+            if (cell.object.category === 'burger') {
+                if (InteractionHandlers.burger_interact(player, cell)) return true;
+            }
+        }
+
+        // 3. Fallback to Pickup
+        return this.handlePickUp(player, grid);
+    }
+
+    static handlePickUp(player, grid) {
+        const cell = player.getTargetCell(grid);
+        if (!cell) return false;
+
+        // 0. Place Appliance (Priority)
+        if (player.heldAppliance) {
+            if (InteractionHandlers.place_appliance(player, grid)) return true;
+            // If failed to place, do we consume input? Yes usually.
+            return true;
+        }
+
+        // 1. Context Specific (Tile)
+        if (this._dispatch('pickup', cell.type.id, player, cell, grid, 'TILES')) return true;
+
+        // 2. Item Specific (Target Object)
+        if (cell.object) {
+            if (this._dispatch('pickup', cell.object.definitionId, player, cell.object, cell, 'ITEMS')) return true;
+        }
+
+        // 3. Standard Put Down / Pick Up Logic (Default)
+        return this._standardTransfer(player, cell);
+    }
+
+    static _dispatch(actionType, id, player, target, context, category) {
+        const config = INTERACTION_MAPPING[category][id];
+        if (config && config[actionType]) {
+            const handlerName = config[actionType];
+            const handler = InteractionHandlers[handlerName];
+            if (handler) {
+                const result = handler(player, target, context);
+                if (result) return true;
+            }
+        }
+        return false;
+    }
+
+    static _standardTransfer(player, cell) {
+        // Feature: Pick Up into Held Insert (Priority over standard pickup/place)
+        if (player.heldItem && player.heldItem.definitionId === 'insert') {
+            if (InteractionHandlers.handle_insert_pickup(player, cell)) return true;
+        }
+
+        // Place Held Item
+        if (player.heldItem) {
+
+            // Bag-to-Bag Interaction
+            if (cell.object && player.heldItem.definitionId === 'bag' && cell.object.definitionId === 'bag') {
+                const heldBag = player.heldItem;
+                const targetBag = cell.object;
+
+                // Ensure contents arrays exist
+                if (!heldBag.state.contents) heldBag.state.contents = [];
+                if (!targetBag.state.contents) targetBag.state.contents = [];
+
+                if (heldBag.state.contents.length > 0) {
+                    // Transfer held -> target
+                    targetBag.state.contents.push(...heldBag.state.contents);
+                    heldBag.state.contents = [];
+                } else if (targetBag.state.contents.length > 0) {
+                    // Transfer target -> held
+                    heldBag.state.contents.push(...targetBag.state.contents);
+                    targetBag.state.contents = [];
+                }
+
+                return true;
+            }
+
+            // Box Logic: Put Back
+            if (cell.object && cell.object.type === ItemType.Box) {
+                if (InteractionHandlers.handle_box_put_back(cell.object, player.heldItem)) {
+                    player.heldItem = null;
+                    return true;
+                }
+                // Box Logic: Combine (Hold item and combine with box contents)
+                if (InteractionHandlers.handle_box_combine(player, cell.object)) {
+                    return true;
+                }
+            }
+
+            // Standard Place
+            if (!cell.object && cell.type.holdsItems) {
+                cell.object = player.heldItem;
+                player.heldItem = null;
+                return true;
+            }
+
+            // Combine with item on table
+            if (cell.object) {
+                const result = InteractionHandlers._tryCombine(player.heldItem, cell.object);
+                if (result) {
+                    cell.object = result;
+                    player.heldItem = null; // Result is on table
+                    return true;
+                }
+            }
+        }
+        // Pick Up Item
+        else if (cell.object) {
+            // Box Logic: Open Box
+            if (cell.object.type === ItemType.Box) {
+                cell.object.state.isOpen = false;
+            }
+
+            player.heldItem = cell.object;
+            cell.object = null;
+            return true;
+        }
+
+        return false;
+    }
+}

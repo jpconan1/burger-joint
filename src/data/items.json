@@ -5,7 +5,7 @@
             "type": "supply_chain",
             "box": {
                 "id": "patty_box",
-                "maxCount": 12,
+                "maxCount": 24,
                 "price": 50,
                 "toolRequirement": "HANDS",
                 "isEssential": true,
@@ -26,7 +26,7 @@
                     "stages": {
                         "raw": {
                             "next": "cooked",
-                            "duration": 6000
+                            "duration": 10000
                         }
                     }
                 },
@@ -338,16 +338,12 @@
             "type": "complex_group",
             "items": [
                 {
-                    "id": "mayo_box",
-                    "type": "Box",
-                    "maxCount": 3,
-                    "price": 10,
-                    "produces": "mayo_bag",
-                    "unlocked": false
-                },
-                {
                     "id": "mayo_bag",
                     "type": "SauceContainer",
+                    "price": 10,
+                    "maxCount": 1,
+                    "produces": "mayo",
+                    "unlockCondition": "dispenser",
                     "category": "sauce_refill",
                     "texture": "mayo-bag.png"
                 },
@@ -406,27 +402,6 @@
                     "category": "burger",
                     "texture": "burger-old.png",
                     "trashOnly": true
-                },
-                {
-                    "id": "burger_tomato",
-                    "type": "Composite",
-                    "category": "burger",
-                    "texture": "burger-tomato.png",
-                    "spoilable": true
-                },
-                {
-                    "id": "burger_mayo",
-                    "type": "Composite",
-                    "category": "burger",
-                    "texture": "burger-mayo.png",
-                    "spoilable": true
-                },
-                {
-                    "id": "burger_tomato_mayo",
-                    "type": "Composite",
-                    "category": "burger",
-                    "texture": "burger-tomato-mayo.png",
-                    "spoilable": true
                 }
             ]
         },
@@ -652,16 +627,12 @@
             "type": "complex_group",
             "items": [
                 {
-                    "id": "bbq_box",
-                    "type": "Box",
-                    "maxCount": 3,
-                    "price": 10,
-                    "produces": "bbq_bag",
-                    "unlocked": false
-                },
-                {
                     "id": "bbq_bag",
                     "type": "SauceContainer",
+                    "price": 10,
+                    "maxCount": 1,
+                    "produces": "bbq",
+                    "unlocked": false,
                     "category": "sauce_refill",
                     "texture": "bbq-bag.png"
                 },
@@ -685,16 +656,12 @@
             "type": "complex_group",
             "items": [
                 {
-                    "id": "burger_sauce_box",
-                    "type": "Box",
-                    "maxCount": 3,
-                    "price": 10,
-                    "produces": "burger_sauce_bag",
-                    "unlocked": false
-                },
-                {
                     "id": "burger_sauce_bag",
                     "type": "SauceContainer",
+                    "price": 10,
+                    "maxCount": 1,
+                    "produces": "burger_sauce",
+                    "unlocked": false,
                     "category": "sauce_refill",
                     "texture": "burger_sauce-bag.png"
                 },
@@ -718,16 +685,12 @@
             "type": "complex_group",
             "items": [
                 {
-                    "id": "ketchup_box",
-                    "type": "Box",
-                    "maxCount": 3,
-                    "price": 10,
-                    "produces": "ketchup_bag",
-                    "unlocked": false
-                },
-                {
                     "id": "ketchup_bag",
                     "type": "SauceContainer",
+                    "price": 10,
+                    "maxCount": 1,
+                    "produces": "ketchup",
+                    "unlocked": false,
                     "category": "sauce_refill",
                     "texture": "ketchup-bag.png"
                 },
