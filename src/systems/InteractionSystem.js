@@ -4,12 +4,12 @@ import { ItemType } from '../data/definitions.js';
 
 export class InteractionSystem {
 
-    static handleInteract(player, grid) {
+    static handleInteract(player, grid, game) {
         const cell = player.getTargetCell(grid);
         if (!cell) return false;
 
         // 1. Context Specific (Tile)
-        if (this._dispatch('interact', cell.type.id, player, cell, grid, 'TILES')) return true;
+        if (this._dispatch('interact', cell.type.id, player, cell, grid, 'TILES', game)) return true;
 
         // 1.5. Generic Container Deal (Box/Insert/Bag -> Counter/Item)
         if (InteractionHandlers.handle_container_deal(player, cell)) return true;
@@ -21,7 +21,7 @@ export class InteractionSystem {
                 if (InteractionHandlers.box_interact(player, cell)) return true;
             }
 
-            if (this._dispatch('interact', cell.object.definitionId, player, cell.object, cell, 'ITEMS')) return true;
+            if (this._dispatch('interact', cell.object.definitionId, player, cell.object, cell, 'ITEMS', game)) return true;
 
             // 3. Generic Burger Handling (Unwrap or Modify)
             if (cell.object.category === 'burger') {
@@ -30,10 +30,10 @@ export class InteractionSystem {
         }
 
         // 3. Fallback to Pickup
-        return this.handlePickUp(player, grid);
+        return this.handlePickUp(player, grid, game);
     }
 
-    static handlePickUp(player, grid) {
+    static handlePickUp(player, grid, game) {
         const cell = player.getTargetCell(grid);
         if (!cell) return false;
 
@@ -45,24 +45,24 @@ export class InteractionSystem {
         }
 
         // 1. Context Specific (Tile)
-        if (this._dispatch('pickup', cell.type.id, player, cell, grid, 'TILES')) return true;
+        if (this._dispatch('pickup', cell.type.id, player, cell, grid, 'TILES', game)) return true;
 
         // 2. Item Specific (Target Object)
         if (cell.object) {
-            if (this._dispatch('pickup', cell.object.definitionId, player, cell.object, cell, 'ITEMS')) return true;
+            if (this._dispatch('pickup', cell.object.definitionId, player, cell.object, cell, 'ITEMS', game)) return true;
         }
 
         // 3. Standard Put Down / Pick Up Logic (Default)
         return this._standardTransfer(player, cell);
     }
 
-    static _dispatch(actionType, id, player, target, context, category) {
+    static _dispatch(actionType, id, player, target, context, category, game) {
         const config = INTERACTION_MAPPING[category][id];
         if (config && config[actionType]) {
             const handlerName = config[actionType];
             const handler = InteractionHandlers[handlerName];
             if (handler) {
-                const result = handler(player, target, context);
+                const result = handler(player, target, context, game);
                 if (result) return true;
             }
         }

@@ -32,6 +32,9 @@ export const INTERACTION_MAPPING = {
         },
         'bag': {
             interact: 'bag_interact'
+        },
+        'lettuce_head': {
+            interact: 'lettuce_interact'
         }
     }
 };

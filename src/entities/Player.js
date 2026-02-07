@@ -55,16 +55,16 @@ export class Player {
     // Put Down / Combine / Pick Up
     // Q (or Space) KEY: Pick Up / Put Down / Combine
     // Space KEY: Pick Up / Put Down / Combine
-    actionPickUp(grid) {
+    actionPickUp(grid, game) {
         // Delegate to Interaction System
-        return InteractionSystem.handlePickUp(this, grid);
+        return InteractionSystem.handlePickUp(this, grid, game);
     }
 
     // Enter KEY: Interact (Change State)
-    actionInteract(grid) {
+    actionInteract(grid, game) {
         // Delegate to Interaction System
         console.log("Player interacting via System");
-        return InteractionSystem.handleInteract(this, grid);
+        return InteractionSystem.handleInteract(this, grid, game);
     }
 
 

@@ -1,6 +1,8 @@
 import { ASSETS } from '../constants.js';
 import { DEFINITIONS } from '../data/definitions.js';
 
+import { UISystem } from './UISystem.js';
+
 export class PostDaySystem {
     constructor(game) {
         this.game = game;
@@ -14,9 +16,9 @@ export class PostDaySystem {
 
         // Navigation State
         // Row 0: Daily Rewards (3 items)
-        // Row 1: Supply Menu (1 item) -> Now dynamic list
-        // Row 2: Edit Kitchen / Edit Menu / Next Day (3 items)
-        this.selection = { row: 2, col: 2 };
+        // Row 0: Daily Rewards (3 items)
+        // Row 1: Edit Kitchen / Edit Menu / Next Day (3 items)
+        this.selection = { row: 1, col: 2 };
 
         this.dailyRewards = []; // { def, claimed }
         this.supplyItems = []; // { def, shopItem, cost }
@@ -27,29 +29,18 @@ export class PostDaySystem {
     start() {
         this.reset();
         this.generateDailyRewards();
-        this.generateSupplyItems();
+        // this.generateSupplyItems(); // DISABLED
 
         // Default selection logic
         if (this.dailyRewards.length > 0) {
             this.selection = { row: 0, col: 0 };
-        } else if (this.supplyItems.length > 0) {
-            this.selection = { row: 1, col: 0 };
         } else {
-            this.selection = { row: 2, col: 2 };
+            this.selection = { row: 1, col: 2 };
         }
     }
 
     generateSupplyItems() {
-        this.supplyItems = this.game.shopItems.filter(item => {
-            if (item.type !== 'supply') return false;
-            // Include if essential or unlocked
-            // Note: ShopSystem filters/updates 'unlocked' state based on game progress
-            return item.isEssential || item.unlocked;
-        }).map(item => ({
-            def: DEFINITIONS[item.id],
-            shopItem: item,
-            cost: item.price
-        }));
+        this.supplyItems = []; // DISABLED
     }
 
     generateDailyRewards() {
@@ -80,8 +71,8 @@ export class PostDaySystem {
         };
 
         const isDrinkSource = (def) => {
-            if (def.id === 'syrup_box') return true;
-            if (def.id.includes('syrup') || (def.produces && (def.produces.includes('syrup') || def.produces === 'soda_syrup'))) return true;
+            if (def.id === 'cola_box') return true;
+            if (def.id.includes('syrup') || (def.produces && (def.produces.includes('syrup') || def.produces === 'cola_syrup'))) return true;
             return false;
         };
 
@@ -163,144 +154,93 @@ export class PostDaySystem {
     }
 
     calculateAutoRestock() {
-        console.log("Calculating Auto-Restock...");
-        const menu = this.game.menuSystem.getMenu();
-        if (!menu) return;
+        console.log("Auto-Restock disabled for unlimited boxes.");
+        // DISABLED
+    }
 
-        // 1. Determine Target Quantities
-        const day = this.game.dayNumber || 0;
-        const customerCount = 10 + (Math.max(0, day) * 3);
-        const safetyFactor = 1.5;
-        const targetServings = Math.ceil(customerCount * safetyFactor);
+    getDetailedInventoryCount(supplyId) {
+        let count = 0;
+        const def = DEFINITIONS[supplyId];
+        if (!def) return 0;
+        const prodId = def.produces || supplyId;
 
-        const ensureSupply = (itemId, unitsPerBox, targetUnits) => {
-            let currentUnits = this.getBoxedSupplyCount(itemId);
+        const yieldPerItem = this.getServingYield(prodId);
 
-            // --- USER REQUEST: Check installed syrups ---
-            if (itemId.includes('syrup')) {
-                const syrupBoxDef = DEFINITIONS[itemId];
-                const syrupId = syrupBoxDef ? syrupBoxDef.produces : null;
+        // Scan Rooms
+        Object.values(this.game.rooms).forEach(room => {
+            for (let y = 0; y < room.height; y++) {
+                for (let x = 0; x < room.width; x++) {
+                    const cell = room.getCell(x, y);
 
-                if (syrupId) {
-                    // Scan Soda Fountains
-                    Object.values(this.game.rooms).forEach(room => {
-                        for (let y = 0; y < room.height; y++) {
-                            for (let x = 0; x < room.width; x++) {
-                                const c = room.getCell(x, y);
-                                if (c.type.id === 'SODA_FOUNTAIN' && c.object && c.object.definitionId === syrupId) {
-                                    // Check if half full
-                                    // Assume max charges is available in definition or state
-                                    // Syrups usually have charges. ItemInstance init sets it from Def.
-                                    // If not in state, look at def.initialState
-                                    const maxCharges = (DEFINITIONS[syrupId].initialState && DEFINITIONS[syrupId].initialState.charges) || 10;
-                                    const currentCharges = c.object.state.charges || 0;
+                    // IGNORE DELIVERY TILES
+                    if (cell.type.id === 'DELIVERY_TILE') continue;
 
-                                    if (currentCharges > maxCharges / 2) {
-                                        currentUnits += 1; // Count as 1 full unit (box equivalent)
-                                    }
-                                }
-                            }
+                    // 1. Objects on floor/counters
+                    if (cell.object) {
+                        // Box/Self
+                        if (cell.object.definitionId === supplyId) {
+                            let itemCount = 0;
+                            if (cell.object.state && cell.object.state.count !== undefined) itemCount = cell.object.state.count;
+                            else itemCount = (def.maxCount || 1);
+
+                            count += (itemCount * yieldPerItem);
                         }
-                    });
+                        // Product (e.g. patty, syrup bottle)
+                        else if (cell.object.definitionId === prodId) {
+                            count += yieldPerItem;
+                        }
+                        // Contents (Inserts/Bags)
+                        else if (cell.object.state && cell.object.state.contents) {
+                            cell.object.state.contents.forEach(inItem => {
+                                if (inItem.definitionId === prodId) count += yieldPerItem;
+                            });
+                        }
+                    }
+
+                    // 3b. Sauces in Dispensers (Charges)
+                    if (cell.type.id === 'DISPENSER') {
+                        const state = cell.state || {};
+                        if (state.bagId === prodId) {
+                            count += (state.charges || 0); // Already in servings
+                        } else if (state.status === 'has_mayo' && supplyId === 'mayo_box') {
+                            count += (state.charges || 0);
+                        }
+                    }
+
+                    // 3c. Drinks in Soda Fountains (Charges)
+                    if (cell.type.id === 'SODA_FOUNTAIN') {
+                        const state = cell.state || {};
+                        if (state.syrupId === prodId) {
+                            count += (state.charges || 0); // Already in servings
+                        }
+                    }
                 }
             }
+        });
 
-            if (currentUnits < targetUnits) {
-                const deficit = targetUnits - currentUnits;
-                const boxesNeeded = Math.ceil(deficit / unitsPerBox);
+        return count;
+    }
 
-                if (boxesNeeded > 0) {
-                    if (!this.game.pendingOrders) this.game.pendingOrders = [];
-                    console.log(`Auto-Restock: Low on ${itemId} (${currentUnits}/${targetUnits}). Ordering ${boxesNeeded} boxes.`);
-                    this.game.pendingOrders.push({ id: itemId, qty: boxesNeeded });
-                }
-            }
-        };
+    getServingYield(itemId) {
+        const def = DEFINITIONS[itemId];
+        if (!def) return 1;
 
-        // 2. Check Essentials (Always needed)
-        ensureSupply('bun_box', 32, targetServings);
-        ensureSupply('patty_box', 24, targetServings);
-        ensureSupply('wrapper_box', 100, targetServings);
-        ensureSupply('bag_box', 50, targetServings);
+        // Hardcoded Yields for Bulk Items
+        // These values should ideally match the default charges defined in InteractionHandlers
+        if (def.category === 'syrup') return 20;
+        if (def.category === 'sauce_refill' || def.type === 'SauceContainer') return 15;
+        if (def.id === 'lettuce_head') return 8;
 
-        // 3. Check Menu Dependencies
-        const scanItem = (itemId) => {
-            let currentId = itemId;
-            let supplyBoxId = null;
+        // Fallback to definition state
+        if (def.initialState && def.initialState.charges) return def.initialState.charges;
 
-            let ptr = currentId;
-            let steps = 0;
-            while (steps < 5) {
-                const def = DEFINITIONS[ptr];
-                if (def && (def.type === 'Box' || def.type === 'SauceContainer')) {
-                    supplyBoxId = ptr;
-                    break;
-                }
-                const parent = this.game.itemDependencyMap[ptr];
-                if (parent) {
-                    ptr = parent;
-                } else {
-                    break;
-                }
-                steps++;
-            }
-
-            if (supplyBoxId) {
-                let boxDef = DEFINITIONS[supplyBoxId];
-                if (!boxDef) return;
-
-                // --- USER REQUEST: Sauce Bags only (No Boxes) ---
-                // Removed since boxes are deleted from items.json now.
-                // The item we found should be the bag itself if dependencies are correct.
-
-                const boxCount = (boxDef.type === 'Box') ? (boxDef.maxCount || 1) : 1;
-                let specificTarget = targetServings;
-
-                const itemDef = DEFINITIONS[itemId];
-
-                if (itemId.includes('fry') || itemId.includes('fries')) {
-                    specificTarget = Math.ceil(targetServings / 6);
-                } else if (itemId.includes('soda') || itemId.includes('drink') || (itemDef && (itemDef.category === 'drink' || itemDef.category === 'hetap' || (itemDef.orderConfig && itemDef.orderConfig.type === 'drink')))) {
-                    specificTarget = 1;
-                } else if (itemId.includes('tomato')) {
-                    specificTarget = Math.ceil(targetServings / 5);
-                } else if (itemId.includes('lettuce')) {
-                    specificTarget = Math.ceil(targetServings / 8);
-                } else if (itemId.includes('onion')) {
-                    specificTarget = Math.ceil(targetServings / 5);
-                } else if (itemId.includes('pickle')) {
-                    specificTarget = Math.ceil(targetServings / 5);
-                } else if (itemId.includes('cheese')) {
-                    specificTarget = Math.ceil(targetServings / 10);
-                } else if (itemId.includes('sauce') || itemId.includes('ketchup') || itemId.includes('mayo') || itemId.includes('bbq')) {
-                    specificTarget = 1;
-                } else if (itemId.includes('syrup')) {
-                    specificTarget = 1;
-                } else if (itemId.includes('bacon')) {
-                    specificTarget = Math.ceil(targetServings / 3);
-                }
-
-                ensureSupply(supplyBoxId, boxCount, specificTarget);
-            }
-        };
-
-        if (menu.burgers) {
-            menu.burgers.forEach(b => {
-                if (b.bun) scanItem(b.bun);
-                if (b.toppings) {
-                    Object.keys(b.toppings).forEach(tId => scanItem(tId));
-                }
-            });
-        }
-        if (menu.sides) menu.sides.forEach(sId => scanItem(sId));
-        if (menu.drinks) menu.drinks.forEach(dId => scanItem(dId));
+        return 1;
     }
 
     handleInput(event, settings) {
-        const interactKey = settings ? settings.getBinding('INTERACT') : 'KeyE';
 
         const inputs = {
-            isInteract: event.code === interactKey || event.code === 'Enter' || event.code === 'Space',
+            isInteract: (settings && event.code === settings.getBinding('INTERACT')) || event.code === 'Enter' || event.code === 'Space',
             isRight: event.code === 'ArrowRight' || (settings && event.code === settings.getBinding('MOVE_RIGHT')),
             isLeft: event.code === 'ArrowLeft' || (settings && event.code === settings.getBinding('MOVE_LEFT')),
             isUp: event.code === 'ArrowUp' || (settings && event.code === settings.getBinding('MOVE_UP')),
@@ -314,177 +254,56 @@ export class PostDaySystem {
         // Define rows that have items
         const hasRewards = this.dailyRewards.length > 0;
 
-        // Rows: 0=Reward, 1=Supply, 2=Actions
-
-        const currentRow = this.selection.row;
-        let nextRow = currentRow;
+        let nextRow = this.selection.row;
         let nextCol = this.selection.col;
 
-        // Navigation Config
-        const showReroll = hasRewards && !this.rewardClaimed;
-        const rowConfig = {
-            0: { count: this.dailyRewards.length + (showReroll ? 1 : 0), exists: hasRewards }, // +1 for Reroll if available
-            1: { count: this.supplyItems.length, exists: this.supplyItems.length > 0 }, // Supply Items
-            2: { count: 3, exists: true } // Edit Kitchen, Edit Menu, Next Day
+        // Determine grid structure
+        const rewardsCount = this.dailyRewards.length + (hasRewards && !this.rewardClaimed ? 1 : 0); // +1 for Reroll
+        const supplyCount = this.supplyItems.length;
+        const actionCount = 3;
+
+        const rowCounts = {
+            0: rewardsCount,
+            1: actionCount
         };
 
-        // Helper for visual navigation in wrapped grids (Intra-row)
-        const findBestVisualNeighbor = (rowId, currentIdx, isUpDir) => {
-            const container = document.getElementById(rowId);
-            if (!container) return -1;
-            const items = Array.from(container.children);
-            const currentEl = items[currentIdx];
-            if (!currentEl) return -1;
-
-            const curRect = currentEl.getBoundingClientRect();
-            const curCentX = curRect.left + curRect.width / 2;
-            const curCentY = curRect.top + curRect.height / 2;
-
-            let bestIdx = -1;
-            let bestXDist = Infinity;
-
-            // We filter for items that are in the "visual row" immediately above/below
-            let closestVDiff = Infinity;
-            const candidates = [];
-
-            items.forEach((el, idx) => {
-                if (idx === currentIdx) return;
-                const rect = el.getBoundingClientRect();
-                const centY = rect.top + rect.height / 2;
-
-                const vDiff = isUpDir ? (curCentY - centY) : (centY - curCentY);
-
-                if (vDiff <= 10) return; // Ignore items not clearly in direction
-
-                if (vDiff < closestVDiff - 10) {
-                    closestVDiff = vDiff;
-                    candidates.length = 0;
-                    candidates.push({ idx, rect });
-                } else if (Math.abs(vDiff - closestVDiff) <= 10) {
-                    candidates.push({ idx, rect });
-                }
-            });
-
-            candidates.forEach(cand => {
-                const centX = cand.rect.left + cand.rect.width / 2;
-                const distX = Math.abs(centX - curCentX);
-                if (distX < bestXDist) {
-                    bestXDist = distX;
-                    bestIdx = cand.idx;
-                }
-            });
-
-            return bestIdx;
-        };
-
-        // NEW: Helper for Cross-Row visual navigation
-        const findBestColInRow = (targetRowIdx, sourceEl, isMovingUp) => {
-            const container = document.getElementById(`pd-row-${targetRowIdx}`);
-            if (!container || container.children.length === 0) return 0;
-            if (!sourceEl) return 0;
-
-            const candidates = Array.from(container.children).map((el, idx) => ({ el, idx, rect: el.getBoundingClientRect() }));
-
-            // Filter by vertical 'edge' (Top edge if moving down/entering from top; Bottom edge if moving up/entering from bottom)
-            const yValues = candidates.map(c => c.rect.top);
-            // If Moving UP, we approach from below, so we want the Bottom-most items (Max Y)
-            // If Moving DOWN, we approach from above, so we want the Top-most items (Min Y)
-            const targetY = isMovingUp ? Math.max(...yValues) : Math.min(...yValues);
-
-            const validCandidates = candidates.filter(c => Math.abs(c.rect.top - targetY) < 20);
-
-            if (validCandidates.length === 0) return 0;
-
-            const sourceRect = sourceEl.getBoundingClientRect();
-            const sourceX = sourceRect.left + sourceRect.width / 2;
-
-            let bestIdx = 0;
-            let minDist = Infinity;
-
-            validCandidates.forEach(c => {
-                const cx = c.rect.left + c.rect.width / 2;
-                const dist = Math.abs(cx - sourceX);
-                if (dist < minDist) {
-                    minDist = dist;
-                    bestIdx = c.idx;
-                }
-            });
-
-            return bestIdx;
-        };
-
-        const getCurrentRowEl = () => {
-            const r = document.getElementById('pd-row-' + currentRow);
-            return r ? r.children[this.selection.col] : null;
-        };
-
-        // VERTICAL MOVEMENTS
-        if (isUp) {
-            let handled = false;
-            // 1. Try Intra-Row Visual Navigation (mainly for Supply grid)
-            if (rowConfig[currentRow].count > 0) {
-                const visualIdx = findBestVisualNeighbor(`pd-row-${currentRow}`, this.selection.col, true);
-                if (visualIdx !== -1) {
-                    nextCol = visualIdx;
-                    handled = true;
-                }
-            }
-
-            // 2. Cross-Row Navigation
-            if (!handled) {
-                let r = currentRow - 1;
-                while (r >= 0 && !rowConfig[r].exists) r--;
-
-                if (r >= 0) {
-                    nextRow = r;
-                    const curEl = getCurrentRowEl();
-                    if (curEl) {
-                        nextCol = findBestColInRow(nextRow, curEl, true);
-                    } else {
-                        nextCol = Math.min(this.selection.col, rowConfig[nextRow].count - 1);
-                    }
-                }
-            }
-        } else if (isDown) {
-            let handled = false;
-            // 1. Try Intra-Row Visual Navigation
-            if (rowConfig[currentRow].count > 0) {
-                const visualIdx = findBestVisualNeighbor(`pd-row-${currentRow}`, this.selection.col, false);
-                if (visualIdx !== -1) {
-                    nextCol = visualIdx;
-                    handled = true;
-                }
-            }
-
-            // 2. Cross-Row Navigation
-            if (!handled) {
-                let r = currentRow + 1;
-                while (r <= 2 && !rowConfig[r].exists) r++;
-
-                if (r <= 2) {
-                    nextRow = r;
-                    const curEl = getCurrentRowEl();
-                    if (curEl) {
-                        nextCol = findBestColInRow(nextRow, curEl, false);
-                    } else {
-                        nextCol = Math.min(this.selection.col, rowConfig[nextRow].count - 1);
-                    }
-                }
-            }
-        }
-
-        // HORIZONTAL MOVEMENTS
-        if (isLeft) {
-            nextCol--;
-            if (nextCol < 0) {
-                nextCol = rowConfig[currentRow].count - 1; // Wrap
-            }
-        } else if (isRight) {
+        if (isRight) {
             nextCol++;
-            if (nextCol >= rowConfig[currentRow].count) {
-                nextCol = 0; // Wrap
+            if (nextCol >= rowCounts[nextRow]) nextCol = 0;
+        } else if (isLeft) {
+            nextCol--;
+            if (nextCol < 0) nextCol = Math.max(0, rowCounts[nextRow] - 1);
+        } else if (isDown) {
+            let targetRow = nextRow + 1;
+            // Skip empty rows
+            while (targetRow <= 1 && rowCounts[targetRow] === 0) {
+                targetRow++;
+            }
+
+            if (targetRow <= 1) {
+                nextRow = targetRow;
+                if (nextCol >= rowCounts[nextRow]) nextCol = Math.max(0, rowCounts[nextRow] - 1);
+            }
+        } else if (isUp) {
+            let targetRow = nextRow - 1;
+            // Skip empty rows
+            while (targetRow >= 0 && rowCounts[targetRow] === 0) {
+                targetRow--;
+            }
+
+            if (targetRow >= 0) {
+                nextRow = targetRow;
+                if (nextCol >= rowCounts[nextRow]) nextCol = Math.max(0, rowCounts[nextRow] - 1);
             }
         }
+
+        // Final Safety Check
+        if (rowCounts[nextRow] === 0) {
+            // Fallback to Actions row if current is empty
+            nextRow = 1;
+            nextCol = 0; // Reset col
+        }
+        if (nextCol >= rowCounts[nextRow]) nextCol = Math.max(0, rowCounts[nextRow] - 1);
 
         // Check if selection changed
         if (this.selection.row !== nextRow || this.selection.col !== nextCol) {
@@ -524,38 +343,6 @@ export class PostDaySystem {
                 this.generateSupplyItems();
             }
         } else if (row === 1) {
-            // SUPPLY ORDER
-            const item = this.supplyItems[col];
-            if (item) {
-                // Buy Item Logic (Morning Delivery / Post-Day Order)
-                if (this.game.money >= item.cost) {
-
-                    // Visual Feedback
-                    const rowEl = document.getElementById('pd-row-1');
-                    if (rowEl && rowEl.children[col]) {
-                        const el = rowEl.children[col];
-                        el.classList.add('pressed');
-                        setTimeout(() => el.classList.remove('pressed'), 150);
-                    }
-
-                    this.game.money -= item.cost;
-
-                    // Add to Pending Orders
-                    if (!this.game.pendingOrders) this.game.pendingOrders = [];
-                    const existing = this.game.pendingOrders.find(o => o.id === item.shopItem.id);
-                    if (existing) {
-                        existing.qty = (existing.qty || 1) + 1;
-                    } else {
-                        this.game.pendingOrders.push({ id: item.shopItem.id, qty: 1 });
-                    }
-
-                    this.game.addFloatingText(`Ordered ${item.def.name || item.def.id}`, this.game.player.x, this.game.player.y, '#00ff00');
-                    if (this.game.audioSystem) this.game.audioSystem.playSFX(ASSETS.AUDIO.Select || ASSETS.AUDIO.PRINTER); // Fallback
-                } else {
-                    this.game.addFloatingText("Not enough money", this.game.player.x, this.game.player.y, '#ff0000');
-                }
-            }
-        } else if (row === 2) {
             // EDIT KITCHEN / EDIT MENU / NEXT DAY
             if (col === 0) { // Edit Kitchen (Build)
                 this.game.enterBuildMode();
@@ -607,71 +394,14 @@ export class PostDaySystem {
             container.style.backgroundPosition = "center";
 
             container.innerHTML = `
-                <style>
-                    .menu-item .item-icon {
-                        transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-                    }
-                    .menu-item.selected .item-icon {
-                        /* Pop up significantly (calculated from center) + random offsets */
-                        transform: translate(-50%, calc(-50% - 24px)) scale(1.3) translate(var(--rand-x), var(--rand-y)) rotate(var(--rand-rot)) !important;
-                        z-index: 10 !important;
-                        filter: drop-shadow(0 10px 4px rgba(0,0,0,0.4)); /* Shadow to emphasize height */
-                    }
-                    .menu-item .item-text {
-                        transition: all 0.2s ease;
-                        transform-origin: center center;
-                        display: inline-block;
-                    }
-                    .menu-item.selected .item-text {
-                        color: #00ff00 !important;
-                        transform: scale(1.2) rotate(var(--rand-text-rot));
-                    }
-                    .menu-item .label {
-                        opacity: 0;
-                        transition: opacity 0.2s;
-                        z-index: 20;
-                        pointer-events: none;
-                    }
-                    .menu-item.selected .label,
-                    .menu-item:hover .label {
-                        opacity: 1 !important;
-                    }
-                    .menu-item.pressed .item-icon {
-                        transform: translate(-50%, calc(-50% + 2px)) scale(0.78) !important;
-                    }
-                    .menu-item.pressed .supply-meter-bar {
-                        height: 100% !important;
-                        background-color: #00ff00 !important;
-                        transition: height 0.1s !important;
-                    }
-                    @keyframes boil {
-                        100% { background-position: -219px 0; }
-                    }
-                    .boil-bg {
-                        width: 73px;
-                        height: 73px;
-                        background-image: url('assets/ui/button_background-boil.png');
-                        animation: boil 0.4s steps(3) infinite;
-                        image-rendering: pixelated;
-                        display: block;
-                    }
-                    .supply-boil-bg {
-                        width: 73px;
-                        height: 73px;
-                        background-image: url('assets/ui/supply_button_background-boil.png');
-                        animation: boil 0.4s steps(3) infinite;
-                        image-rendering: pixelated;
-                        display: block;
-                    }
-                </style>
                 <div class="post-day-header">
                     <h1>Post-Day Menu</h1>
                     <div class="post-day-stats" id="pd-stats"></div>
                 </div>
                 <div class="post-day-content">
                     <div class="menu-row" id="pd-row-0"></div> <!-- Rewards -->
-                    <div class="menu-row" id="pd-row-1"></div> <!-- Supply Items -->
-                    <div class="menu-row" id="pd-row-2"></div> <!-- Edit Kitchen / Menu -->
+                    <!-- Row 1 Removed (Supply) -->
+                    <div class="menu-row" id="pd-row-1"></div> <!-- Edit Kitchen / Menu -->
                 </div>
             `;
             uiLayer.appendChild(container);
@@ -694,11 +424,8 @@ export class PostDaySystem {
         }
         this.updateRowDOM('pd-row-0', rewardsWithReroll, 0);
 
-        // Row 1: Supply Items
-        this.updateRowDOM('pd-row-1', this.supplyItems, 1);
-
-        // Row 2: Edit Kitchen / Edit Menu / Next Day
-        this.updateActionRowDOM('pd-row-2', 2, [
+        // Row 1: Edit Kitchen / Edit Menu / Next Day
+        this.updateActionRowDOM('pd-row-1', 1, [
             { label: 'Edit Kitchen', id: 'build_mode', image: true },
             { label: 'Edit Menu', id: 'menu_custom', image: true },
             { label: 'Next Day', id: 'start_day', image: true }
@@ -943,21 +670,26 @@ export class PostDaySystem {
         if (rowEl.children.length !== actions.length) {
             rowEl.innerHTML = '';
             actions.forEach((action, index) => {
-                const el = document.createElement('div');
-                el.className = 'menu-item action-btn';
-                el.dataset.actionId = action.id;
+
+                const config = {
+                    id: action.id,
+                    classes: ['action-btn'],
+                    label: action.label
+                };
 
                 if (action.image) {
-                    // Image-based buttons
-                    el.classList.add('image-btn');
-                    const img = document.createElement('img');
-                    img.style.display = 'block';
-                    el.appendChild(img);
-                } else {
-                    // Text buttons
-                    el.innerText = action.label;
-                    if (action.specialClass) el.classList.add(action.specialClass);
+                    config.variant = 'image';
+                    config.classes.push('image-btn');
+                    // Note: The specific image source is handled by the "update selection" logic below which swaps src.
+                    // But we need an initial img element.
+                    config.content = '<img style="display:block;">';
+                } else if (action.specialClass) {
+                    config.classes.push(action.specialClass);
                 }
+
+                const el = UISystem.createButton(config);
+                // Ensure dataset actionId is set (UISystem sets dataset.id if config.id is present)
+                el.dataset.actionId = action.id;
 
                 rowEl.appendChild(el);
             });

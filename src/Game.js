@@ -21,6 +21,7 @@ import { PostDaySystem } from './systems/PostDaySystem.js';
 import { TouchInputSystem } from './systems/TouchInputSystem.js';
 
 import { RatingPopup } from './ui/RatingPopup.js';
+import { AlertSystem } from './systems/AlertSystem.js';
 
 export class Game {
     constructor() {
@@ -31,6 +32,7 @@ export class Game {
 
         this.postDaySystem = new PostDaySystem(this);
         this.ratingPopup = new RatingPopup(this);
+        this.alertSystem = new AlertSystem(this);
         this.settings = new Settings();
         this.audioSystem = new AudioSystem(this.settings);
 
@@ -105,8 +107,7 @@ export class Game {
             if ((def.type === 'Box' || def.type === 'SauceContainer') && def.price) {
                 // Determine 'unlocked' status based on explicit flag or default
                 // Essential items are always unlocked
-                const essentialItems = ['patty_box', 'bun_box', 'wrapper_box', 'bag_box'];
-                const isEssential = essentialItems.includes(defId);
+                const isEssential = !!def.isEssential;
 
                 // Check if this is a Reward Item (Topping/Side/Drink Provider) that should be LOCKED by default
                 let isRewardItem = false;
@@ -293,9 +294,105 @@ export class Game {
             shopItem.unlocked = true;
             shopItem.justUnlocked = true;
 
-            // Give Free Box (Add to Cart + Credits)
-            this.cart[shopItem.id] = (this.cart[shopItem.id] || 0) + 1;
-            this.money += shopItem.price; // Reimburse cost effectively
+            // Check if this is a Drink or Sauce Reward that requires a MACHINE placement
+            // We look at the item definition to see if it's a syrup or sauce source
+            let handledAsMachine = false;
+            let pDef = itemDef;
+            if (itemDef.produces) {
+                pDef = DEFINITIONS[itemDef.produces];
+            }
+
+            // Resolve Chain
+            if (pDef.slicing && pDef.slicing.result) {
+                pDef = DEFINITIONS[pDef.slicing.result];
+            } else if (pDef.process && pDef.process.result) {
+                pDef = DEFINITIONS[pDef.process.result];
+            }
+
+            // Check Category
+            const isDrink = pDef.category === 'drink';
+            const isSyrup = pDef.category === 'syrup' || (pDef.result && DEFINITIONS[pDef.result] && DEFINITIONS[pDef.result].category === 'drink') || isDrink;
+            const isSauce = pDef.category === 'sauce_refill' || pDef.type === 'SauceContainer';
+
+            // Special Check for pre-processed items (like directly unlocking 'cola')
+            // But usually rewards are the BOXES (e.g. cola_box).
+            // shopItem.id is usually 'cola_box'.
+
+            if (isSyrup || isSauce) {
+                // Determine Machine Type needed
+                const machineType = isSyrup ? 'SODA_FOUNTAIN' : 'DISPENSER';
+
+                // Find empty COUNTER to replace
+                const room = this.rooms['main'];
+                let targetCell = null;
+
+                // Scan for a COUNTER that has NO OBJECT on it
+                for (let y = 0; y < room.height; y++) {
+                    for (let x = 0; x < room.width; x++) {
+                        const cell = room.getCell(x, y);
+                        if (cell.type.id === 'COUNTER' && !cell.object) {
+                            targetCell = cell;
+                            break;
+                        }
+                    }
+                    if (targetCell) break;
+                }
+
+                if (targetCell) {
+                    console.log(`Converting COUNTER at ${targetCell.x},${targetCell.y} to ${machineType} for ${pDef.id}`);
+
+                    // Replace Tile
+                    targetCell.type = TILE_TYPES[machineType];
+
+                    // Preload Logic
+                    if (isSyrup) {
+                        // Soda Fountain State
+                        targetCell.state = {
+                            status: 'full',
+                            charges: 9999, // Infinite / tied to instance
+                            syrupId: (pDef.category === 'syrup') ? pDef.id : null, // No syrup item if direct drink
+                            resultId: isDrink ? pDef.id : (pDef.result || 'soda'),
+                            isInfinite: true // Custom flag if we want to check later
+                        };
+                    } else {
+                        // Dispenser State
+                        // sauceId should be the SAUCE (topping), not the bag
+                        let sauceId = pDef.id;
+                        // If pDef is the Bag (e.g. mayo_bag), we need the result (mayo)
+                        if (pDef.produces) sauceId = pDef.produces;
+                        else if (pDef.id.endsWith('_bag')) sauceId = pDef.id.replace('_bag', '');
+
+                        targetCell.state = {
+                            status: 'loaded',
+                            charges: 9999,
+                            sauceId: sauceId,
+                            bagId: pDef.id, // Keeping track of origin
+                            isInfinite: true
+                        };
+                    }
+
+                    this.addFloatingText(`${machineType} Installed!`, targetCell.x, targetCell.y, '#00ff00');
+                    handledAsMachine = true;
+
+                    // Reimburse/Add money just like before (it's a reward)
+                    this.money += shopItem.price;
+                } else {
+                    console.log("No empty Counter found to install machine!");
+                    this.addFloatingText("Unlocked! Check Build Mode.", this.player.x, this.player.y, '#ffff00');
+                    // Mark as handled so we don't give a fallback box that might be weird (e.g. magic cola box)
+                    handledAsMachine = true;
+                }
+            }
+
+            if (!handledAsMachine) {
+                // Default: Give Free Box (Add to Pending Orders)
+                if (!this.pendingOrders) this.pendingOrders = [];
+                const existing = this.pendingOrders.find(o => o.id === shopItem.id);
+                if (existing) existing.qty = (existing.qty || 1) + 1;
+                else this.pendingOrders.push({ id: shopItem.id, qty: 1 });
+
+                this.money += shopItem.price; // Reimburse cost effectively
+            }
         }
 
         // 2. Determine Category for Menu Update Logic
@@ -426,8 +523,12 @@ export class Game {
                 const isNew = !helperItem.unlocked;
 
                 helperItem.unlocked = true;
-                // Give one free (add to cart for morning delivery)
-                this.cart[helperId] = (this.cart[helperId] || 0) + 1;
+                // Give one free (add to Pending Orders for morning delivery)
+                if (!this.pendingOrders) this.pendingOrders = [];
+                const existing = this.pendingOrders.find(o => o.id === helperId);
+                if (existing) existing.qty = (existing.qty || 1) + 1;
+                else this.pendingOrders.push({ id: helperId, qty: 1 });
+                // this.cart[helperId] = (this.cart[helperId] || 0) + 1;
 
                 if (isNew) {
                     this.addFloatingText("Helper Unlocked!", this.player.x, this.player.y - 40, '#00ffff');
@@ -599,22 +700,26 @@ export class Game {
 
         // 4. Pre-purchase Essentials for Day 1 (Since Order Screen is now just info)
         // Auto-buy 1 of each essential
-        this.cart['patty_box'] = 1;
-        this.cart['bun_box'] = 1;
-        this.cart['wrapper_box'] = 1;
-        this.cart['bag_box'] = 1;
+        this.pendingOrders = [];
+        let kStartCost = 0;
+
+        this.shopItems.forEach(item => {
+            if (item.isEssential) {
+                this.pendingOrders.push({ id: item.id, qty: 1 });
+                kStartCost += item.price;
+            }
+        });
+
         // Deduct cost
-        const kStartCost = 50 + 30 + 20 + 20; // Hardcoded based on defaults or look up
         this.money -= kStartCost;
 
         // Save this clean state immediately so if they refresh they get this
         this.saveLevel();
 
-        this.pendingOrders = []; // Clear pending orders on new game
-
         this.queueFinishedTime = null;
         this.ratingPopup.hide();
         this.isDayActive = false;
+        this.testAlertShown = false;
 
         this.postDaySystem.state = 'SUPPLY_ORDER';
         this.updateCapabilities();
@@ -836,6 +941,10 @@ export class Game {
 
     checkExpansions() {
         console.log(`Checking Expansions (Current Stars: ${this.starLevel})...`);
+        // EXPANSIONS DISABLED FOR TESTING
+        return;
+
+        /*
         EXPANSIONS.forEach(exp => {
             if (this.appliedExpansions.has(exp.id)) return;
 
@@ -843,6 +952,7 @@ export class Game {
                 this.applyExpansion(exp);
             }
         });
+        */
     }
 
     applyExpansion(exp) {
@@ -1224,33 +1334,20 @@ export class Game {
         this.spoilStaleItems();
 
         // Handle Morning Orders (Spawn Pending Items)
-        if (this.pendingOrders && this.pendingOrders.length > 0) {
-            console.log(`Spawning ${this.pendingOrders.length} pending orders...`);
-            this.pendingOrders.forEach(order => {
-                // Add to temporary cart just to use the populate logic below?
-                // Or simply merge into cart?
-                // Merging into cart simulates "buying" them now, but we already paid.
-                // We should just increment the count in the cart structure IF we use loop below which iterates shopItems.
-                // BUT the loop below uses `this.cart` which was just reset in endDay (or not? endDay says "Do NOT clear cart here" but startDay consumes it)
-                // Actually startDay consumes `this.cart`.
-                // So we can just add pending counts to `this.cart`.
-                this.cart[order.id] = (this.cart[order.id] || 0) + (order.qty || 1);
-            });
-            this.pendingOrders = []; // Clear queue
-        }
+        // User Request: Clear tiles, use sorted list, stop if full.
 
         this.dayNumber++;
         console.log(`Starting Day ${this.dayNumber}...`);
 
         this.currentDayPerfect = true;
+        this.serviceTimer = 0;
+        this.timeoutAlertShown = false;
         this.starSummaryDismissed = false;
 
         // 1. Populate Fridge (Do this FIRST so capabilities avail)
-        // 1. Populate Fridge & Office (Do this FIRST so capabilities avail)
         // Note: We NO LONGER clear the fridge. Persistance!
 
         // Spawn ordered items into VALID EMPTY spots
-        // Spawn ordered items into VALID spots (Empty first, then overwrite oldest)
         const deliveryTiles = [];
 
         ['store_room', 'office'].forEach(roomId => {
@@ -1260,6 +1357,8 @@ export class Game {
                     for (let x = 0; x < room.width; x++) {
                         const c = room.getCell(x, y);
                         if (c.type.id === 'DELIVERY_TILE') {
+                            // Step 0: Clear the delivery tiles. Delete whatever's on them.
+                            c.object = null;
                             deliveryTiles.push(c);
                         }
                     }
@@ -1267,43 +1366,31 @@ export class Game {
             }
         });
 
-        // Populate sequentially
-        for (const itemId of Object.keys(this.cart)) {
-            const qty = this.cart[itemId];
+        // Step 7: Go down the list and order one box for every item until all delivery tiles are full...
+        if (this.pendingOrders && this.pendingOrders.length > 0) {
+            console.log(`Processing ${this.pendingOrders.length} pending orders...`);
 
-            if (!qty || qty <= 0) continue;
+            for (const order of this.pendingOrders) {
+                // Find first empty tile
+                const targetTile = deliveryTiles.find(c => !c.object);
 
-            const def = DEFINITIONS[itemId];
-            if (!def) continue;
-
-            for (let i = 0; i < qty; i++) {
-                let targetTile = deliveryTiles.find(c => !c.object);
-
-                // If no empty tile, find the oldest occupied one
                 if (!targetTile) {
-                    const occupied = deliveryTiles.filter(c => c.object);
-                    if (occupied.length > 0) {
-                        // Sort by timestamp (ascending -> oldest first)
-                        // Treat undefined (legacy items) as 0 (very old)
-                        occupied.sort((a, b) => {
-                            const ta = a.object.timestamp || 0;
-                            const tb = b.object.timestamp || 0;
-                            return ta - tb;
-                        });
-                        targetTile = occupied[0];
-                        console.log(`Overwriting oldest box at ${targetTile.x},${targetTile.y}`);
-                    }
+                    console.log("Delivery Area Full! Stopping restock.");
+                    this.addFloatingText("Delivery Area Full!", this.player.x, this.player.y, '#ff0000');
+                    break;
                 }
 
-                if (targetTile) {
-                    const instance = new ItemInstance(itemId);
-                    // Custom Insert Logic: Spawn stack of 3
-                    if (itemId === 'insert') {
-                        instance.state.count = 3;
-                    }
-                    targetTile.object = instance;
+                const instance = new ItemInstance(order.id);
+                // Custom Insert Logic: Spawn stack of 3
+                if (order.id === 'insert') {
+                    instance.state.count = 3;
                 }
+                targetTile.object = instance;
+
+                // Update cart for compatibility if needed (e.g. UI)
+                this.cart[order.id] = (this.cart[order.id] || 0) + (order.qty || 1);
             }
+            this.pendingOrders = [];
         }
 
         // 2. Update Capabilities (Now that supplies are in the world/truck)
@@ -1364,8 +1451,8 @@ export class Game {
 
         // 5. Audio Updates
         // Play Day Music (Alternate)
-        // Play Day Music (Rotate 3 songs)
-        const songIndex = (this.dayNumber - 1) % 4;
+        // Play Day Music (Random)
+        const songIndex = Math.floor(Math.random() * 5);
 
         let songIntro, songLoop;
         if (songIndex === 0) {
@@ -1377,9 +1464,12 @@ export class Game {
         } else if (songIndex === 2) {
             songIntro = ASSETS.AUDIO.SONG3_INTRO;
             songLoop = ASSETS.AUDIO.SONG3_LOOP;
-        } else {
+        } else if (songIndex === 3) {
             songIntro = ASSETS.AUDIO.SONG4_INTRO;
             songLoop = ASSETS.AUDIO.SONG4_LOOP;
+        } else {
+            songIntro = ASSETS.AUDIO.SONG5_INTRO;
+            songLoop = ASSETS.AUDIO.SONG5_LOOP;
         }
 
         this.audioSystem.playMusic(songIntro, songLoop);
@@ -1387,8 +1477,8 @@ export class Game {
 
         // --- PREP TIME LOGIC ---
         const complexity = this.menuSystem.calculateComplexity();
-        this.prepTime = 15 + Math.floor(complexity) * 5;
-        this.maxPrepTime = this.prepTime;
+        this.prepTime = Infinity;
+        this.maxPrepTime = 15 + Math.floor(complexity) * 5;
         this.isPrepTime = true;
         this.ticketTimer = 0; // Reset timer so tickets don't start yet
 
@@ -1429,8 +1519,11 @@ export class Game {
         // Check for Expansions
         this.checkExpansions();
 
-        // Show Rating Popup
-        this.ratingPopup.show(starCount, this.dailyStarBreakdown);
+        // Show Daily Rating Alert
+        const alertId = `daily_rating_${starCount}`;
+        this.alertSystem.trigger(alertId, () => {
+            console.log(`[Game] Daily Rating dismissed. Returning control to player.`);
+        });
     }
 
     calculateDailyStars() {
@@ -1438,7 +1531,12 @@ export class Game {
         const breakdown = [];
         let starCount = 0;
 
-        // 1. Perfect Day (All orders on time)
+        // 1. Perfect Day (All orders on time / Universal Timer Survived)
+        // Explicitly check timeout flag to be safe
+        if (this.timeoutAlertShown || this.serviceTimer < 0) {
+            this.currentDayPerfect = false;
+        }
+
         const star1 = this.currentDayPerfect;
         if (star1) starCount++;
         breakdown.push(star1);
@@ -1511,6 +1609,11 @@ export class Game {
     handleInput(event) {
         if (!this.keys) this.keys = {};
         this.keys[event.code] = true;
+
+        if (this.alertSystem && this.alertSystem.isVisible) {
+            this.alertSystem.handleInput(event.code);
+            return;
+        }
 
         if (this.audioSystem) this.audioSystem.resume();
 
@@ -1724,7 +1827,7 @@ export class Game {
                 this.addFloatingText("Service Terminated", this.player.x, this.player.y, '#ff0000');
                 return;
             }
-            this.player.actionPickUp(this.grid);
+            this.player.actionPickUp(this.grid, this);
         }
 
         if (code === this.settings.getBinding(ACTIONS.INTERACT)) {
@@ -1755,15 +1858,17 @@ export class Game {
 
             if (facingCell && facingCell.type.id === 'TICKET_WHEEL') {
                 if (this.isPrepTime) {
-                    this.prepTime = 0;
-                    console.log("Prep time skipped by user interaction.");
+                    this.isPrepTime = false;
+                    this.ticketTimer = 10000;
+                    this.addFloatingText("Service Started!", this.player.x, this.player.y, '#00ff00');
+                    console.log("Prep time ended by user interaction.");
                     return;
                 }
                 this.cycleActiveTicket();
                 return;
             }
 
-            this.player.actionInteract(this.grid);
+            this.player.actionInteract(this.grid, this);
         }
 
 
@@ -1937,6 +2042,8 @@ export class Game {
     update(dt) {
         if (!dt) return;
 
+        this.alertSystem.update(dt);
+
         // Ticket Wheel Interaction
         if (this.gameState === 'PLAYING') {
             const interactKey = this.settings.getBinding(ACTIONS.INTERACT);
@@ -2014,6 +2121,13 @@ export class Game {
                         }
                     }
                 }
+
+                // TEST ALERT TRIGGER
+                if (!this.testAlertShown) {
+                    this.alertSystem.trigger('test_alert');
+                    this.testAlertShown = true;
+                }
+
                 console.log("Ticket started printing...");
             }
 
@@ -2023,6 +2137,7 @@ export class Game {
                 // Animation is 2.25s (2250ms)
                 if (this.printingTimer >= 2250) {
                     this.activeTickets.push(this.incomingTicket);
+                    this.serviceTimer += this.incomingTicket.parTime;
 
                     // Update Display text (append to orders)
                     this.orders = this.activeTickets.map(t => t.toDisplayFormat());
@@ -2043,7 +2158,31 @@ export class Game {
             }
 
             // Update elapsed times
-            this.activeTickets.forEach(t => t.elapsedTime += dt / 1000);
+            // Update active tickets stats (for grading)
+            this.activeTickets.forEach(t => {
+                t.elapsedTime += dt / 1000;
+            });
+
+            // Universal Service Timer Logic
+            if (this.activeTickets.length > 0) {
+                // Safeguard for existing state/hot-reload
+                if (typeof this.serviceTimer !== 'number' || isNaN(this.serviceTimer)) {
+                    console.log("Initializing serviceTimer fallback.");
+                    this.serviceTimer = 0;
+                    this.activeTickets.forEach(t => this.serviceTimer += (t.parTime || 30));
+                }
+                if (typeof this.timeoutAlertShown !== 'boolean') this.timeoutAlertShown = false;
+
+                this.serviceTimer -= dt / 1000;
+
+                // Check Global Timeout
+                if (this.serviceTimer <= 0 && !this.timeoutAlertShown) {
+                    console.log("Triggering Ticket Timeout Alert!");
+                    this.timeoutAlertShown = true;
+                    this.currentDayPerfect = false;
+                    this.alertSystem.trigger('ticket_timeout');
+                }
+            }
         }
 
         // Update appliances in ALL rooms
@@ -2192,10 +2331,12 @@ export class Game {
                                         message = "ON TIME";
                                         color = "#ffff00";
                                     } else {
+                                        // "Late" relative to Par, but in Universal Timer mode, this is just "Served"
+                                        // We do not penalize 'currentDayPerfect' here anymore. 
+                                        // Survival is the only metric for perfection.
                                         bonus = SCORING_CONFIG.REWARDS.SLOW;
-                                        message = "LATE SERVING";
-                                        color = "#ff0000";
-                                        this.currentDayPerfect = false;
+                                        message = "SERVED";
+                                        color = "#ffffff";
                                     }
 
                                     this.money += bonus;
@@ -2206,20 +2347,8 @@ export class Game {
                                     // Bonus Time Logic: "whenever you complete an order, give half that order's par time as bounus time to tall pending orders"
                                     const bonusTime = par / 2;
                                     if (bonusTime > 0) {
-                                        // 1. Active Tickets (Excluding the one just finished)
-                                        this.activeTickets.forEach((t, i) => {
-                                            if (i !== matchedTicketIndex) {
-                                                t.elapsedTime -= bonusTime;
-                                            }
-                                        });
-
-                                        // 2. Incoming Ticket (Printing)
-                                        if (this.incomingTicket) {
-                                            this.incomingTicket.elapsedTime -= bonusTime;
-                                        }
-
-                                        // 3. Queued Tickets
-                                        this.ticketQueue.forEach(t => t.elapsedTime -= bonusTime);
+                                        // Add to Universal Timer
+                                        this.serviceTimer += bonusTime;
 
                                         console.log(`Bonus Time Awarded: ${bonusTime}s`);
                                         this.addFloatingText(`Bonus: +${bonusTime}s`, x, y - 1, '#00ffff');
@@ -2344,7 +2473,12 @@ export class Game {
                 // Standard Game Render (PLAYING, and all Overlay Menus)
                 if (this.gameState === 'PLAYING' || this.gameState === 'APPLIANCE_SWAP') {
                     if (this.gameState === 'PLAYING') {
-                        this.update(dt);
+                        if (this.alertSystem && this.alertSystem.isVisible) {
+                            // Paused for alert - still update alert animation
+                            this.alertSystem.update(dt);
+                        } else {
+                            this.update(dt);
+                        }
                     }
                     // After Hours Interaction Check
                     // "after the resturant closes, the player gets a new ability"
@@ -2412,14 +2546,10 @@ export class Game {
         }
 
         // Define cyclable appliance types
-        const cyclable = [
-            'COUNTER',
+        'COUNTER',
             'CUTTING_BOARD',
-            'DISPENSER',
             'FRYER',
-            'SODA_FOUNTAIN',
             'GRILL'
-        ];
 
         if (cyclable.includes(cell.type.id)) {
             this.gameState = 'APPLIANCE_SWAP';
@@ -2488,7 +2618,7 @@ export class Game {
     saveLevel() {
         try {
             const saveData = {
-                version: 3,
+                version: 5,
                 currentRoomId: this.currentRoomId,
                 player: {
                     x: this.player.x,
@@ -2515,8 +2645,8 @@ export class Game {
                 saveData.rooms[id] = grid.serialize();
             }
 
-            localStorage.setItem('burger_joint_save_v3', JSON.stringify(saveData));
-            console.log('Game saved (v3).');
+            localStorage.setItem('burger_joint_save_v5', JSON.stringify(saveData));
+            console.log('Game saved (v5).');
         } catch (e) {
             console.error('Failed to save level:', e);
         }
@@ -2524,7 +2654,7 @@ export class Game {
 
     loadLevel() {
         try {
-            const json = localStorage.getItem('burger_joint_save_v3');
+            const json = localStorage.getItem('burger_joint_save_v5');
             if (!json) return false;
 
             const data = JSON.parse(json);

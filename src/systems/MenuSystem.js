@@ -183,6 +183,17 @@ export class MenuSystem {
             }
         });
 
+        // Auto-add Fries and Cola to menu if available (USER REQUEST)
+        const autoAddSide = this.availableSides.find(s => s.id === 'fries');
+        if (autoAddSide && !this.sides.some(s => s.definitionId === 'fries')) {
+            this.sides.push({ definitionId: 'fries' });
+        }
+
+        const autoAddDrink = this.availableDrinks.find(d => d.id === 'cola');
+        if (autoAddDrink && !this.drinks.some(d => d.definitionId === 'cola')) {
+            this.drinks.push({ definitionId: 'cola' });
+        }
+
         // Ensure defaults if lists are empty
         if (this.buns.length === 0 && this.rawBuns.length > 0) {
             // Fallback: Add plain bun if nothing else

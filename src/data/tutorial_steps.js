@@ -440,6 +440,18 @@ export const TUTORIAL_STEPS = [
             // Only show after the 'one more burger' step is complete (first sale made)
             return gameState.dailyBagsSold > 0;
         }
+    },
+    {
+        id: 'prep_time_warning',
+        text: "[INTERACT]\nto start cooking!",
+        targetType: 'TICKET_WHEEL',
+        predicate: (gameState) => {
+            if (gameState.showPrepTimeWarning && gameState.prepTimeWarningStartTime) {
+                // Show for 3 seconds after trigger
+                return (Date.now() - gameState.prepTimeWarningStartTime) < 3000;
+            }
+            return false;
+        }
     }
 ];
 

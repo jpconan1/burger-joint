@@ -17,7 +17,7 @@ export const InteractionHandlers = {
             if (held.state.count > 0 && held.definition.produces) {
                 itemToDispense = new ItemInstance(held.definition.produces);
                 consumeAction = () => {
-                    held.state.count--;
+                    // held.state.count--; // UNLIMITED BOXES
                     held.state.isOpen = true;
                 };
             }
@@ -37,6 +37,19 @@ export const InteractionHandlers = {
                 itemToDispense = held.state.contents[held.state.contents.length - 1];
                 consumeAction = () => {
                     held.state.contents.pop();
+                };
+            }
+        }
+        // 4. Lettuce Head (Dispense Leaf)
+        else if (held.definitionId === 'lettuce_head') {
+            const charges = held.state.charges !== undefined ? held.state.charges : 8;
+            if (charges > 0) {
+                itemToDispense = new ItemInstance('lettuce_leaf');
+                consumeAction = () => {
+                    held.state.charges = charges - 1;
+                    if (held.state.charges <= 0) {
+                        player.heldItem = null; // Used up
+                    }
                 };
             }
         }
@@ -64,11 +77,21 @@ export const InteractionHandlers = {
     },
 
     // --- GRILL ---
-    grill_interact: (player, cell) => {
-        return InteractionHandlers.grill_pickup(player, cell);
+    grill_interact: (player, cell, grid, game) => {
+        if (game && game.isPrepTime) {
+            game.showPrepTimeWarning = true;
+            game.prepTimeWarningStartTime = Date.now();
+            return true;
+        }
+        return InteractionHandlers.grill_pickup(player, cell, grid, game);
     },
 
-    grill_pickup: (player, cell) => {
+    grill_pickup: (player, cell, grid, game) => {
+        if (game && game.isPrepTime) {
+            game.showPrepTimeWarning = true;
+            game.prepTimeWarningStartTime = Date.now();
+            return true;
+        }
         if (player.heldItem) {
             // Box Logic: Place item from box onto grill
             if (player.heldItem.type === ItemType.Box) {
@@ -86,7 +109,7 @@ export const InteractionHandlers = {
 
                     if (isPatty || isCookable) {
                         cell.object = tempItem;
-                        box.state.count--;
+                        // box.state.count--; // UNLIMITED BOXES
                         return true;
                     }
                 }
@@ -141,7 +164,12 @@ export const InteractionHandlers = {
     },
 
     // --- FRYER ---
-    fryer_interact: (player, cell, grid) => {
+    fryer_interact: (player, cell, grid, game) => {
+        if (game && game.isPrepTime) {
+            game.showPrepTimeWarning = true;
+            game.prepTimeWarningStartTime = Date.now();
+            return true;
+        }
         const target = cell.object;
         if (!target) return false;
 
@@ -152,7 +180,12 @@ export const InteractionHandlers = {
         return false;
     },
 
-    fryer_pickup: (player, cell, grid) => {
+    fryer_pickup: (player, cell, grid, game) => {
+        if (game && game.isPrepTime) {
+            game.showPrepTimeWarning = true;
+            game.prepTimeWarningStartTime = Date.now();
+            return true;
+        }
         if (cell.object) {
             return InteractionHandlers.fryer_pickup_cooked(player, cell);
         } else {
@@ -251,8 +284,55 @@ export const InteractionHandlers = {
 
     // --- CUTTING BOARD ---
     cutting_board_interact: (player, cell) => {
+        if (InteractionHandlers._transferBoardToInsert(player, cell)) return true;
+
         const cbState = cell.state || {};
         const heldItem = cbState.heldItem;
+
+        // 1. Try dealing FROM container TO board (if board empty)
+        if (!heldItem && player.heldItem) {
+            const held = player.heldItem;
+            let itemToDispense = null;
+            let consumeAction = null;
+
+            // Box
+            if (held.type === ItemType.Box) {
+                if (held.state.count > 0 && held.definition.produces) {
+                    itemToDispense = new ItemInstance(held.definition.produces);
+                    consumeAction = () => {
+                        // held.state.count--; // UNLIMITED BOXES
+                        held.state.isOpen = true; // Visual feedback
+                    };
+                }
+            }
+            // Insert
+            else if (held.definitionId === 'insert') {
+                if (held.state.contents?.length > 0) {
+                    itemToDispense = held.state.contents[held.state.contents.length - 1]; // Peek
+                    consumeAction = () => {
+                        held.state.contents.pop();
+                    };
+                }
+            }
+            // Bag
+            else if (held.definitionId === 'bag') {
+                if (held.state.contents?.length > 0) {
+                    itemToDispense = held.state.contents[held.state.contents.length - 1]; // Peek
+                    consumeAction = () => {
+                        held.state.contents.pop();
+                    };
+                }
+            }
+
+            // Validate and Apply
+            if (itemToDispense && itemToDispense.definition.slicing) {
+                cbState.heldItem = itemToDispense;
+                consumeAction();
+                return true;
+            }
+        }
+
+        // 2. Existing Slicing Logic
         if (heldItem) {
             const itemDef = DEFINITIONS[heldItem.definitionId];
             if (itemDef && itemDef.slicing) {
@@ -271,7 +351,11 @@ export const InteractionHandlers = {
                 }
                 if (itemDef.slicing.result) {
                     if (heldItem.definitionId !== itemDef.slicing.result) { // Transform
-                        cbState.heldItem = new ItemInstance(itemDef.slicing.result);
+                        const newItem = new ItemInstance(itemDef.slicing.result);
+                        if (itemDef.sliceCount) {
+                            newItem.state.count = itemDef.sliceCount;
+                        }
+                        cbState.heldItem = newItem;
                         return true;
                     }
                 }
@@ -281,6 +365,8 @@ export const InteractionHandlers = {
     },
 
     cutting_board_pickup: (player, cell) => {
+        if (InteractionHandlers._transferBoardToInsert(player, cell)) return true;
+
         const cbState = cell.state || {};
         if (player.heldItem) {
             // Place
@@ -298,7 +384,13 @@ export const InteractionHandlers = {
                         const result = InteractionHandlers._tryCombine(player.heldItem, boardItem);
                         if (result) {
                             player.heldItem = result; // Result is held
-                            cell.state.heldItem = null; // Board cleared
+
+                            // Handle Stack Decrease
+                            if (boardItem.state.count && boardItem.state.count > 1) {
+                                boardItem.state.count--;
+                            } else {
+                                cell.state.heldItem = null; // Board cleared
+                            }
                             return true;
                         }
                     }
@@ -307,6 +399,12 @@ export const InteractionHandlers = {
         } else {
             // Pick Up
             if (cbState.heldItem) {
+                if (cbState.heldItem.state.count && cbState.heldItem.state.count > 1) {
+                    const oneItem = new ItemInstance(cbState.heldItem.definitionId);
+                    player.heldItem = oneItem;
+                    cbState.heldItem.state.count--;
+                    return true;
+                }
                 player.heldItem = cbState.heldItem;
                 cell.state.heldItem = null;
                 return true;
@@ -319,10 +417,12 @@ export const InteractionHandlers = {
     dispenser_pickup: (player, cell) => {
         if (InteractionHandlers._tryApplySauce(player, cell)) return true;
 
+        const dispState = cell.state || {};
+        if (dispState.isInfinite) return false;
+
         if (player.heldItem) {
             const def = player.heldItem.definition;
             if (def.category === 'sauce_refill' || def.type === 'SauceContainer') {
-                const dispState = cell.state || {};
                 if (!dispState.status || dispState.status === 'empty') {
                     if (def.sauceId) {
                         cell.state = {
@@ -344,6 +444,8 @@ export const InteractionHandlers = {
     // Note: Player.js had 'DISPENSER INTERACTION (Eject Sauce Bag)' AND 'Applying Sauce' in interact.
     dispenser_interact: (player, cell) => {
         const dispState = cell.state || {};
+        if (dispState.isInfinite) return false;
+
         const isLoaded = dispState.status === 'loaded' || dispState.status === 'has_mayo';
 
         if (isLoaded) {
@@ -371,10 +473,12 @@ export const InteractionHandlers = {
     },
 
     // --- SODA ---
-    soda_fountain_pickup: (player, cell) => {
+    soda_fountain_pickup: (player, cell, grid, game) => {
         const sfState = cell.state || {};
         // Load
         if (player.heldItem && player.heldItem.definition.category === 'syrup') {
+            if (sfState.isInfinite) return false;
+
             if (!sfState.status || sfState.status === 'empty') {
                 cell.state = {
                     status: 'full',
@@ -385,6 +489,11 @@ export const InteractionHandlers = {
                 player.heldItem = null;
                 return true;
             }
+        }
+        if (game && game.isPrepTime) {
+            game.showPrepTimeWarning = true;
+            game.prepTimeWarningStartTime = Date.now();
+            return true;
         }
         // Start Fill
         if (player.heldItem && player.heldItem.definitionId === 'drink_cup') {
@@ -402,13 +511,17 @@ export const InteractionHandlers = {
             const canPickUp = !player.heldItem || (isBag && (player.heldItem.state.contents || []).length < 50);
 
             if (canPickUp) {
-                sfState.charges = (sfState.charges || 0) - 1;
                 const resultId = sfState.resultId || 'soda';
                 const newItem = new ItemInstance(resultId);
 
-                if (sfState.charges <= 0) sfState.status = 'empty';
-                else if (sfState.charges <= 3) sfState.status = 'warning';
-                else sfState.status = 'full';
+                if (!sfState.isInfinite) {
+                    sfState.charges = (sfState.charges || 0) - 1;
+                    if (sfState.charges <= 0) sfState.status = 'empty';
+                    else if (sfState.charges <= 3) sfState.status = 'warning';
+                    else sfState.status = 'full';
+                } else {
+                    sfState.status = 'full';
+                }
 
                 if (isBag) {
                     if (!player.heldItem.state.contents) player.heldItem.state.contents = [];
@@ -422,13 +535,16 @@ export const InteractionHandlers = {
         return false;
     },
 
-    soda_fountain_interact: (player, cell) => {
+    soda_fountain_interact: (player, cell, grid, game) => {
         const sfState = cell.state || {};
+        if (sfState.isInfinite) return false;
+
         if (sfState.syrupId && !player.heldItem) {
             const syrup = new ItemInstance(sfState.syrupId);
             syrup.state.charges = sfState.charges !== undefined ? sfState.charges : 20;
             player.heldItem = syrup;
             cell.state = { status: 'empty' };
+            console.log("Ejected syrup bag");
             return true;
         }
         return false;
@@ -616,12 +732,60 @@ export const InteractionHandlers = {
         return false;
     },
 
+    // --- ITEM: LETTUCE HEAD ---
+    lettuce_interact: (player, head, cell) => {
+        if (!head || head.definitionId !== 'lettuce_head') return false;
+
+        // Player must be empty-handed to pluck leaf
+        if (player.heldItem) return false;
+
+        const charges = head.state.charges !== undefined ? head.state.charges : 8;
+        if (charges > 0) {
+            const leaf = new ItemInstance('lettuce_leaf');
+            player.heldItem = leaf;
+
+            head.state.charges = charges - 1;
+            if (head.state.charges <= 0) {
+                cell.object = null; // Head finished
+            }
+            return true;
+        }
+
+        return false;
+    },
+
 
     // --- HELPERS & COMPLEX LOGIC ---
 
     _addIngredientToBurger: (burgerItem, feedItem) => {
         if (!burgerItem.state.toppings) burgerItem.state.toppings = [];
         burgerItem.state.toppings.push(feedItem);
+    },
+
+    _transferBoardToInsert: (player, cell) => {
+        const held = player.heldItem;
+        const cbState = cell.state || {};
+        const boardItem = cbState.heldItem;
+
+        if (held && held.definitionId === 'insert' && boardItem) {
+            const insertContents = held.state.contents || [];
+            // Check compatibility: Empty or same type
+            if (insertContents.length === 0 || insertContents[0].definitionId === boardItem.definitionId) {
+                const count = boardItem.state.count || 1;
+
+                // Limit to 50
+                if (insertContents.length + count <= 50) {
+                    for (let i = 0; i < count; i++) {
+                        const singleSlice = new ItemInstance(boardItem.definitionId);
+                        if (!held.state.contents) held.state.contents = [];
+                        held.state.contents.push(singleSlice);
+                    }
+                    cbState.heldItem = null;
+                    return true;
+                }
+            }
+        }
+        return false;
     },
 
     _tryApplySauce: (player, cell) => {
@@ -768,7 +932,7 @@ export const InteractionHandlers = {
             if (prodId) {
                 const newItem = new ItemInstance(prodId);
                 player.heldItem = newItem;
-                box.state.count--;
+                // box.state.count--; // UNLIMITED BOXES
                 return true;
             }
         }
@@ -801,7 +965,7 @@ export const InteractionHandlers = {
         const tempItem = new ItemInstance(productId);
         const result = InteractionHandlers._tryCombine(player.heldItem, tempItem);
         if (result) {
-            box.state.count--;
+            // box.state.count--; // UNLIMITED BOXES
             box.state.isOpen = true;
             player.heldItem = result;
             return true;
@@ -852,7 +1016,7 @@ export const InteractionHandlers = {
                 if (def.isSlice || def.category === 'topping' || def.category === 'patty' || isCookedBacon) {
                     itemToTake = tempItem;
                     updateSource = () => {
-                        target.state.count--;
+                        // target.state.count--; // UNLIMITED BOXES
                         target.state.isOpen = true;
                     };
                 }
@@ -879,9 +1043,13 @@ export const InteractionHandlers = {
 
         // Unwrap if wrapped
         if (burger.state.isWrapped) {
-            burger.state.isWrapped = false;
-            // Wrapper disappears (implied by just setting state to false)
-            return true;
+            // Require empty hands to unwrap
+            if (!player.heldItem) {
+                burger.state.isWrapped = false;
+                player.heldItem = new ItemInstance('wrapper');
+                return true;
+            }
+            return false;
         }
 
         // Remove most recent topping

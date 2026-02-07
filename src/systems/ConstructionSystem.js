@@ -159,6 +159,29 @@ export class ConstructionSystem {
                     if (newCell.state) {
                         Object.assign(newCell.state, state.heldItem.savedState);
                     }
+                } else {
+                    // Initialize Default State for new machines
+                    const newCell = this.game.grid.getCell(state.x, state.y);
+                    const placedType = state.heldItem.tileType; // Use held item type
+
+                    if (placedType === 'DISPENSER') {
+                        newCell.state = {
+                            status: 'loaded',
+                            charges: 9999,
+                            sauceId: 'mayo',
+                            bagId: 'mayo_bag', // fallback
+                            isInfinite: true
+                        };
+                        // Ensure Object is assigned to cell state properly if needed by renderer
+                    } else if (placedType === 'SODA_FOUNTAIN') {
+                        newCell.state = {
+                            status: 'full',
+                            charges: 9999,
+                            syrupId: null, // Direct drink
+                            resultId: 'cola',
+                            isInfinite: true
+                        };
+                    }
                 }
 
                 // Restore object on top if any

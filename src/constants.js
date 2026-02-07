@@ -29,7 +29,7 @@ export const ASSETS = {
         SODA_FOUNTAIN_WARNING: 'soda_fountain-warning.png',
         SODA_FOUNTAIN_FILLING: 'soda_fountain-filling.png',
 
-        SODA_SIGN: 'soda-sign.png',
+        COLA_SIGN: 'cola-sign.png',
         HETAP_SIGN: 'hetap-sign.png',
         SHUTTER_TILE_OPEN: 'shutter_tile-open.png',
         SHUTTER_TILE_CLOSED: 'shutter_tile-closed.png',
@@ -114,8 +114,8 @@ export const ASSETS = {
         SIDE_CUP: 'side_cup.png',
         SIDE_CUP_BOX_CLOSED: 'side_cup_box-closed.png',
         DRINK_CUP: 'drink_cup.png',
-        SYRUP_BOX_CLOSED: 'syrup_box-closed.png',
-        SODA_SYRUP: 'soda_syrup.png',
+        COLA_BOX_CLOSED: 'cola_box-closed.png',
+        COLA_SYRUP: 'cola_syrup.png',
         SODA: 'soda.png',
         DRINK_CUP_BOX_CLOSED: 'drink_cup_box-closed.png',
 
@@ -219,6 +219,8 @@ export const ASSETS = {
         SONG4_LOOP: 'audio/song4.wav',
         TITLE_THEME: 'audio/title-theme.wav',
         PRINTER: 'audio/printer.wav',
+        SONG5_INTRO: 'audio/song5-intro.wav',
+        SONG5_LOOP: 'audio/song5.wav',
     },
     TUTORIAL: {
         BUBBLE: 'tutorial/bubble.png', // Placeholder for the sprite sheet

@@ -39,50 +39,9 @@ export class TouchInputSystem {
         // View Orders
         container.appendChild(this.createButton('view', 'View', 'KeyV', ['top-right']));
 
-        // --- ZOOM SLIDER ---
-        const zoomContainer = document.createElement('div');
-        zoomContainer.className = 'zoom-container';
-        zoomContainer.style.position = 'absolute';
-        zoomContainer.style.top = '20px';
-        zoomContainer.style.left = '50%';
-        zoomContainer.style.transform = 'translateX(-50%)';
-        zoomContainer.style.display = 'flex';
-        zoomContainer.style.flexDirection = 'column';
-        zoomContainer.style.alignItems = 'center';
-        zoomContainer.style.pointerEvents = 'auto'; // Enable interaction
+        // Zoom Slider removed (Auto-zoom implemented)
+        container.appendChild(actionContainer);
 
-        const zoomLabel = document.createElement('span');
-        zoomLabel.innerText = '🔍';
-        zoomLabel.style.fontSize = '20px';
-        zoomLabel.style.marginBottom = '5px';
-        zoomLabel.style.color = 'white';
-        zoomLabel.style.textShadow = '1px 1px 2px black';
-
-        const zoomSlider = document.createElement('input');
-        zoomSlider.type = 'range';
-        zoomSlider.min = '1';
-        zoomSlider.max = '5';
-        zoomSlider.step = '1';
-        zoomSlider.value = '3'; // Default 1.0 (index 3)
-        zoomSlider.style.width = '120px'; // Wide enough for fingers
-
-        // Define steps: 0.5, 0.75, 1.0, 1.25, 1.5
-        const zoomLevels = [0.5, 0.75, 1.0, 1.25, 1.5];
-
-        zoomSlider.addEventListener('input', (e) => {
-            const index = parseInt(e.target.value) - 1;
-            const level = zoomLevels[index];
-            if (this.game.renderer) {
-                this.game.renderer.setZoom(level);
-            }
-        });
-
-        // Prevent touch drag on sliding from moving the page or triggering other things
-        zoomSlider.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
-
-        zoomContainer.appendChild(zoomLabel);
-        zoomContainer.appendChild(zoomSlider);
-        container.appendChild(zoomContainer);
 
         document.body.appendChild(container);
 

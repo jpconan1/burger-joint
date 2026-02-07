@@ -26,7 +26,7 @@
                     "stages": {
                         "raw": {
                             "next": "cooked",
-                            "duration": 10000
+                            "duration": 30000
                         }
                     }
                 },
@@ -80,6 +80,7 @@
                 "id": "tomato",
                 "category": "ingredient",
                 "texture": "tomato.png",
+                "sliceCount": 6,
                 "slicing": {
                     "result": "tomato_slice"
                 }
@@ -172,6 +173,7 @@
                     "type": "Box",
                     "maxCount": 3,
                     "price": 20,
+                    "isEssential": true,
                     "unlocked": false,
                     "produces": "fry_bag"
                 },
@@ -256,7 +258,7 @@
                         "stages": {
                             "raw": {
                                 "next": "cooked",
-                                "duration": 4000,
+                                "duration": 10000,
                                 "cookMethod": "fry"
                             }
                         }
@@ -283,6 +285,7 @@
                 "id": "side_cup_box",
                 "maxCount": 50,
                 "price": 15,
+                "isEssential": true,
                 "unlocked": false,
                 "classification": "helper",
                 "helperUnlockCriteria": "side"
@@ -298,22 +301,16 @@
             "type": "complex_group",
             "items": [
                 {
-                    "id": "syrup_box",
+                    "id": "cola_box",
                     "type": "Box",
                     "maxCount": 1,
                     "price": 40,
+                    "isEssential": true,
                     "unlocked": false,
-                    "produces": "soda_syrup"
+                    "produces": "cola"
                 },
                 {
-                    "id": "soda_syrup",
-                    "type": "Ingredient",
-                    "category": "syrup",
-                    "result": "soda",
-                    "texture": "soda_syrup.png"
-                },
-                {
-                    "id": "soda",
+                    "id": "cola",
                     "type": "Container",
                     "category": "drink",
                     "orderConfig": {
@@ -321,7 +318,7 @@
                         "value": 4,
                         "capability": "SERVE_DRINKS"
                     },
-                    "sign": "soda-sign.png",
+                    "sign": "cola-sign.png",
                     "texture": "soda.png",
                     "spoilable": true
                 },
@@ -431,6 +428,7 @@
                 "id": "onion",
                 "category": "ingredient",
                 "texture": "onion.png",
+                "sliceCount": 6,
                 "slicing": {
                     "result": "onion_slice"
                 }
@@ -488,29 +486,9 @@
                 "id": "cheddar_block",
                 "category": "ingredient",
                 "texture": "cheddar_block.png",
-                "initialState": {
-                    "charges": 18
-                },
+                "sliceCount": 16,
                 "slicing": {
-                    "result": "cheddar_cheese",
-                    "mode": "dispense"
-                },
-                "textures": {
-                    "base": "cheddar_block.png",
-                    "rules": [
-                        {
-                            "stateKey": "charges",
-                            "comparator": "lte",
-                            "value": 6,
-                            "texture": "cheddar_block-partial2.png"
-                        },
-                        {
-                            "stateKey": "charges",
-                            "comparator": "lte",
-                            "value": 12,
-                            "texture": "cheddar_block-partial1.png"
-                        }
-                    ]
+                    "result": "cheddar_cheese"
                 }
             },
             "slice": {
@@ -602,6 +580,7 @@
                 "id": "pickle",
                 "category": "ingredient",
                 "texture": "pickle.png",
+                "sliceCount": 6,
                 "slicing": {
                     "result": "pickle_slice"
                 }
@@ -717,6 +696,7 @@
                 "maxCount": 50,
                 "price": 15,
                 "produces": "drink_cup",
+                "isEssential": true,
                 "unlocked": false,
                 "classification": "helper",
                 "helperUnlockCriteria": "drink"
@@ -824,7 +804,7 @@
                     "stages": {
                         "raw": {
                             "next": "cooked",
-                            "duration": 5000,
+                            "duration": 15000,
                             "cookMethod": "fry"
                         }
                     }
@@ -939,7 +919,7 @@
                         "stages": {
                             "raw": {
                                 "next": "cooked",
-                                "duration": 3000,
+                                "duration": 6000,
                                 "cookMethod": "fry"
                             }
                         }
@@ -985,7 +965,7 @@
                     "stages": {
                         "raw": {
                             "next": "cooked",
-                            "duration": 2000
+                            "duration": 4000
                         }
                     }
                 },
@@ -1019,29 +999,9 @@
                 "id": "swiss_block",
                 "category": "ingredient",
                 "texture": "swiss_block.png",
-                "initialState": {
-                    "charges": 18
-                },
+                "sliceCount": 16,
                 "slicing": {
-                    "result": "swiss_cheese",
-                    "mode": "dispense"
-                },
-                "textures": {
-                    "base": "swiss_block.png",
-                    "rules": [
-                        {
-                            "stateKey": "charges",
-                            "comparator": "lte",
-                            "value": 6,
-                            "texture": "swiss_block-partial2.png"
-                        },
-                        {
-                            "stateKey": "charges",
-                            "comparator": "lte",
-                            "value": 12,
-                            "texture": "swiss_block-partial1.png"
-                        }
-                    ]
+                    "result": "swiss_cheese"
                 }
             },
             "slice": {

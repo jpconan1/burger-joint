@@ -100,7 +100,9 @@ export class OrderSystem {
             const tutTicket = new Ticket(1);
             const tutBag = new Bag();
             tutBag.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
-            tutBag.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
+            // tutBag.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
+            tutBag.addItem('fries');
+            tutBag.addItem('cola');
             tutBag.payout = this.calculateBagPayout(tutBag);
             tutTicket.addBag(tutBag);
 
@@ -366,7 +368,7 @@ export class Ticket {
             });
         });
 
-        lines.push(`-- Par: ${this.parTime}s --`);
+        lines.push(`-- Time: +${this.parTime}s --`);
 
         return {
             id: this.id,

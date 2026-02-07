@@ -11,6 +11,12 @@ export class Renderer {
         this.assetLoader = assetLoader;
         this.tutorialOverlay = new TutorialOverlay();
 
+        // Offscreen canvas for world rendering (eliminates tile seams when scaled)
+        this.worldCanvas = document.createElement('canvas');
+        this.worldCtx = this.worldCanvas.getContext('2d');
+        this.worldCanvasWidth = 0;
+        this.worldCanvasHeight = 0;
+
         // Initialize canvas to full window size
         this.resizeCanvas();
 
@@ -28,6 +34,24 @@ export class Renderer {
         document.getElementById('app').appendChild(this.canvas);
     }
 
+    /**
+     * Ensures the offscreen world canvas matches the current grid dimensions.
+     * Called each frame to handle dynamic grid resizing.
+     */
+    ensureWorldCanvas(gridWidth, gridHeight) {
+        const requiredWidth = gridWidth * TILE_SIZE;
+        const requiredHeight = gridHeight * TILE_SIZE;
+
+        if (this.worldCanvasWidth !== requiredWidth || this.worldCanvasHeight !== requiredHeight) {
+            this.worldCanvas.width = requiredWidth;
+            this.worldCanvas.height = requiredHeight;
+            this.worldCanvasWidth = requiredWidth;
+            this.worldCanvasHeight = requiredHeight;
+            // Reset image smoothing after resize
+            this.worldCtx.imageSmoothingEnabled = false;
+        }
+    }
+
     resizeCanvas() {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
@@ -41,9 +65,29 @@ export class Renderer {
             this.resizeCanvas();
         }
 
+        // Auto Zoom-to-Fit
+        // We calculate the scale required to fit the entire grid into the window (minus some margin)
+        // AND we cap it at 1.0 so we never upscale past native pixel art resolution (64x64 tiles).
+        if (gameState.grid) {
+            const margin = 40; // Breathing room in pixels
+            const availableWidth = this.canvas.width - margin;
+            const availableHeight = this.canvas.height - margin;
+
+            const totalGridWidth = gameState.grid.width * TILE_SIZE;
+            const totalGridHeight = gameState.grid.height * TILE_SIZE;
+
+            const scaleX = availableWidth / totalGridWidth;
+            const scaleY = availableHeight / totalGridHeight;
+
+            this.zoomLevel = Math.min(scaleX, scaleY, 1.0);
+
+            // Ensure offscreen canvas is sized correctly
+            this.ensureWorldCanvas(gameState.grid.width, gameState.grid.height);
+        }
+
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Calculate centering offsets
+        // Calculate centering offsets (for final blit position)
         this.offsetX = 0;
         this.offsetY = 0;
 
@@ -53,13 +97,15 @@ export class Renderer {
 
             this.offsetX = Math.floor((this.canvas.width - gridPixelWidth) / 2);
             this.offsetY = Math.floor((this.canvas.height - gridPixelHeight) / 2);
-
         }
 
+        // --- WORLD RENDERING (to offscreen canvas at native resolution) ---
+        // Clear the offscreen canvas
+        this.worldCtx.clearRect(0, 0, this.worldCanvas.width, this.worldCanvas.height);
 
-        this.ctx.save();
-        this.ctx.translate(this.offsetX, this.offsetY);
-        this.ctx.scale(this.zoomLevel, this.zoomLevel);
+        // Temporarily swap ctx to worldCtx for all world drawing
+        const originalCtx = this.ctx;
+        this.ctx = this.worldCtx;
 
         // Helper to check for counter connections
         const isCounter = (id) => id === 'COUNTER';
@@ -274,6 +320,9 @@ export class Renderer {
                             scale = 1.0;
                         }
                         this.drawEntity(item, x, y, scale);
+                        if (item.state && item.state.count > 1) {
+                            this.drawTinyNumber(x, y, item.state.count);
+                        }
                     } else if (cell.state) {
                         // Migration/Legacy Fallback
                         if (cell.state.status === 'has_tomato') {
@@ -402,25 +451,20 @@ export class Renderer {
                     this.drawTile(tileTexture, x, y);
                 }
 
-                // 1.45 Draw Service Timer (Overlay)
                 if (cell.type.id === 'SERVICE') {
                     if (gameState.isPrepTime && gameState.maxPrepTime > 0) {
-                        const pct = Math.max(0, gameState.prepTime / gameState.maxPrepTime);
+                        const pct = isFinite(gameState.prepTime) ? Math.max(0, gameState.prepTime / gameState.maxPrepTime) : 1;
                         this.drawServiceTimer(x, y, pct);
                     } else if (gameState.activeTickets && gameState.activeTickets.length > 0) {
-                        const idx = gameState.activeTicketIndex || 0;
-                        // Safe check (though index logic in Game.js should keep it valid)
-                        const ticket = gameState.activeTickets[idx] || gameState.activeTickets[0];
+                        // Use Global Service Timer for visualization
+                        let totalActivePar = 0;
+                        gameState.activeTickets.forEach(t => totalActivePar += t.parTime);
 
-                        if (ticket) {
-                            // Calculate percentage based on par time vs elapsed
-                            // If elapsed > par, it's late (percent <= 0)
-                            const pct = Math.max(0, (ticket.parTime - ticket.elapsedTime) / ticket.parTime);
-
-                            // "timer deletes (and stays depleted) once the order is 'late'"
-                            if (pct > 0) {
-                                this.drawServiceTimer(x, y, pct);
-                            }
+                        if (totalActivePar > 0 && typeof gameState.serviceTimer === 'number') {
+                            // Percent of the "current workload" that we have time for
+                            // If we have extra time banked from previous orders, this might stay full longer, which is good.
+                            const pct = Math.min(1, Math.max(0, gameState.serviceTimer / totalActivePar));
+                            this.drawServiceTimer(x, y, pct);
                         }
                     }
                 }
@@ -621,6 +665,21 @@ export class Renderer {
 
         this.drawEffects(gameState);
 
+        // --- END WORLD RENDERING ---
+        // Restore the original context (main canvas)
+        this.ctx = originalCtx;
+
+        // Blit the offscreen world canvas to the main canvas with scaling
+        // This draws the entire world as a single scaled image, eliminating tile seams
+        this.ctx.save();
+        this.ctx.imageSmoothingEnabled = false; // Keep pixel art crisp
+        this.ctx.drawImage(
+            this.worldCanvas,
+            0, 0, this.worldCanvas.width, this.worldCanvas.height,  // Source (full offscreen canvas)
+            this.offsetX, this.offsetY,                              // Destination position
+            this.worldCanvas.width * this.zoomLevel,                 // Destination width (scaled)
+            this.worldCanvas.height * this.zoomLevel                 // Destination height (scaled)
+        );
         this.ctx.restore();
 
         // 4. Draw UI Overlays (Screen Space)
@@ -2458,9 +2517,7 @@ export class Renderer {
         }
     }
 
-    setZoom(level) {
-        this.zoomLevel = level;
-    }
+
     drawEffects(gameState) {
         if (!gameState.effects) return;
 

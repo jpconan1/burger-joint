@@ -32,7 +32,7 @@ export const SCORING_CONFIG = {
         mayo_box: 20,
         fry_box: 20,
         drink_cup_box: 15,
-        syrup_box: 40,
+        cola_box: 40,
         side_cup_box: 15,
 
         // Appliances
