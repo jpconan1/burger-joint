@@ -46,5 +46,26 @@ export const SCORING_CONFIG = {
 
         // Actions
         expansion: 50
+    },
+
+    // Game Pacing & Flow
+    GAME_PACING: {
+        // 3 minutes (180s) from Peak Day to Peak Night implies a 6 minute (360s) full cycle.
+        // Or simply: Half Cycle = 180s.
+        HALF_CYCLE_DURATION: 120,
+
+        // Ticket Logic
+        SLOW_TICKET_INTERVAL: 27,
+        FAST_TICKET_INTERVAL: 3,
+
+        // Pacing Curves
+        DAY_PEAK_TIME_RATIO: 0.75, // Peak at 75% of the day
+        NIGHT_PEAK_TIME_RATIO: 0.85, // Peak at 85% of the night
+
+        DAY_PEAK_INTENSITY: 0.8, // 80% to max speed
+        NIGHT_PEAK_INTENSITY: 1.0, // 100% to max speed
+
+        // Width of the bell curve (Standard Deviation in seconds)
+        PEAK_WIDTH: 20
     }
 };

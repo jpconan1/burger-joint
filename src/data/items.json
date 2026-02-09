@@ -26,7 +26,7 @@
                     "stages": {
                         "raw": {
                             "next": "cooked",
-                            "duration": 30000
+                            "duration": 25000
                         }
                     }
                 },

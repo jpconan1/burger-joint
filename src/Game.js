@@ -98,6 +98,10 @@ export class Game {
 
         // Daily Stats
         this.dailyMoneyEarned = 0;
+
+        // High Score System
+        this.highScore = parseInt(localStorage.getItem('burger_joint_highscore')) || 0;
+        this.sessionTickets = 0;
         this.dailyBagsSold = 0;
 
         // Stability Meter
@@ -598,6 +602,9 @@ export class Game {
 
         // Continue Title Theme (Muffled) for Day 0 Setup
         this.audioSystem.setMuffled(true);
+
+        // Reset Session Score
+        this.sessionTickets = 0;
 
         // Clear existing rooms if any
         this.rooms = {};
@@ -1398,20 +1405,11 @@ export class Game {
         // 3. Generate Daily Orders
         const capabilities = this.getPlayerCapabilities();
         // Menu System Integration: Use defined menu instead of raw capabilities
-        const orders = this.orderSystem.generateDailyOrders(this.dayNumber, this.menuSystem.getMenu());
-        this.ticketQueue = orders;
+        // Continuous Loop: We do NOT generate a daily batch of tickets anymore.
+        // Instead, we spawn them periodically.
+        this.ticketQueue = [];
 
-        // Safeguard: Ensure queue is not empty to prevent immediate "Day Over" state
-        if (this.ticketQueue.length === 0) {
-            console.warn("Ticket Queue was empty! Forcing a fallback ticket.");
-            const fallbackTicket = this.orderSystem.createTicketFromCustomers(
-                [this.orderSystem.generateCustomerProfile(this.menuSystem.getMenu())],
-                1
-            );
-            fallbackTicket.calculateParTime();
-            fallbackTicket.arrivalTime = this.prepTime + 5;
-            this.ticketQueue.push(fallbackTicket);
-        }
+        // Safeguard: Ensure queue is not empty to prevent immediate "Day Over" state - REMOVED
 
         this.queueFinishedTime = null;
         this.activeTickets = [];
@@ -1499,7 +1497,12 @@ export class Game {
             this.saveLevel();
         }
 
-        console.log(`Starting Day with Prep Time: ${this.prepTime}s (Complexity: ${complexity})`);
+        // Initialize Loop Timers
+        this.dayTimer = 0; // Starts at 0 (Morning)
+        this.ticketSpawnTimer = 0;
+        this.lightingIntensity = 0;
+
+        console.log(`Starting Continuous Service Loop. Complexity: ${complexity})`);
     }
 
     onClosingTime() {
@@ -2043,6 +2046,27 @@ export class Game {
     }
 
 
+    getCurrentTicketInterval(cyclePos) {
+        const config = SCORING_CONFIG.GAME_PACING;
+        const halfCycle = config.HALF_CYCLE_DURATION;
+        const peakWidth = config.PEAK_WIDTH; // Sigma
+
+        // peak times
+        const dayPeak = halfCycle * config.DAY_PEAK_TIME_RATIO;
+        const nightPeak = halfCycle + (halfCycle * config.NIGHT_PEAK_TIME_RATIO);
+
+        // Gaussian
+        const dayIntensity = config.DAY_PEAK_INTENSITY * Math.exp(-Math.pow(cyclePos - dayPeak, 2) / (2 * Math.pow(peakWidth, 2)));
+        const nightIntensity = config.NIGHT_PEAK_INTENSITY * Math.exp(-Math.pow(cyclePos - nightPeak, 2) / (2 * Math.pow(peakWidth, 2)));
+
+        const intensity = Math.max(dayIntensity, nightIntensity);
+
+        // Lerp
+        // 0 -> SLOW
+        // 1 -> FAST
+        return config.SLOW_TICKET_INTERVAL - (intensity * (config.SLOW_TICKET_INTERVAL - config.FAST_TICKET_INTERVAL));
+    }
+
     update(dt) {
         if (!dt) return;
 
@@ -2079,12 +2103,50 @@ export class Game {
 
         // Ticket Arrival Logic
         if (this.isDayActive) {
-            // Check for day completion (no more tickets to arrive AND no more active tickets AND no incoming ticket printing)
-            // Fix: Check !this.incomingTicket to prevent early trigger while last ticket is printing
-            // Check for day completion (no more tickets to arrive AND no more active tickets AND no incoming ticket printing)
-            // Fix: Check !this.incomingTicket to prevent early trigger while last ticket is printing
-            if (this.ticketQueue.length === 0 && this.activeTickets.length === 0 && !this.incomingTicket && !this.queueFinishedTime) {
-                this.onClosingTime();
+            // 0. Update Day/Night Cycle (Continuous Loop)
+            if (!this.isPrepTime) {
+                this.dayTimer += dt / 1000;
+                const halfCycle = SCORING_CONFIG.GAME_PACING.HALF_CYCLE_DURATION;
+                const fullCycle = halfCycle * 2;
+
+                // Wrap timer for safety (though not strictly needed if we use modulo)
+                // this.dayTimer %= fullCycle; // Careful with modulo on floats if we want monotonic time
+
+                const cyclePos = this.dayTimer % fullCycle;
+
+                // Calculate Lighting Intensity (0 = Day, 1 = Night)
+                // Triangle Wave: 0 -> 1 -> 0 over fullCycle
+                if (cyclePos <= halfCycle) {
+                    // Morning to Night
+                    this.lightingIntensity = cyclePos / halfCycle;
+                } else {
+                    // Night to Morning
+                    this.lightingIntensity = 1 - ((cyclePos - halfCycle) / halfCycle);
+                }
+
+                // Ticket Generation Loop
+                this.ticketSpawnTimer += dt / 1000;
+                // Dynamic Interval Calculation
+                const freq = this.getCurrentTicketInterval(cyclePos);
+                // console.log(`Current Interval: ${freq.toFixed(2)}s (Cycle: ${cyclePos.toFixed(0)})`);
+
+                // Expose for UI
+                this.timeToNextTicket = Math.max(0, freq - this.ticketSpawnTimer);
+
+                if (this.ticketSpawnTimer >= freq) {
+                    this.ticketSpawnTimer = 0;
+
+                    // Generate Single Ticket
+                    const newTicket = this.orderSystem.createTicketFromCustomers(
+                        [this.orderSystem.generateCustomerProfile(this.menuSystem.getMenu())],
+                        1 // Single order? Or variable size?
+                    );
+                    newTicket.calculateParTime();
+                    // Instant arrival logic? Or leverage queue?
+                    // We push to queue and let the print logic handle it
+                    this.ticketQueue.push(newTicket);
+                    console.log("New Ticket Generated via Continuous Spawner");
+                }
             }
 
             // Ticket Arrival Logic
@@ -2097,19 +2159,18 @@ export class Game {
                     console.log("Prep Time Over! Service starting...");
                 }
             } else {
-                // Always increment arrival timer to maintain rhythm
+                // Ticket Animation Timer
                 this.ticketTimer += dt;
             }
 
             // 1. Check if we can start a new print
             // We only dequeue if we aren't currently printing another one
-            if (this.ticketTimer >= 10000 && !this.incomingTicket && this.ticketQueue.length > 0) {
+            if (this.ticketTimer >= 2000 && !this.incomingTicket && this.ticketQueue.length > 0) { // Reduced safety buffer from 10s to 2s
                 this.ticketTimer = 0;
                 this.incomingTicket = this.ticketQueue.shift();
                 this.printingTimer = 0;
 
                 // Trigger Printer Animation
-                // Find printer
                 // Find printer (Always in main kitchen)
                 const kitchen = this.rooms['main'];
                 if (kitchen) {
@@ -2149,16 +2210,6 @@ export class Game {
                     console.log("Ticket arrived on wheel!");
                     this.incomingTicket = null;
                 }
-            }
-
-            // Check if day is complete (No queue, no active tickets)
-            if (this.ticketQueue.length === 0 && this.activeTickets.length === 0) {
-                // Day should end? Or wait for player to end it?
-                // User requirement: "the player gets a ticket every 10 seconds until all the days tickets are printed"
-                // Usually games wait for player to serve last one.
-                // We don't auto-end day here, handled by manual finish or completion of last order if auto (?)
-                // Actually the current logic auto-ends on completion.
-                // I should verify below.
             }
 
             // Update elapsed times
@@ -2384,6 +2435,17 @@ export class Game {
                                     this.stability = Math.min(this.stability + stabilityGain, 100);
                                     this.addFloatingText(`Stability +${Math.round(stabilityGain)}%`, x, y - 1, '#00ffff');
                                     console.log(`Stability Refill: +${stabilityGain} -> ${this.stability}`);
+
+                                    // High Score Logic
+                                    this.sessionTickets++;
+                                    if (this.sessionTickets > this.highScore) {
+                                        this.highScore = this.sessionTickets;
+                                        localStorage.setItem('burger_joint_highscore', this.highScore);
+                                        // Optional: Celebrate new high score?
+                                        if (this.sessionTickets === this.highScore && this.sessionTickets > 1) { // Only notify if meaningful
+                                            this.addFloatingText("NEW HIGH SCORE!", x, y - 2, '#ffcc00');
+                                        }
+                                    }
 
                                     // Remove from active list
                                     this.activeTickets.splice(matchedTicketIndex, 1);

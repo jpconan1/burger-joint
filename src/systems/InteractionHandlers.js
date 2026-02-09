@@ -532,14 +532,8 @@ export const InteractionHandlers = {
                 const resultId = sfState.resultId || 'soda';
                 const newItem = new ItemInstance(resultId);
 
-                if (!sfState.isInfinite) {
-                    sfState.charges = (sfState.charges || 0) - 1;
-                    if (sfState.charges <= 0) sfState.status = 'empty';
-                    else if (sfState.charges <= 3) sfState.status = 'warning';
-                    else sfState.status = 'full';
-                } else {
-                    sfState.status = 'full';
-                }
+                // Soda fountains should never run out of charges
+                sfState.status = 'full';
 
                 if (isBag) {
                     if (!player.heldItem.state.contents) player.heldItem.state.contents = [];

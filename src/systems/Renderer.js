@@ -649,21 +649,15 @@ export class Renderer {
 
 
         // 3.5 Draw Lighting Effect
-        if (gameState.grid && gameState.queueFinishedTime) {
-            const elapsed = Date.now() - gameState.queueFinishedTime;
-            const fadeDuration = 2000; // 2 seconds fade
-            const fade = Math.min(elapsed / fadeDuration, 1.0);
+        if (gameState.grid && gameState.lightingIntensity > 0) {
+            const gridPixelWidth = gameState.grid.width * TILE_SIZE;
+            const gridPixelHeight = gameState.grid.height * TILE_SIZE;
+            this.drawLightingEffect(gridPixelWidth, gridPixelHeight, gameState.lightingIntensity);
+        }
 
-            if (fade > 0) {
-                const gridPixelWidth = gameState.grid.width * TILE_SIZE;
-                const gridPixelHeight = gameState.grid.height * TILE_SIZE;
-                this.drawLightingEffect(gridPixelWidth, gridPixelHeight, fade);
-            }
-
-            // Draw End Day Stars (Overlay) via RatingPopup
-            if (gameState.ratingPopup) {
-                gameState.ratingPopup.render(this.ctx, this.assetLoader);
-            }
+        // Draw End Day Stars (Overlay) via RatingPopup
+        if (gameState.ratingPopup) {
+            gameState.ratingPopup.render(this.ctx, this.assetLoader);
         }
 
         // Draw Defered Progress Bars (So they are on top of borders/lighting)
@@ -1684,6 +1678,34 @@ export class Renderer {
         this.ctx.fillText(moneyText, 10, 10);
 
         this.ctx.fillText(moneyText, 10, 10);
+
+        // High Score Display (Top Right)
+        const scoreText = `HIGH SCORE: ${gameState.highScore || 0}`;
+        const runText = `RUN: ${gameState.sessionTickets || 0}`;
+
+        this.ctx.textAlign = 'right';
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.strokeStyle = 'black';
+        this.ctx.lineWidth = 3;
+
+        // Stroke
+        this.ctx.strokeText(scoreText, this.canvas.width - 20, 10);
+        this.ctx.strokeText(runText, this.canvas.width - 20, 40);
+
+        // Fill
+        this.ctx.fillStyle = '#ffcc00'; // Gold for High Score
+        this.ctx.fillText(scoreText, this.canvas.width - 20, 10);
+
+        this.ctx.fillStyle = '#ffffff'; // White for Current Run
+        this.ctx.fillText(runText, this.canvas.width - 20, 40);
+
+        // Next Ticket Timer (Debug/Playtest)
+        if (gameState.isDayActive && !gameState.isPrepTime && typeof gameState.timeToNextTicket !== 'undefined') {
+            const nextTicketText = `NEXT TICKET: ${gameState.timeToNextTicket.toFixed(1)}s`;
+            this.ctx.strokeText(nextTicketText, this.canvas.width - 20, 70);
+            this.ctx.fillStyle = '#00ff00';
+            this.ctx.fillText(nextTicketText, this.canvas.width - 20, 70);
+        }
 
         this.ctx.restore();
     }
