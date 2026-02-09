@@ -1,4 +1,5 @@
 import { TILE_SIZE, GRID_WIDTH, GRID_HEIGHT, ASSETS, TAG_LAYOUTS, TILE_TYPES } from '../constants.js';
+import { drawStabilityMeter } from '../renderers/StabilityMeterRenderer.js';
 import { DEFINITIONS } from '../data/definitions.js';
 import { SPRITE_DEFINITIONS } from '../data/sprite_definitions.js';
 import { TutorialOverlay } from '../renderers/TutorialOverlay.js';
@@ -39,8 +40,9 @@ export class Renderer {
      * Called each frame to handle dynamic grid resizing.
      */
     ensureWorldCanvas(gridWidth, gridHeight) {
-        const requiredWidth = gridWidth * TILE_SIZE;
-        const requiredHeight = gridHeight * TILE_SIZE;
+        const padding = TILE_SIZE; // Use TILE_SIZE as padding around the grid
+        const requiredWidth = gridWidth * TILE_SIZE + padding * 2;
+        const requiredHeight = gridHeight * TILE_SIZE + padding * 2;
 
         if (this.worldCanvasWidth !== requiredWidth || this.worldCanvasHeight !== requiredHeight) {
             this.worldCanvas.width = requiredWidth;
@@ -106,6 +108,12 @@ export class Renderer {
         // Temporarily swap ctx to worldCtx for all world drawing
         const originalCtx = this.ctx;
         this.ctx = this.worldCtx;
+
+        // Apply Padding Translation
+        // We shift everything by TILE_SIZE so that (0,0) in grid logic lands at (PADDING, PADDING) in canvas
+        // This allows items at negative coordinates (sticking up) to be visible.
+        this.ctx.save();
+        this.ctx.translate(TILE_SIZE, TILE_SIZE);
 
         // Helper to check for counter connections
         const isCounter = (id) => id === 'COUNTER';
@@ -666,6 +674,10 @@ export class Renderer {
         this.drawEffects(gameState);
 
         // --- END WORLD RENDERING ---
+
+        // Restore translation
+        this.ctx.restore();
+
         // Restore the original context (main canvas)
         this.ctx = originalCtx;
 
@@ -673,10 +685,17 @@ export class Renderer {
         // This draws the entire world as a single scaled image, eliminating tile seams
         this.ctx.save();
         this.ctx.imageSmoothingEnabled = false; // Keep pixel art crisp
+
+        // Calculate the screen position for the top-left of the GRID (not the canvas)
+        // offsetX/Y is where Grid(0,0) should be.
+        // The canvas image has Grid(0,0) at (TILE_SIZE, TILE_SIZE).
+        // So we need to shift the draw position to compensate for the padding scaling.
+        const paddingScreen = TILE_SIZE * this.zoomLevel;
+
         this.ctx.drawImage(
             this.worldCanvas,
             0, 0, this.worldCanvas.width, this.worldCanvas.height,  // Source (full offscreen canvas)
-            this.offsetX, this.offsetY,                              // Destination position
+            this.offsetX - paddingScreen, this.offsetY - paddingScreen, // Destination position
             this.worldCanvas.width * this.zoomLevel,                 // Destination width (scaled)
             this.worldCanvas.height * this.zoomLevel                 // Destination height (scaled)
         );
@@ -686,6 +705,9 @@ export class Renderer {
         if (gameState.isViewingOrders) {
             this.drawOrderTickets(gameState.orders || [], gameState.pickUpKey, gameState.penalty, gameState.possibleMenu, gameState.activeTicketIndex || 0);
         }
+
+        // Draw Stability Meter
+        drawStabilityMeter(this, gameState);
 
         // 5. Draw HUD (Screen Space)
         this.drawHUD(gameState);
@@ -841,8 +863,70 @@ export class Renderer {
         }
     }
 
+    drawSodaFountain(object, x, y, yOffset = 0) {
+        let texture = ASSETS.TILES.SODA_FOUNTAIN_EMPTY;
+        const status = object.state.status;
+
+        if (status === 'full') texture = ASSETS.TILES.SODA_FOUNTAIN_FULL;
+        else if (status === 'warning') texture = ASSETS.TILES.SODA_FOUNTAIN_WARNING;
+        else if (status === 'filling') texture = ASSETS.TILES.SODA_FOUNTAIN_FILLING;
+        else if (status === 'done') texture = ASSETS.TILES.SODA_FOUNTAIN_EMPTY;
+
+        // Draw Base
+        this.drawTile(texture, x, y, yOffset);
+
+        // Draw Sign
+        if (status === 'full' || status === 'warning' || status === 'filling' || status === 'done') {
+            const resultId = object.state.resultId;
+            // Fallback
+            const drinkId = resultId || (object.state.syrupId ? DEFINITIONS[object.state.syrupId]?.result : null);
+
+            if (drinkId && DEFINITIONS[drinkId] && DEFINITIONS[drinkId].sign) {
+                this.drawTile(DEFINITIONS[drinkId].sign, x, y, yOffset);
+            }
+        }
+
+        // Draw Finished Soda
+        if (status === 'done') {
+            this.drawEntity(ASSETS.OBJECTS.SODA, x, y);
+        }
+    }
+
+    drawDispenser(object, x, y, yOffset = 0) {
+        // Base Empty
+        this.drawTile(ASSETS.TILES.DISPENSER_EMPTY, x, y, yOffset);
+
+        const status = object.state.status;
+        if (status === 'loaded' || status === 'has_mayo') {
+            // 1. Bag
+            let bagTexture = ASSETS.OBJECTS.MAYO_BAG; // Default
+            if (object.state.bagId && DEFINITIONS[object.state.bagId]) {
+                bagTexture = DEFINITIONS[object.state.bagId].texture;
+            }
+            this.drawTile(bagTexture, x, y, yOffset);
+
+            // 2. Overlay
+            const charges = object.state.charges;
+            let texture = ASSETS.TILES.DISPENSER_PARTIAL2;
+            if (charges > 10) texture = ASSETS.TILES.DISPENSER_FULL;
+            else if (charges > 5) texture = ASSETS.TILES.DISPENSER_PARTIAL1;
+
+            this.drawTile(texture, x, y, yOffset);
+        }
+    }
+
     drawObject(object, x, y, overrideTexture = null, yOffset = 0) {
         if (!object) return;
+
+        // Custom Appliance Rendering
+        if (object.definitionId === 'soda_fountain') {
+            this.drawSodaFountain(object, x, y, yOffset);
+            return;
+        }
+        if (object.definitionId === 'dispenser') {
+            this.drawDispenser(object, x, y, yOffset);
+            return;
+        }
 
         // Dynamic Burger Rendering
         if (object.type === 'Composite' && object.definitionId !== 'burger_old' && (object.definitionId.includes('burger') || object.state.bun)) {

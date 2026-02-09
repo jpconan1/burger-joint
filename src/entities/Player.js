@@ -86,14 +86,35 @@ export class Player {
 
         if (!cell) return;
 
-        // Restriction: Cannot pick up appliance if there is an item on top
+        // 1. Check for Appliance Object (e.g. Dispenser on Counter)
         if (cell.object) {
+            const obj = cell.object;
+            const shopItem = game.shopItems.find(i => i.id === obj.definitionId && i.type === 'appliance');
+
+            if (shopItem) {
+                const savedState = obj.state ? JSON.parse(JSON.stringify(obj.state)) : null;
+
+                this.heldAppliance = {
+                    id: shopItem.id,
+                    tileType: shopItem.tileType,
+                    savedState: savedState,
+                    attachedObject: null
+                };
+
+                cell.object = null;
+                game.updateCapabilities();
+                console.log("Picked up appliance object: " + shopItem.id);
+                game.addFloatingText("Picked Up!", this.x, this.y, '#ffffff');
+                return;
+            }
+
+            // If object exists but isn't an appliance, we block pickup of the underlying tile
             game.addFloatingText("Remove item first!", targetX, targetY, '#ff0000');
             console.log("Cannot pick up appliance. Item on top.");
             return;
         }
 
-        // Logic adapted from ConstructionSystem.js (Lines 189-217)
+        // 2. Check for Appliance Tile
         const isAppliance = cell.type.id !== 'FLOOR' && cell.type.id !== 'WALL' && !cell.type.isDoor && !cell.type.isExit;
 
         if (isAppliance) {

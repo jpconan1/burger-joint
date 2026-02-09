@@ -305,8 +305,6 @@
                     "type": "Box",
                     "maxCount": 1,
                     "price": 40,
-                    "isEssential": true,
-                    "unlocked": false,
                     "produces": "cola"
                 },
                 {
@@ -1207,6 +1205,22 @@
                         "capability": "SERVE_ONION_RINGS"
                     },
                     "texture": "onion_rings.png"
+                }
+            ]
+        },
+        {
+            "id": "appliances",
+            "type": "complex_group",
+            "items": [
+                {
+                    "id": "soda_fountain",
+                    "type": "Container",
+                    "texture": "soda_fountain-empty.png"
+                },
+                {
+                    "id": "dispenser",
+                    "type": "Container",
+                    "texture": "dispenser-empty.png"
                 }
             ]
         }

@@ -22,9 +22,10 @@ export const InteractionHandlers = {
                 };
             }
         }
-        // 2. Insert (Single, with items)
+        // 2. Insert (Single OR Stacked, with items)
         else if (held.definitionId === 'insert') {
-            if ((held.state.count || 1) === 1 && held.state.contents?.length > 0) {
+            // FIX: Removed count === 1 check. Stacks can deal too.
+            if (held.state.contents?.length > 0) {
                 itemToDispense = held.state.contents[held.state.contents.length - 1];
                 consumeAction = () => {
                     held.state.contents.pop();
@@ -58,6 +59,27 @@ export const InteractionHandlers = {
 
         // Apply to Cell
         if (!cell.object) {
+            // Special Case: FRYER
+            // Fryers need specific state initialization (status='down', timer=0)
+            if (cell.type.id === 'FRYER') {
+                // Check if item is fryable
+                const def = itemToDispense.definition;
+                if (def.cooking) {
+                    const stage = itemToDispense.state.cook_level || 'raw';
+                    const stageDef = def.cooking.stages[stage];
+                    if (stageDef && stageDef.cookMethod === 'fry') {
+                        cell.object = itemToDispense;
+                        cell.state.status = 'down';
+                        cell.state.timer = 0;
+                        consumeAction();
+                        return true;
+                    }
+                }
+                // Handle Fry Bag content (e.g. from Box of Fries -> raw_fries -> Fryer)
+                // Note: Box of Fries makes 'raw_fries', which is fryable.
+                return false;
+            }
+
             if (cell.type.holdsItems) {
                 cell.object = itemToDispense;
                 consumeAction();
@@ -78,20 +100,27 @@ export const InteractionHandlers = {
 
     // --- GRILL ---
     grill_interact: (player, cell, grid, game) => {
-        if (game && game.isPrepTime) {
-            game.showPrepTimeWarning = true;
-            game.prepTimeWarningStartTime = Date.now();
-            return true;
+
+
+        // Restore Behavior: Combine on Grill
+        if (player.heldItem && cell.object) {
+            // First try container logic (e.g. dealing from box)
+            if (InteractionHandlers.handle_container_deal(player, cell)) return true;
+
+            // Then try single item combine
+            const result = InteractionHandlers._tryCombine(player.heldItem, cell.object);
+            if (result) {
+                cell.object = result; // Result stays on grill
+                player.heldItem = null; // Consume held item
+                return true;
+            }
         }
+
         return InteractionHandlers.grill_pickup(player, cell, grid, game);
     },
 
     grill_pickup: (player, cell, grid, game) => {
-        if (game && game.isPrepTime) {
-            game.showPrepTimeWarning = true;
-            game.prepTimeWarningStartTime = Date.now();
-            return true;
-        }
+
         if (player.heldItem) {
             // Box Logic: Place item from box onto grill
             if (player.heldItem.type === ItemType.Box) {
@@ -150,6 +179,7 @@ export const InteractionHandlers = {
                 player.heldItem = null;
                 return true;
             }
+            if (InteractionHandlers.handle_container_deal(player, cell)) return true;
             return true; // Block placement of other items
         }
 
@@ -165,11 +195,7 @@ export const InteractionHandlers = {
 
     // --- FRYER ---
     fryer_interact: (player, cell, grid, game) => {
-        if (game && game.isPrepTime) {
-            game.showPrepTimeWarning = true;
-            game.prepTimeWarningStartTime = Date.now();
-            return true;
-        }
+
         const target = cell.object;
         if (!target) return false;
 
@@ -181,11 +207,7 @@ export const InteractionHandlers = {
     },
 
     fryer_pickup: (player, cell, grid, game) => {
-        if (game && game.isPrepTime) {
-            game.showPrepTimeWarning = true;
-            game.prepTimeWarningStartTime = Date.now();
-            return true;
-        }
+
         if (cell.object) {
             return InteractionHandlers.fryer_pickup_cooked(player, cell);
         } else {
@@ -414,10 +436,10 @@ export const InteractionHandlers = {
     },
 
     // --- DISPENSER ---
-    dispenser_pickup: (player, cell) => {
-        if (InteractionHandlers._tryApplySauce(player, cell)) return true;
+    dispenser_pickup: (player, target) => {
+        if (InteractionHandlers._tryApplySauce(player, target)) return true;
 
-        const dispState = cell.state || {};
+        const dispState = target.state || {};
         if (dispState.isInfinite) return false;
 
         if (player.heldItem) {
@@ -425,7 +447,7 @@ export const InteractionHandlers = {
             if (def.category === 'sauce_refill' || def.type === 'SauceContainer') {
                 if (!dispState.status || dispState.status === 'empty') {
                     if (def.sauceId) {
-                        cell.state = {
+                        target.state = {
                             status: 'loaded',
                             sauceId: def.sauceId,
                             bagId: player.heldItem.definitionId,
@@ -442,8 +464,8 @@ export const InteractionHandlers = {
 
     // Dispenser Interaction (Eject/Unload)
     // Note: Player.js had 'DISPENSER INTERACTION (Eject Sauce Bag)' AND 'Applying Sauce' in interact.
-    dispenser_interact: (player, cell) => {
-        const dispState = cell.state || {};
+    dispenser_interact: (player, target) => {
+        const dispState = target.state || {};
         if (dispState.isInfinite) return false;
 
         const isLoaded = dispState.status === 'loaded' || dispState.status === 'has_mayo';
@@ -460,27 +482,27 @@ export const InteractionHandlers = {
                     const bag = new ItemInstance(bagId);
                     bag.state.charges = dispState.charges !== undefined ? dispState.charges : 15;
                     player.heldItem = bag;
-                    cell.state = { status: 'empty' };
+                    target.state = { status: 'empty' };
                     console.log("Ejected sauce bag");
                     return true;
                 }
             }
         }
         // Also support applying sauce via Interact key
-        if (InteractionHandlers._tryApplySauce(player, cell)) return true;
+        if (InteractionHandlers._tryApplySauce(player, target)) return true;
 
         return false;
     },
 
     // --- SODA ---
-    soda_fountain_pickup: (player, cell, grid, game) => {
-        const sfState = cell.state || {};
+    soda_fountain_pickup: (player, target, context, game) => {
+        const sfState = target.state || {};
         // Load
         if (player.heldItem && player.heldItem.definition.category === 'syrup') {
             if (sfState.isInfinite) return false;
 
             if (!sfState.status || sfState.status === 'empty') {
-                cell.state = {
+                target.state = {
                     status: 'full',
                     charges: player.heldItem.state.charges !== undefined ? player.heldItem.state.charges : 20,
                     syrupId: player.heldItem.definitionId,
@@ -490,11 +512,7 @@ export const InteractionHandlers = {
                 return true;
             }
         }
-        if (game && game.isPrepTime) {
-            game.showPrepTimeWarning = true;
-            game.prepTimeWarningStartTime = Date.now();
-            return true;
-        }
+
         // Start Fill
         if (player.heldItem && player.heldItem.definitionId === 'drink_cup') {
             if (sfState.status === 'full' || sfState.status === 'warning') {
@@ -535,18 +553,7 @@ export const InteractionHandlers = {
         return false;
     },
 
-    soda_fountain_interact: (player, cell, grid, game) => {
-        const sfState = cell.state || {};
-        if (sfState.isInfinite) return false;
-
-        if (sfState.syrupId && !player.heldItem) {
-            const syrup = new ItemInstance(sfState.syrupId);
-            syrup.state.charges = sfState.charges !== undefined ? sfState.charges : 20;
-            player.heldItem = syrup;
-            cell.state = { status: 'empty' };
-            console.log("Ejected syrup bag");
-            return true;
-        }
+    soda_fountain_interact: (player, target, context, game) => {
         return false;
     },
 
@@ -788,9 +795,12 @@ export const InteractionHandlers = {
         return false;
     },
 
-    _tryApplySauce: (player, cell) => {
-        if (cell.type.id !== 'DISPENSER') return false;
-        const dispState = cell.state || {};
+    _tryApplySauce: (player, target) => {
+        const isDispenserTile = target.type && target.type.id === 'DISPENSER';
+        const isDispenserItem = target.definitionId === 'dispenser';
+        if (!isDispenserTile && !isDispenserItem) return false;
+
+        const dispState = target.state || {};
         const isLoaded = dispState.status === 'loaded' || dispState.status === 'has_mayo';
         if (!isLoaded || !player.heldItem) return false;
 
@@ -1074,13 +1084,38 @@ export const InteractionHandlers = {
 
         if (!cell) return false;
 
+        // Check for Counter Placement (Object)
+        const isCounterAppliance = (player.heldAppliance.tileType === 'SODA_FOUNTAIN' || player.heldAppliance.tileType === 'DISPENSER');
+        const isPlacementOnCounter = (cell.type.id === 'COUNTER');
+
+        if (isCounterAppliance && isPlacementOnCounter && !cell.object) {
+            // Place as OBJECT
+            console.log(`Placing ${player.heldAppliance.tileType} on Counter as object`);
+
+            // 1. Create Object (ItemInstance)
+            // We use the ID stored in heldAppliance (e.g. 'soda_fountain')
+            let newItem = new ItemInstance(player.heldAppliance.id);
+
+            // 2. Restore State
+            if (player.heldAppliance.savedState) {
+                newItem.state = JSON.parse(JSON.stringify(player.heldAppliance.savedState));
+            } else {
+                // Should have state from pickup, but fallback if not
+            }
+
+            // 3. Place
+            cell.object = newItem;
+
+            player.heldAppliance = null;
+            return true;
+        }
+
+        // Standard Floor Placement
         if (cell.type.id !== 'FLOOR' || cell.object) return false;
 
         grid.setTileType(targetX, targetY, TILE_TYPES[player.heldAppliance.tileType]);
 
         // Restore State
-        // Note: setTileType mutates the cell object, so 'cell' is still valid but has new type/state.
-        // However, we want to obtain the fresh state object initialized by setTileType.
         const newCell = grid.getCell(targetX, targetY);
 
         if (player.heldAppliance.savedState && newCell.state) Object.assign(newCell.state, player.heldAppliance.savedState);

@@ -50,13 +50,20 @@ export class OrderSystem {
         const orders = [];
 
         // 1. Calculate Day Parameters & Customer Count
-        // Stars Logic: 0 stars (day 1), then scales.
-        const stars = Math.min(5, Math.floor((dayNumber - 1) / 3));
-        const baseMin = 4;
-        const baseMax = 6;
-        const customerCount = Math.floor(Math.random() * (baseMax - baseMin + 1)) + baseMin + (stars * 2);
 
-        console.log(`Generating Day ${dayNumber} (Stars: ${stars}): ${customerCount} Customers.`);
+        // Difficulty scales indefinitely: Every 3 days, difficulty "tier" increases.
+        const difficultyTier = Math.floor((dayNumber - 1) / 3);
+
+        // Base customers: Starts at 4-6, increases by 2 per tier.
+        const baseMin = 4 + (difficultyTier * 2);
+        const baseMax = 6 + (difficultyTier * 2);
+
+        let customerCount = Math.floor(Math.random() * (baseMax - baseMin + 1)) + baseMin;
+
+        // Cap to prevent extreme lag on very high days, but allow it to get crazy.
+        if (customerCount > 50) customerCount = 50;
+
+        console.log(`Generating Day ${dayNumber} (Tier: ${difficultyTier}): ${customerCount} Customers.`);
 
         // 2. Generate Base Customers
         const customers = [];
@@ -140,12 +147,19 @@ export class OrderSystem {
         // 6. Sequential Arrival with Buffer
         // "Orders come in too fast. After every ticket prints, check it's par time.
         // Wait an additional 50% of the tickets par time before printing the next ticket."
+
+        // Update: As days progress, this buffer shrinks.
+        // Starts at 1.5 (50% buffer). Reduces by 0.05 per tier.
+        // Min cap at 0.8 (Tickets arrive 20% FASTER than their par time -> Overlap/Overwhelm).
+        let bufferModifier = 1.5 - (difficultyTier * 0.05);
+        if (bufferModifier < 0.8) bufferModifier = 0.8;
+
         let currentArrivalTime = prepTime;
 
         tickets.forEach((ticket) => {
             ticket.arrivalTime = currentArrivalTime;
-            // Spacing = Par Time + 50% Buffer
-            currentArrivalTime += (ticket.parTime * 1.5);
+            // Spacing = Par Time * Modifier
+            currentArrivalTime += (ticket.parTime * bufferModifier);
         });
 
         return tickets;

@@ -207,6 +207,7 @@ export const ASSETS = {
         GAME_BORDER_LEFT: 'ui/game_border-left-column.png',
         GAME_BORDER_RIGHT: 'ui/game_border-right-column.png',
         CRUMPLED_PAPER_BACKGROUND: 'ui/crumpled_paper_background.png',
+        STABILITY_METER: 'sheets/stability-meter-sheet.png',
     },
     AUDIO: {
         SONG1_INTRO: 'audio/song1-intro.wav',

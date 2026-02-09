@@ -53,7 +53,12 @@ export class InteractionSystem {
         }
 
         // 3. Standard Put Down / Pick Up Logic (Default)
-        return this._standardTransfer(player, cell);
+        if (this._standardTransfer(player, cell)) return true;
+
+        // 4. Fallback: Smart Interaction -> If holding a container and couldn't place it, try dealing from it
+        if (InteractionHandlers.handle_container_deal(player, cell)) return true;
+
+        return false;
     }
 
     static _dispatch(actionType, id, player, target, context, category, game) {
@@ -109,6 +114,37 @@ export class InteractionSystem {
                 // Box Logic: Combine (Hold item and combine with box contents)
                 if (InteractionHandlers.handle_box_combine(player, cell.object)) {
                     return true;
+                }
+            }
+
+            // Special: Place Appliance Item onto Floor
+            if (player.heldItem && cell.type.id === 'FLOOR' && !cell.object) {
+                // Check if held item is an appliance (via definition type or specific whitelist)
+                const def = player.heldItem.definition;
+                const isApplianceItem = (def.type === 'appliance' || ['dispenser', 'soda_fountain', 'fryer', 'grill', 'counter'].includes(def.id));
+
+                if (isApplianceItem) {
+                    // Convert Item -> Tile
+                    const tileTypeStr = def.id.toUpperCase(); // Assumes naming convention
+                    const tileType = TILE_TYPES[tileTypeStr];
+
+                    if (tileType) {
+                        grid.setTileType(cell.x, cell.y, tileType); // Not available in cell context?
+                        // Wait, cell object doesn't have x/y usually. We need target from player.
+                        const targetX = player.x + player.facing.x;
+                        const targetY = player.y + player.facing.y;
+                        grid.setTileType(targetX, targetY, tileType);
+
+                        // Restore State
+                        const newCell = grid.getCell(targetX, targetY);
+                        if (player.heldItem.state && newCell.state) {
+                            Object.assign(newCell.state, player.heldItem.state);
+                        }
+
+                        player.heldItem = null;
+                        game.updateCapabilities();
+                        return true;
+                    }
                 }
             }
 

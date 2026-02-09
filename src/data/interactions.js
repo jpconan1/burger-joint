@@ -35,6 +35,14 @@ export const INTERACTION_MAPPING = {
         },
         'lettuce_head': {
             interact: 'lettuce_interact'
+        },
+        'soda_fountain': {
+            interact: 'soda_fountain_interact',
+            pickup: 'soda_fountain_pickup'
+        },
+        'dispenser': {
+            interact: 'dispenser_interact',
+            pickup: 'dispenser_pickup'
         }
     }
 };

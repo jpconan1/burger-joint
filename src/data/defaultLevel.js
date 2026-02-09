@@ -281,8 +281,13 @@ export const DEFAULT_LEVEL = {
         ],
         [
             {
-                "typeId": "COUNTER",
-                "state": {},
+                "typeId": "SODA_FOUNTAIN",
+                "state": {
+                    "status": "full",
+                    "charges": 20,
+                    "syrupId": "cola_box",
+                    "resultId": "cola"
+                },
                 "object": null
             },
             {

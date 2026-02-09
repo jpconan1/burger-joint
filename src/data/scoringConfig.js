@@ -2,7 +2,7 @@ export const SCORING_CONFIG = {
     // Time added to the "Par Time" for each component (in seconds)
     DAILY_RENT: 100,
     PAR_TIMES: {
-        burger: 15,
+        burger: 40,
         sliced_topping: 7,
         sauce: 6,
         side: 15,

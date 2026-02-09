@@ -1,6 +1,7 @@
 
 import { ASSETS, TILE_TYPES } from '../constants.js';
 import { ACTIONS } from './Settings.js';
+import { ItemInstance } from '../entities/Item.js';
 
 export class ConstructionSystem {
     constructor(game) {
@@ -139,6 +140,69 @@ export class ConstructionSystem {
                     return;
                 }
 
+                // If placing on something that isn't FLOOR, we check if it's a valid placement (e.g. Soda Fountain on Counter)
+                const heldId = state.heldItem.id || '';
+                const heldType = state.heldItem.tileType || '';
+
+                // Allow both ID and TileType check
+                const isCounterAppliance = ['soda_fountain', 'dispenser'].includes(heldId) || ['SODA_FOUNTAIN', 'DISPENSER'].includes(heldType);
+                const isPlacementOnCounter = (targetType === 'COUNTER');
+
+                // Debug VISIBLE
+                this.game.addFloatingText(`Try: ${heldId} on ${targetType}`, state.x, state.y, '#ffffff');
+
+                if (isCounterAppliance && isPlacementOnCounter && !targetCell.object) {
+                    // Place as OBJECT
+                    console.log(`Placing ${state.heldItem.tileType} on Counter as object`);
+
+                    // 1. Create Object (ItemInstance)
+                    // Note: We assume the ID matches an item definition (added to items.json)
+                    let newItem = new ItemInstance(state.heldItem.id);
+
+                    // 2. Initialize State (Copy saved or Default)
+                    if (state.heldItem.savedState) {
+                        newItem.state = JSON.parse(JSON.stringify(state.heldItem.savedState));
+                    } else {
+                        // Default State Initialization
+                        const placedType = state.heldItem.tileType;
+                        if (placedType === 'DISPENSER') {
+                            newItem.state = {
+                                status: 'loaded',
+                                charges: 9999,
+                                sauceId: 'mayo',
+                                bagId: 'mayo_bag', // fallback
+                                isInfinite: true
+                            };
+                        } else if (placedType === 'SODA_FOUNTAIN') {
+                            newItem.state = {
+                                status: 'full',
+                                charges: 9999,
+                                syrupId: null, // Direct drink
+                                resultId: 'cola',
+                                isInfinite: true
+                            };
+                        }
+                    }
+
+                    // 3. Place
+                    targetCell.object = newItem;
+
+                    // 4. Update Game State
+                    state.heldItem = null;
+                    this.game.updateCapabilities();
+                    // this.game.audioSystem.playSFX(ASSETS.AUDIO.PRINTER); // Clunk sound
+
+                    // 5. Check Purchase Mode
+                    if (state.isPurchase) {
+                        this.game.inputLocked = true;
+                        setTimeout(() => {
+                            this.game.inputLocked = false;
+                            this.exitBuildMode();
+                        }, 300);
+                    }
+                    return;
+                }
+
                 // If placing on something that isn't FLOOR, we swap (store old one)
                 if (targetType !== 'FLOOR') {
                     // Find definition for current tile to store it
@@ -150,6 +214,12 @@ export class ConstructionSystem {
                 }
 
                 // Place it!
+                console.log(`[DEBUG] Attempting to set tile type at ${state.x},${state.y}. HeldItem TileType: ${state.heldItem.tileType}`);
+
+                if (!state.heldItem.tileType || !TILE_TYPES[state.heldItem.tileType]) {
+                    console.error(`[DEBUG] Invalid TileType! held=${state.heldItem.tileType}, TILE_TYPES entry=${TILE_TYPES[state.heldItem.tileType]}`);
+                }
+
                 this.game.grid.setTileType(state.x, state.y, TILE_TYPES[state.heldItem.tileType]);
 
                 // Restore rotation/state if preserved
@@ -210,6 +280,34 @@ export class ConstructionSystem {
                 if ((state.isPurchase && isInteract)) return;
 
                 const targetCell = this.game.grid.getCell(state.x, state.y);
+
+                // 1. Try to Pick Up Object (Appliance on Top)
+                if (targetCell.object) {
+                    const obj = targetCell.object;
+                    // Check if object is an appliance (Dispenser, Soda Fountain)
+                    const shopItem = this.game.shopItems.find(i => i.id === obj.definitionId && i.type === 'appliance');
+
+                    if (shopItem) {
+                        console.log(`[DEBUG] Picked up Object: ${shopItem.id} (TileType: ${shopItem.tileType})`);
+                        // Pick it up!
+                        const savedState = obj.state ? JSON.parse(JSON.stringify(obj.state)) : null;
+
+                        state.heldItem = {
+                            id: shopItem.id,
+                            tileType: shopItem.tileType,
+                            savedState: savedState,
+                            attachedObject: null
+                        };
+
+                        targetCell.object = null;
+                        this.game.updateCapabilities();
+                        // this.game.audioSystem.playSFX(ASSETS.AUDIO.PRINTER);
+                        return;
+                    } else {
+                        console.log(`[DEBUG] Object ${obj.definitionId} is not an appliance.`);
+                    }
+                }
+
                 const isAppliance = targetCell.type.id !== 'FLOOR' && targetCell.type.id !== 'WALL' && !targetCell.type.isDoor && !targetCell.type.isExit;
 
                 if (isAppliance) {

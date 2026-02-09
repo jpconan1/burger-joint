@@ -100,6 +100,11 @@ export class Game {
         this.dailyMoneyEarned = 0;
         this.dailyBagsSold = 0;
 
+        // Stability Meter
+        this.stability = 100;
+        this.maxStability = 100;
+
+
 
         // 1. Supplies (Dynamic from DEFINITIONS)
         Object.keys(DEFINITIONS).forEach(defId => {
@@ -289,48 +294,39 @@ export class Game {
         // 1. Find corresponding shop item to update status
         const shopItem = this.shopItems.find(i => i.id === itemDef.id);
 
+        let handledAsMachine = false;
+
         if (shopItem) {
-            console.log(`Unlocking/Granting Reward Item: ${shopItem.id}`);
-            shopItem.unlocked = true;
             shopItem.justUnlocked = true;
 
-            // Check if this is a Drink or Sauce Reward that requires a MACHINE placement
-            // We look at the item definition to see if it's a syrup or sauce source
-            let handledAsMachine = false;
+            // Define Robust Triggers
+            const isDrinkTrigger = itemDef.category === 'syrup' || (itemDef.produces && DEFINITIONS[itemDef.produces] && DEFINITIONS[itemDef.produces].category === 'syrup');
+            const isSauceTrigger = itemDef.type === 'SauceContainer' || itemDef.category === 'sauce_refill' ||
+                (itemDef.produces && DEFINITIONS[itemDef.produces] && (DEFINITIONS[itemDef.produces].type === 'SauceContainer' || DEFINITIONS[itemDef.produces].category === 'sauce_refill'));
+
+            // Proper pDef resolution for content details
             let pDef = itemDef;
             if (itemDef.produces) {
                 pDef = DEFINITIONS[itemDef.produces];
             }
-
-            // Resolve Chain
             if (pDef.slicing && pDef.slicing.result) {
                 pDef = DEFINITIONS[pDef.slicing.result];
             } else if (pDef.process && pDef.process.result) {
                 pDef = DEFINITIONS[pDef.process.result];
             }
 
-            // Check Category
-            const isDrink = pDef.category === 'drink';
-            const isSyrup = pDef.category === 'syrup' || (pDef.result && DEFINITIONS[pDef.result] && DEFINITIONS[pDef.result].category === 'drink') || isDrink;
-            const isSauce = pDef.category === 'sauce_refill' || pDef.type === 'SauceContainer';
-
-            // Special Check for pre-processed items (like directly unlocking 'cola')
-            // But usually rewards are the BOXES (e.g. cola_box).
-            // shopItem.id is usually 'cola_box'.
-
-            if (isSyrup || isSauce) {
+            if (isDrinkTrigger || isSauceTrigger) {
                 // Determine Machine Type needed
-                const machineType = isSyrup ? 'SODA_FOUNTAIN' : 'DISPENSER';
+                const machineType = isDrinkTrigger ? 'SODA_FOUNTAIN' : 'DISPENSER';
 
-                // Find empty COUNTER to replace
-                const room = this.rooms['main'];
+                // Find empty FLOOR tile in STORE ROOM
+                const room = this.rooms['store_room'] || this.rooms['main'];
                 let targetCell = null;
 
-                // Scan for a COUNTER that has NO OBJECT on it
                 for (let y = 0; y < room.height; y++) {
                     for (let x = 0; x < room.width; x++) {
                         const cell = room.getCell(x, y);
-                        if (cell.type.id === 'COUNTER' && !cell.object) {
+                        if (cell.type.id === 'FLOOR' && !cell.object) {
                             targetCell = cell;
                             break;
                         }
@@ -339,59 +335,59 @@ export class Game {
                 }
 
                 if (targetCell) {
-                    console.log(`Converting COUNTER at ${targetCell.x},${targetCell.y} to ${machineType} for ${pDef.id}`);
+                    console.log(`Spawning ${machineType} at ${targetCell.x},${targetCell.y} in store_room for ${pDef.id}`);
 
-                    // Replace Tile
                     targetCell.type = TILE_TYPES[machineType];
 
-                    // Preload Logic
-                    if (isSyrup) {
-                        // Soda Fountain State
+                    if (isDrinkTrigger) {
                         targetCell.state = {
                             status: 'full',
-                            charges: 9999, // Infinite / tied to instance
-                            syrupId: (pDef.category === 'syrup') ? pDef.id : null, // No syrup item if direct drink
-                            resultId: isDrink ? pDef.id : (pDef.result || 'soda'),
-                            isInfinite: true // Custom flag if we want to check later
+                            charges: 9999,
+                            syrupId: (pDef.category === 'syrup') ? pDef.id : (itemDef.produces || 'cola_box'),
+                            resultId: (pDef.result || pDef.id),
+                            isInfinite: true
                         };
                     } else {
-                        // Dispenser State
-                        // sauceId should be the SAUCE (topping), not the bag
                         let sauceId = pDef.id;
-                        // If pDef is the Bag (e.g. mayo_bag), we need the result (mayo)
-                        if (pDef.produces) sauceId = pDef.produces;
-                        else if (pDef.id.endsWith('_bag')) sauceId = pDef.id.replace('_bag', '');
+                        if (pDef.id.endsWith('_bag')) sauceId = pDef.id.replace('_bag', '');
+                        else if (pDef.produces) sauceId = pDef.produces;
 
                         targetCell.state = {
                             status: 'loaded',
                             charges: 9999,
                             sauceId: sauceId,
-                            bagId: pDef.id, // Keeping track of origin
+                            bagId: pDef.id,
                             isInfinite: true
                         };
                     }
 
-                    this.addFloatingText(`${machineType} Installed!`, targetCell.x, targetCell.y, '#00ff00');
+                    this.addFloatingText(`${machineType} Delivered! Check Store Room.`, this.player.x, this.player.y, '#00ff00');
                     handledAsMachine = true;
 
-                    // Reimburse/Add money just like before (it's a reward)
+                    this.autoUpgradedAppliances.add(machineType);
+                    const appItem = this.shopItems.find(i => i.tileType === machineType);
+                    if (appItem) appItem.unlocked = true;
+
                     this.money += shopItem.price;
+                    console.log(`Supply item ${shopItem.id} remains locked (deprecated).`);
+
                 } else {
-                    console.log("No empty Counter found to install machine!");
-                    this.addFloatingText("Unlocked! Check Build Mode.", this.player.x, this.player.y, '#ffff00');
-                    // Mark as handled so we don't give a fallback box that might be weird (e.g. magic cola box)
+                    console.log("No empty Floor found in Store Room to install machine!");
+                    this.addFloatingText("No Space in Store Room!", this.player.x, this.player.y, '#ff0000');
                     handledAsMachine = true;
                 }
+            } else {
+                console.log(`Unlocking/Granting Reward Item: ${shopItem.id}`);
+                shopItem.unlocked = true;
             }
 
             if (!handledAsMachine) {
-                // Default: Give Free Box (Add to Pending Orders)
                 if (!this.pendingOrders) this.pendingOrders = [];
                 const existing = this.pendingOrders.find(o => o.id === shopItem.id);
                 if (existing) existing.qty = (existing.qty || 1) + 1;
                 else this.pendingOrders.push({ id: shopItem.id, qty: 1 });
 
-                this.money += shopItem.price; // Reimburse cost effectively
+                this.money += shopItem.price;
             }
         }
 
@@ -788,7 +784,7 @@ export class Game {
         // CAPABILITY.ADD_COLD_SAUCE: Dispenser + Mayo (Box/Bag)
         // Note: We also should ideally check if the dispenser is loaded, but for now we check for presence of mayo source in the room.
         const hasMayo = activeDefIds.has('mayo_box') || activeDefIds.has('mayo_bag');
-        if (activeTileTypes.has('DISPENSER') && hasMayo) {
+        if ((activeTileTypes.has('DISPENSER') || activeDefIds.has('dispenser')) && hasMayo) {
             this.capabilities.add(CAPABILITY.ADD_COLD_SAUCE);
         }
 
@@ -819,7 +815,7 @@ export class Game {
         });
 
         const hasDrinkCup = activeDefIds.has('drink_cup_box') || activeDefIds.has('drink_cup');
-        if (activeTileTypes.has('SODA_FOUNTAIN') && hasSyrup && hasDrinkCup) {
+        if ((activeTileTypes.has('SODA_FOUNTAIN') || activeDefIds.has('soda_fountain')) && hasSyrup && hasDrinkCup) {
             this.capabilities.add(CAPABILITY.SERVE_DRINKS);
         }
 
@@ -1235,6 +1231,9 @@ export class Game {
             if (def.category === 'sauce_refill') return item;
             if (def.id === 'fry_bag' || def.id === 'sweet_fry_bag') return item;
 
+            // Whitelist Appliances (placed as objects)
+            if (def.type === 'appliance' || ['dispenser', 'soda_fountain', 'fryer', 'grill', 'counter'].includes(def.id)) return item;
+
             // Standard Spoiling
             let newId = 'generic_spoil';
             if (def.spoilage && def.spoilage.id) newId = def.spoilage.id;
@@ -1358,7 +1357,7 @@ export class Game {
                         const c = room.getCell(x, y);
                         if (c.type.id === 'DELIVERY_TILE') {
                             // Step 0: Clear the delivery tiles. Delete whatever's on them.
-                            c.object = null;
+                            // c.object = null;
                             deliveryTiles.push(c);
                         }
                     }
@@ -1482,6 +1481,10 @@ export class Game {
         this.isPrepTime = true;
         this.ticketTimer = 0; // Reset timer so tickets don't start yet
 
+        // Reset Stability
+        this.stability = 100;
+        this.timeoutAlertShown = false; // Reset fail state tracker
+
         // Reset Daily Stats
         this.dailyMoneyEarned = 0;
         this.dailyBagsSold = 0;
@@ -1531,9 +1534,9 @@ export class Game {
         const breakdown = [];
         let starCount = 0;
 
-        // 1. Perfect Day (All orders on time / Universal Timer Survived)
+        // 1. Perfect Day (Stability > 0 at end)
         // Explicitly check timeout flag to be safe
-        if (this.timeoutAlertShown || this.serviceTimer < 0) {
+        if (this.timeoutAlertShown || this.stability <= 0) {
             this.currentDayPerfect = false;
         }
 
@@ -1986,16 +1989,17 @@ export class Game {
         const fryerTriggers = ['fry_box', 'sweet_fry_box', 'chicken_patty_box'];
 
         // Dynamic Triggers
-        const isDrinkTrigger = itemDef.category === 'syrup' || (itemDef.produces && DEFINITIONS[itemDef.produces] && DEFINITIONS[itemDef.produces].category === 'syrup');
-        const isSauceTrigger = itemDef.type === 'SauceContainer' || itemDef.category === 'sauce_refill' ||
-            (itemDef.produces && DEFINITIONS[itemDef.produces] && (DEFINITIONS[itemDef.produces].type === 'SauceContainer' || DEFINITIONS[itemDef.produces].category === 'sauce_refill'));
+        // NOTE: Soda/Sauce upgrades are handled solely by grantDailyReward spawning logic now.
+        // We disabled them here to prevent duplicate spawning/replacing counters.
+        // const isDrinkTrigger = ...
+        // const isSauceTrigger = ...
 
         let targetAppliance = null;
 
         if (choppingTriggers.includes(itemDef.id)) targetAppliance = 'CUTTING_BOARD';
         else if (fryerTriggers.includes(itemDef.id)) targetAppliance = 'FRYER';
-        else if (isDrinkTrigger) targetAppliance = 'SODA_FOUNTAIN';
-        else if (isSauceTrigger) targetAppliance = 'DISPENSER';
+        // else if (isDrinkTrigger) targetAppliance = 'SODA_FOUNTAIN';
+        // else if (isSauceTrigger) targetAppliance = 'DISPENSER';
 
         if (targetAppliance) {
             if (this.autoUpgradedAppliances.has(targetAppliance)) return;
@@ -2163,25 +2167,39 @@ export class Game {
                 t.elapsedTime += dt / 1000;
             });
 
-            // Universal Service Timer Logic
+            // Stability Logic (Replaces Timer)
             if (this.activeTickets.length > 0) {
-                // Safeguard for existing state/hot-reload
-                if (typeof this.serviceTimer !== 'number' || isNaN(this.serviceTimer)) {
-                    console.log("Initializing serviceTimer fallback.");
-                    this.serviceTimer = 0;
-                    this.activeTickets.forEach(t => this.serviceTimer += (t.parTime || 30));
+                // Drain Stability
+                // Base drain: 2% per second
+                // Multiplier: +0.5 per active ticket? "simple ticket might become late 'in the background'" -> global pressure is better.
+                // Let's stick to a constant pressure that increases slightly with more tickets to prevent easy hoarding.
+                let drainRate = 0;
+                const count = this.activeTickets.length;
+
+                if (count <= 1) drainRate = 0.2;
+                else if (count === 2) drainRate = 0.6;
+                else if (count === 3) drainRate = 1.0;
+                else {
+                    // 4 tickets = 2%, 5 tickets = 3%, etc.
+                    drainRate = 2.0 + (count - 4);
                 }
-                if (typeof this.timeoutAlertShown !== 'boolean') this.timeoutAlertShown = false;
 
-                this.serviceTimer -= dt / 1000;
+                this.stability -= (drainRate * (dt / 1000));
 
-                // Check Global Timeout
-                if (this.serviceTimer <= 0 && !this.timeoutAlertShown) {
-                    console.log("Triggering Ticket Timeout Alert!");
+                if (this.stability <= 0 && !this.timeoutAlertShown) {
+                    console.log("Stability Depleted! Triggering Failure Alert!");
                     this.timeoutAlertShown = true;
                     this.currentDayPerfect = false;
-                    this.alertSystem.trigger('ticket_timeout');
+                    this.alertSystem.trigger('ticket_timeout'); // Reusing existing failure alert
                 }
+            } else if (this.ticketQueue.length > 0) {
+                // Trickle drain if queue exists but rail is empty (waiting for print)?
+                // No, give them a breather between waves if they clear the rail.
+                // Recover stability slowly?
+                this.stability = Math.min(this.stability + (5 * (dt / 1000)), 100);
+            } else {
+                // Full recovery between waves/end of day
+                this.stability = Math.min(this.stability + (10 * (dt / 1000)), 100);
             }
         }
 
@@ -2257,7 +2275,7 @@ export class Game {
                         }
                     }
 
-                    // Soda Fountain Logic
+                    // Soda Fountain Logic (Tile)
                     if (cell.type.id === 'SODA_FOUNTAIN' && cell.state) {
                         if (cell.state.status === 'filling') {
                             cell.state.timer = (cell.state.timer || 0) + dt;
@@ -2266,6 +2284,20 @@ export class Game {
                                 cell.state.status = 'done';
                                 cell.state.timer = 0;
                                 console.log('Soda filling done!');
+                            }
+                        }
+                    }
+
+                    // Soda Fountain Logic (Object on Counter)
+                    if (cell.object && (cell.object.definitionId === 'soda_fountain' || cell.object.tileType === 'SODA_FOUNTAIN')) {
+                        const obj = cell.object;
+                        if (obj.state && obj.state.status === 'filling') {
+                            obj.state.timer = (obj.state.timer || 0) + dt;
+                            const max = obj.state.fillDuration || 3000;
+                            if (obj.state.timer >= max) {
+                                obj.state.status = 'done';
+                                obj.state.timer = 0;
+                                console.log('Soda object filling done!');
                             }
                         }
                     }
@@ -2344,15 +2376,14 @@ export class Game {
 
                                     this.addFloatingText(message + ` ($${bonus})`, x, y, color);
 
-                                    // Bonus Time Logic: "whenever you complete an order, give half that order's par time as bounus time to tall pending orders"
-                                    const bonusTime = par / 2;
-                                    if (bonusTime > 0) {
-                                        // Add to Universal Timer
-                                        this.serviceTimer += bonusTime;
+                                    this.addFloatingText(message + ` ($${bonus})`, x, y, color);
 
-                                        console.log(`Bonus Time Awarded: ${bonusTime}s`);
-                                        this.addFloatingText(`Bonus: +${bonusTime}s`, x, y - 1, '#00ffff');
-                                    }
+                                    // Stability Refill
+                                    // Use Par Time as base for stability gain
+                                    const stabilityGain = par;
+                                    this.stability = Math.min(this.stability + stabilityGain, 100);
+                                    this.addFloatingText(`Stability +${Math.round(stabilityGain)}%`, x, y - 1, '#00ffff');
+                                    console.log(`Stability Refill: +${stabilityGain} -> ${this.stability}`);
 
                                     // Remove from active list
                                     this.activeTickets.splice(matchedTicketIndex, 1);
@@ -2546,10 +2577,12 @@ export class Game {
         }
 
         // Define cyclable appliance types
-        'COUNTER',
+        const cyclable = [
+            'COUNTER',
             'CUTTING_BOARD',
             'FRYER',
             'GRILL'
+        ];
 
         if (cyclable.includes(cell.type.id)) {
             this.gameState = 'APPLIANCE_SWAP';
