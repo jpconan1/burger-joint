@@ -56,7 +56,8 @@ export const ASSETS = {
         DUST_SHEET: 'sheets/dust_sheet.png',
     },
     EFFECTS: {
-        DUST_SHEET: 'sheets/dust_sheet.png'
+        DUST_SHEET: 'sheets/dust_sheet.png',
+        FIRE_SHEET: 'sheets/fire-sheet.png'
     },
     OBJECTS: {
 
@@ -145,6 +146,7 @@ export const ASSETS = {
         LETTUCE_HEAD_OLD: 'lettuce-head-old.png',
         LETTUCE_HEAD_WILT1: 'lettuce-head-wilt1.png',
         LETTUCE_HEAD_WILT2: 'lettuce-head-wilt2.png',
+        MAGIC_BAG: 'magic_bag.png'
     },
     PLAYER: {
         NEUTRAL: 'player-neutral.png',

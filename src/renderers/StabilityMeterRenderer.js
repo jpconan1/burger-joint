@@ -28,7 +28,7 @@ export function drawStabilityMeter(renderer, gameState) {
     // Position: Centered relative to grid
     const gridPixelWidth = gameState.grid.width * TILE_SIZE * renderer.zoomLevel;
     const x = renderer.offsetX + (gridPixelWidth / 2) - (frameWidth / 2); // Center on grid
-    const y = renderer.offsetY - frameHeight - 10; // 10px padding above grid
+    const y = renderer.offsetY - frameHeight - 10 - 64; // Bump up 64px + 10px padding above grid
 
     // Draw
     renderer.ctx.save();

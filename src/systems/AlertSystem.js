@@ -1,5 +1,8 @@
 
 import { ALERTS } from '../data/alerts.js';
+import { ACTIONS } from './Settings.js';
+import { DEFINITIONS } from '../data/definitions.js';
+import { UnlockMiniGame } from './UnlockMiniGame.js';
 
 export class AlertSystem {
     constructor(game) {
@@ -23,6 +26,9 @@ export class AlertSystem {
 
         this.buttons = [];
         this.selectedButtonIndex = 0;
+
+        // Mini-Game State
+        this.activeMiniGame = null;
     }
 
     initFrames() {
@@ -31,15 +37,19 @@ export class AlertSystem {
         img.onload = () => {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            const frameSize = 192;
-            canvas.width = frameSize;
-            canvas.height = frameSize;
+
+            // Smarter approach: Detect dimensions from the sheet
+            // We assume it's a vertical strip of 3 frames.
+            const frameWidth = img.width;
+            const frameHeight = img.height / 3;
+            canvas.width = frameWidth;
+            canvas.height = frameHeight;
 
             // Extract 3 frames
             for (let i = 0; i < 3; i++) {
-                ctx.clearRect(0, 0, frameSize, frameSize);
-                // Source Y is i * 192 (0, 192, 384)
-                ctx.drawImage(img, 0, i * frameSize, frameSize, frameSize, 0, 0, frameSize, frameSize);
+                ctx.clearRect(0, 0, frameWidth, frameHeight);
+                // Source Y is i * frameHeight
+                ctx.drawImage(img, 0, i * frameHeight, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight);
                 this.frames.push(canvas.toDataURL());
             }
             this.framesLoaded = true;
@@ -85,6 +95,15 @@ export class AlertSystem {
         this.contentText.style.textShadow = 'none'; // Override CSS shadow
         this.container.appendChild(this.contentText);
 
+        // Portrait Image
+        this.portrait = document.createElement('img');
+        this.portrait.classList.add('alert-portrait');
+        this.portrait.style.position = 'absolute';
+        this.portrait.style.zIndex = '20';
+        this.portrait.style.pointerEvents = 'none';
+        this.portrait.style.imageRendering = 'pixelated';
+        this.container.appendChild(this.portrait);
+
         // Next Arrow / Button
         this.nextBtn = document.createElement('div');
         this.nextBtn.classList.add('alert-next-btn');
@@ -108,7 +127,7 @@ export class AlertSystem {
         }
     }
 
-    trigger(alertId, onComplete = null) {
+    trigger(alertId, onComplete = null, data = {}) {
         const config = ALERTS[alertId];
         if (!config) {
             console.error(`Alert definition not found: ${alertId}`);
@@ -117,9 +136,6 @@ export class AlertSystem {
         }
 
         // If onComplete is provided, store it. 
-        // If not provided (undefined/null), keep existing if we are chaining?
-        // For now, let's assume we pass it or we don't.
-        // If we are chaining, we might want to preserve the original callback.
         if (onComplete) {
             this.onComplete = onComplete;
         } else if (!this.activeAlert) {
@@ -130,13 +146,21 @@ export class AlertSystem {
         this.activeAlert = {
             id: alertId,
             config: config,
-            currentStepIndex: 0
+            currentStepIndex: 0,
+            data: data
         };
 
-        this.showCurrentStep();
         this.isVisible = true;
-        this.container.style.display = 'flex'; // Or block/whatever based on pos
+        this.container.style.display = 'flex';
         if (this.backdrop) this.backdrop.style.display = 'block';
+
+        if (config.type === 'unlock_minigame') {
+            this.activeMiniGame = new UnlockMiniGame(this, data);
+            this.activeMiniGame.start();
+        } else {
+            this.activeMiniGame = null;
+            this.showCurrentStep();
+        }
     }
 
     showCurrentStep() {
@@ -145,7 +169,24 @@ export class AlertSystem {
         const step = this.activeAlert.config.frames[this.activeAlert.currentStepIndex];
 
         // Update Text
-        this.contentText.innerHTML = step.text;
+        let text = step.text;
+        if (this.activeAlert.data) {
+            Object.keys(this.activeAlert.data).forEach(key => {
+                // Replace {key} with val
+                text = text.replace(new RegExp(`{${key}}`, 'g'), this.activeAlert.data[key]);
+            });
+        }
+
+        // Automatic Action Key Replacement
+        if (this.game && this.game.settings) {
+            Object.keys(ACTIONS).forEach(actionKey => {
+                const placeholder = `{${actionKey}}`;
+                if (text.includes(placeholder)) {
+                    text = text.replace(new RegExp(placeholder, 'g'), this.game.settings.getDisplayKey(ACTIONS[actionKey]));
+                }
+            });
+        }
+        this.contentText.innerHTML = text;
 
         // Clean up old buttons
         this.buttonsContainer.innerHTML = '';
@@ -195,6 +236,25 @@ export class AlertSystem {
 
         // Update Size and Position
         this.updateLayout(step);
+
+        // Update Portrait
+        if (step.portrait) {
+            this.portrait.src = step.portrait.startsWith('/') ? step.portrait : `/${step.portrait}`;
+            this.portrait.style.display = 'block';
+
+            const hPos = step.portraitSide || 'left';
+            const vPos = step.portraitVAlign || 'bottom';
+
+            this.portrait.style.top = vPos === 'top' ? '-40px' : '';
+            this.portrait.style.bottom = vPos === 'bottom' ? '-20px' : '';
+            this.portrait.style.left = hPos === 'left' ? '-40px' : '';
+            this.portrait.style.right = hPos === 'right' ? '-40px' : '';
+            this.portrait.style.width = '200px';
+            this.portrait.style.height = 'auto';
+            this.portrait.style.transform = hPos === 'right' ? 'scaleX(-1)' : ''; // Flip if on right
+        } else {
+            this.portrait.style.display = 'none';
+        }
     }
 
     updateButtonSelection() {
@@ -265,19 +325,7 @@ export class AlertSystem {
             // End of alert
             this.close();
             // Chain next?
-            // Note: this.activeAlert is now null, so use cached config/index
             if (config.frames[currentIndex].next) {
-                // Determine if we should clear onComplete? 
-                // If we chain, we probably don't want to fire onComplete yet.
-                // But close() just fired it!
-                // We should probably NOT fire onComplete in close() if chaining.
-                // But we don't know if we are chaining inside close().
-                // So... re-trigger.
-                // If onComplete was fired, it might have transitioned state.
-                // This implies onComplete is "On Close of this alert window".
-                // If chaining, we want a seamless transition?
-                // The requirements for chaining are vague.
-                // Let's stick to safe path: fix the crash.
                 this.trigger(config.frames[currentIndex].next);
             }
         }
@@ -287,17 +335,23 @@ export class AlertSystem {
         this.isVisible = false;
         this.container.style.display = 'none';
         if (this.backdrop) this.backdrop.style.display = 'none';
-        this.activeAlert = null;
 
-        if (this.onComplete) {
-            const cb = this.onComplete;
-            this.onComplete = null;
+        const cb = this.onComplete;
+        this.onComplete = null;
+        this.activeAlert = null;
+        this.activeMiniGame = null;
+
+        if (cb) {
             cb();
         }
     }
 
     update(dt) {
         if (!this.isVisible) return;
+        // if (this.activeMiniGame) return; // Skip line boil for mini-game? Or keep? -> KEEP!
+        if (this.activeMiniGame && this.activeMiniGame.update) {
+            this.activeMiniGame.update(dt);
+        }
 
         // Animate Line Boil
         this.animationTimer += dt;
@@ -319,26 +373,33 @@ export class AlertSystem {
     handleInput(code) {
         if (!this.isVisible) return false;
 
-        const interactKey = this.game.settings.getBinding('INTERACT');
+        if (this.activeMiniGame) {
+            return this.activeMiniGame.handleInput(code);
+        }
+
+        const action = this.game.settings.getAction(code);
+        const isInteract = action === ACTIONS.INTERACT || code === 'Enter' || code === 'Space';
+        const isLeft = action === ACTIONS.MOVE_LEFT || code === 'ArrowLeft';
+        const isRight = action === ACTIONS.MOVE_RIGHT || code === 'ArrowRight';
 
         // Button Navigation
         if (this.buttons.length > 0) {
-            if (code === 'ArrowRight') {
+            if (isRight) {
                 this.selectedButtonIndex = (this.selectedButtonIndex + 1) % this.buttons.length;
                 this.updateButtonSelection();
                 return true;
-            } else if (code === 'ArrowLeft') {
+            } else if (isLeft) {
                 this.selectedButtonIndex = (this.selectedButtonIndex - 1 + this.buttons.length) % this.buttons.length;
                 this.updateButtonSelection();
                 return true;
-            } else if (code === interactKey || code === 'Enter' || code === 'Space') {
+            } else if (isInteract) {
                 const btn = this.buttons[this.selectedButtonIndex];
                 if (btn) this.executeAction(btn.config.action);
                 return true;
             }
         }
 
-        if (code === interactKey || code === 'Enter' || code === 'Space') {
+        if (isInteract) {
             this.advance();
             return true; // Consumed
         }

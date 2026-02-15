@@ -397,6 +397,19 @@ export class Ticket {
 
     // Returns true if the submitted bag matches a pending bag requirement
     verifyBag(submittedBagItem) {
+        // MAGIC BAG WILDCARD logic
+        if (submittedBagItem.definitionId === 'magic_bag') {
+            const matchIndex = this.bags.findIndex(bag => !bag.completed);
+            if (matchIndex !== -1) {
+                const bag = this.bags[matchIndex];
+                bag.completed = true;
+                return {
+                    matched: true,
+                    payout: bag.payout || 50
+                };
+            }
+        }
+
         // Iterate through incomplete bags to find a match
         const matchIndex = this.bags.findIndex(bag => !bag.completed && bag.matches(submittedBagItem));
 

@@ -1,12 +1,14 @@
 export const DEFAULT_LEVEL = {
-
     "width": 14,
     "height": 7,
     "cells": [
         [
             {
                 "typeId": "PRINTER",
-                "state": {},
+                "state": {
+                    "printing": true,
+                    "printStartTime": 1770785712625
+                },
                 "object": null
             },
             {
@@ -20,78 +22,48 @@ export const DEFAULT_LEVEL = {
                 "object": null
             },
             {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
+                "typeId": "TICKET_WHEEL",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "GRILL",
-                "state": {
-                    "isOn": false,
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "SERVICE",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "GRILL",
-                "state": {
-                    "isOn": false,
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "SERVICE",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "GRILL",
-                "state": {
-                    "isOn": false,
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "SERVICE",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "GRILL",
-                "state": {
-                    "isOn": false,
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "SERVICE",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "FRYER",
-                "state": {
-                    "status": "empty",
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "SERVICE",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "FRYER",
-                "state": {
-                    "status": "empty",
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "SERVICE",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
+                "typeId": "SERVICE",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
+                "typeId": "SERVICE",
+                "state": {},
                 "object": null
             },
             {
@@ -116,8 +88,10 @@ export const DEFAULT_LEVEL = {
         ],
         [
             {
-                "typeId": "TICKET_WHEEL",
-                "state": {},
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
                 "object": null
             },
             {
@@ -193,8 +167,10 @@ export const DEFAULT_LEVEL = {
         ],
         [
             {
-                "typeId": "SERVICE",
-                "state": {},
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
                 "object": null
             },
             {
@@ -208,8 +184,37 @@ export const DEFAULT_LEVEL = {
                 "object": null
             },
             {
-                "typeId": "COUNTER",
+                "typeId": "GRILL",
                 "state": {
+                    "isOn": false,
+                    "cookingSpeed": 2000,
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "GRILL",
+                "state": {
+                    "isOn": false,
+                    "cookingSpeed": 2000,
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "GRILL",
+                "state": {
+                    "isOn": false,
+                    "cookingSpeed": 2000,
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "GRILL",
+                "state": {
+                    "isOn": false,
+                    "cookingSpeed": 2000,
                     "facing": 0
                 },
                 "object": null
@@ -222,36 +227,19 @@ export const DEFAULT_LEVEL = {
                 "object": null
             },
             {
-                "typeId": "COUNTER",
+                "typeId": "FRYER",
                 "state": {
+                    "status": "empty",
+                    "cookingSpeed": 2000,
                     "facing": 0
                 },
                 "object": null
             },
             {
-                "typeId": "COUNTER",
+                "typeId": "FRYER",
                 "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
+                    "status": "empty",
+                    "cookingSpeed": 2000,
                     "facing": 0
                 },
                 "object": null
@@ -590,7 +578,12 @@ export const DEFAULT_LEVEL = {
             {
                 "typeId": "COUNTER",
                 "state": {},
-                "object": null
+                "object": {
+                    "definitionId": "insert",
+                    "state": {
+                        "count": 9
+                    }
+                }
             },
             {
                 "typeId": "COUNTER",
@@ -599,7 +592,6 @@ export const DEFAULT_LEVEL = {
             }
         ]
     ]
-
 };
 
 export const DEFAULT_STORE_ROOM = {

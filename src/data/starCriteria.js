@@ -8,7 +8,7 @@ export const STAR_CRITERIA = [
         id: 'burger_star',
         name: 'Burger Star',
         check: (game) => {
-            const burgerCount = game.menuSystem.menuSlots.slice(0, 4).filter(s => s !== null).length;
+            const burgerCount = game.menuSystem.menuSlots.filter(s => s !== null).length;
             return burgerCount >= 2;
         }
     },

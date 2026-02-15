@@ -8,10 +8,18 @@ export class InteractionSystem {
         const cell = player.getTargetCell(grid);
         if (!cell) return false;
 
+        // Powerup Interaction Hook
+        if (cell.object && game.powerupSystem && game.powerupSystem.checkInteraction(cell.object, cell)) {
+            return true;
+        }
+
         // 1. Context Specific (Tile)
         if (this._dispatch('interact', cell.type.id, player, cell, grid, 'TILES', game)) return true;
 
         // 1.5. Generic Container Deal (Box/Insert/Bag -> Counter/Item)
+        // Check for Suck Up (Interact Key) - Bag Only
+        if (InteractionHandlers.handle_container_collect(player, cell)) return true;
+
         if (InteractionHandlers.handle_container_deal(player, cell)) return true;
 
         // 2. Item Specific (Target Object)
@@ -36,6 +44,11 @@ export class InteractionSystem {
     static handlePickUp(player, grid, game) {
         const cell = player.getTargetCell(grid);
         if (!cell) return false;
+
+        // Powerup Pickup Hook
+        if (cell.object && game.powerupSystem && game.powerupSystem.checkInteraction(cell.object, cell)) {
+            return true;
+        }
 
         // 0. Place Appliance (Priority)
         if (player.heldAppliance) {
@@ -75,10 +88,7 @@ export class InteractionSystem {
     }
 
     static _standardTransfer(player, cell) {
-        // Feature: Pick Up into Held Insert (Priority over standard pickup/place)
-        if (player.heldItem && player.heldItem.definitionId === 'insert') {
-            if (InteractionHandlers.handle_insert_pickup(player, cell)) return true;
-        }
+
 
         // Place Held Item
         if (player.heldItem) {
@@ -172,7 +182,13 @@ export class InteractionSystem {
                 cell.object.state.isOpen = false;
             }
 
-            player.heldItem = cell.object;
+            const item = cell.object;
+            // Reset cooking progress if picked up while raw (cooking)
+            if (item.state && item.state.cook_level === 'raw') {
+                item.state.cookingProgress = 0;
+            }
+
+            player.heldItem = item;
             cell.object = null;
             return true;
         }

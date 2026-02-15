@@ -33,7 +33,7 @@ export const InteractionHandlers = {
             }
         }
         // 3. Bag
-        else if (held.definitionId === 'bag') {
+        else if (held.definitionId === 'bag' || held.definitionId === 'magic_bag') {
             if (held.state.contents?.length > 0) {
                 itemToDispense = held.state.contents[held.state.contents.length - 1];
                 consumeAction = () => {
@@ -91,6 +91,104 @@ export const InteractionHandlers = {
             if (result) {
                 cell.object = result;
                 consumeAction();
+                return true;
+            }
+        }
+
+        return false;
+    },
+
+    // --- GENERIC CONTAINER: COLLECT (Suck Up) ---
+    // Actions where the Held Item "absorbs" the Target Item
+    handle_container_collect: (player, cell) => {
+        const held = player.heldItem;
+        if (!held) return false;
+
+        const target = cell.object;
+        if (!target) return false;
+
+        // 1. BAG: Suck up items (Orders)
+        if (held.definitionId === 'bag' || held.definitionId === 'magic_bag') {
+            // Skip if target is a box (don't suck up boxes?)
+            if (target.type === ItemType.Box) return false;
+
+            // Validation similar to _tryCombine
+            const def = target.definition;
+            let tag = null;
+            if (def.category === 'burger' || target.definitionId.includes('burger')) {
+                if (target.state.isWrapped) tag = 'burger';
+            } else {
+                const type = (def.orderConfig && def.orderConfig.type) || def.category;
+                if (type === 'side' || type === 'drink') tag = type;
+            }
+
+            if (tag) {
+                if (!held.state.contents) held.state.contents = [];
+                if (held.state.contents.length < 50) {
+                    held.state.contents.push(target);
+                    cell.object = null; // Remove from world
+                    return true;
+                }
+            }
+        }
+
+        // 2. INSERT: Suck up ingredients
+        if (held.definitionId === 'insert') {
+            // Block if stack of inserts
+            if ((held.state.count || 1) > 1) return false;
+
+            // Re-using logic from handle_insert_pickup
+            let itemToTake = null;
+            let updateSource = null;
+
+            // Simple Item
+            if (target instanceof ItemInstance || target.type === undefined) {
+                const def = target.definition || {};
+                const isCookedBacon = target.definitionId === 'bacon' && target.state.cook_level === 'cooked';
+                if (def.isSlice || def.category === 'topping' || def.category === 'patty' || isCookedBacon) {
+                    itemToTake = target;
+                    updateSource = () => { cell.object = null; };
+                }
+            } else if (target.type === ItemType.Box) {
+                if (target.state.count > 0) {
+                    const prodId = target.definition.produces;
+                    const tempItem = new ItemInstance(prodId);
+                    const def = tempItem.definition;
+                    const isCookedBacon = tempItem.definitionId === 'bacon' && tempItem.state.cook_level === 'cooked';
+
+                    if (def.isSlice || def.category === 'topping' || def.category === 'patty' || isCookedBacon) {
+                        itemToTake = tempItem;
+                        updateSource = () => {
+                            // target.state.count--; // UNLIMITED BOXES
+                            target.state.isOpen = true; // Visual feedback
+                        };
+                    }
+                }
+            }
+
+            if (itemToTake) {
+                if (!held.state.contents) held.state.contents = [];
+                if (held.state.contents.length >= 50) return false;
+                // Check mixing
+                if (held.state.contents.length > 0 && held.state.contents[0].definitionId !== itemToTake.definitionId) return false;
+
+                updateSource();
+                held.state.contents.push(itemToTake);
+                return true;
+            }
+        }
+
+        // 3. BURGER/BUN/WRAPPER: Suck up ingredients/content
+        // "Suck up" makes sense if we are holding the "Container/Base"
+        const isHeldBase = held.category === 'burger' || held.category === 'bun' || held.definitionId.includes('burger');
+        const isHeldWrapper = held.definitionId === 'wrapper';
+
+        if (isHeldBase || isHeldWrapper) {
+            // Attempt combine
+            const result = InteractionHandlers._tryCombine(held, target);
+            if (result) {
+                player.heldItem = result; // Result stays in hand
+                cell.object = null; // Target removed from table
                 return true;
             }
         }
@@ -185,7 +283,12 @@ export const InteractionHandlers = {
 
         // Empty Hands: Pick Up
         if (cell.object) {
-            player.heldItem = cell.object;
+            const item = cell.object;
+            // Reset cooking progress if picked up while raw (cooking)
+            if (item.state && item.state.cook_level === 'raw') {
+                item.state.cookingProgress = 0;
+            }
+            player.heldItem = item;
             cell.object = null;
             return true;
         }
@@ -337,7 +440,7 @@ export const InteractionHandlers = {
                 }
             }
             // Bag
-            else if (held.definitionId === 'bag') {
+            else if (held.definitionId === 'bag' || held.definitionId === 'magic_bag') {
                 if (held.state.contents?.length > 0) {
                     itemToDispense = held.state.contents[held.state.contents.length - 1]; // Peek
                     consumeAction = () => {
@@ -525,7 +628,7 @@ export const InteractionHandlers = {
         }
         // Pick Result
         if (sfState.status === 'done') {
-            const isBag = player.heldItem && player.heldItem.definitionId === 'bag';
+            const isBag = player.heldItem && (player.heldItem.definitionId === 'bag' || player.heldItem.definitionId === 'magic_bag');
             const canPickUp = !player.heldItem || (isBag && (player.heldItem.state.contents || []).length < 50);
 
             if (canPickUp) {
@@ -819,12 +922,15 @@ export const InteractionHandlers = {
 
         if (newBurger) {
             player.heldItem = newBurger;
-            dispState.charges = (dispState.charges || 0) - 1;
-            if (dispState.charges <= 0) {
-                dispState.status = 'empty';
-                dispState.charges = 0;
-                dispState.sauceId = null;
-                dispState.bagId = null;
+
+            if (!dispState.isInfinite) {
+                dispState.charges = (dispState.charges || 0) - 1;
+                if (dispState.charges <= 0) {
+                    dispState.status = 'empty';
+                    dispState.charges = 0;
+                    dispState.sauceId = null;
+                    dispState.bagId = null;
+                }
             }
             return true;
         }
@@ -892,7 +998,7 @@ export const InteractionHandlers = {
         }
 
         // 3. Bag Packing
-        const isBag = (i) => i.definitionId === 'bag';
+        const isBag = (i) => i.definitionId === 'bag' || i.definitionId === 'magic_bag';
 
         let bagBox = null, itemToPack = null;
         if (isBag(held)) { bagBox = held; itemToPack = target; }
@@ -950,14 +1056,29 @@ export const InteractionHandlers = {
         const targetId = boxDef.produces;
 
         if (item.definitionId !== targetId) return false;
-        if (box.state.count >= boxDef.maxCount) return false;
 
-        // Simple check (ignores strict aging logic for mvp restoration)
-        if (item.definitionId === 'bag' && item.state.contents?.length > 0) return false;
-        if (item.definitionId === 'beef_patty' && item.state.cook_level !== 'raw') return false;
+        // Strict State Matching (Fresh vs Used)
+        const freshItem = new ItemInstance(targetId);
 
-        box.state.count++;
-        box.state.isOpen = true;
+        // 1. Cook Level (e.g. no cooked patties in raw box)
+        if (freshItem.state.cook_level !== item.state.cook_level) return false;
+
+        // 2. Charges (e.g. no half-used lettuce heads)
+        // Check if charge exists on fresh item (some items don't have charges)
+        if (freshItem.state.charges !== undefined) {
+            if (item.state.charges !== freshItem.state.charges) return false;
+        }
+
+        // 3. Contents (e.g. no bags with stuff in them)
+        if (item.state.contents && item.state.contents.length > 0) return false;
+
+        // If it matches, we accept it back (Infinite Sink)
+        // box.state.count++; // Increment count if we want to track stock (though it's unlimited source)
+        // Setting count to maxCount or just ignoring it since it's unlimited.
+        // Existing logic increments, so let's keep it to be safe, but remove max limit check.
+        if (box.state.count !== undefined) box.state.count++;
+
+        box.state.isOpen = true; // Visual feedback
         return true;
     },
 

@@ -275,6 +275,17 @@
                             }
                         ]
                     }
+                },
+                {
+                    "id": "powerups",
+                    "type": "tool_supply",
+                    "item": {
+                        "id": "keroscene",
+                        "type": "Ingredient",
+                        "category": "powerup",
+                        "texture": "keroscene.png",
+                        "trashOnly": true
+                    }
                 }
             ]
         },
@@ -325,6 +336,17 @@
                     "type": "Container",
                     "texture": "soda-old.png",
                     "trashOnly": true
+                },
+                {
+                    "id": "powerups",
+                    "type": "tool_supply",
+                    "item": {
+                        "id": "keroscene",
+                        "type": "Ingredient",
+                        "category": "powerup",
+                        "texture": "keroscene.png",
+                        "trashOnly": true
+                    }
                 }
             ]
         },
@@ -354,6 +376,17 @@
                     "partTexture": "mayo-part.png",
                     "texture": "mayo-part.png",
                     "isTopping": true
+                },
+                {
+                    "id": "powerups",
+                    "type": "tool_supply",
+                    "item": {
+                        "id": "keroscene",
+                        "type": "Ingredient",
+                        "category": "powerup",
+                        "texture": "keroscene.png",
+                        "trashOnly": true
+                    }
                 }
             ]
         },
@@ -397,6 +430,17 @@
                     "category": "burger",
                     "texture": "burger-old.png",
                     "trashOnly": true
+                },
+                {
+                    "id": "powerups",
+                    "type": "tool_supply",
+                    "item": {
+                        "id": "keroscene",
+                        "type": "Ingredient",
+                        "category": "powerup",
+                        "texture": "keroscene.png",
+                        "trashOnly": true
+                    }
                 }
             ]
         },
@@ -409,6 +453,17 @@
                     "type": "Ingredient",
                     "texture": "spoil.png",
                     "trashOnly": true
+                },
+                {
+                    "id": "powerups",
+                    "type": "tool_supply",
+                    "item": {
+                        "id": "keroscene",
+                        "type": "Ingredient",
+                        "category": "powerup",
+                        "texture": "keroscene.png",
+                        "trashOnly": true
+                    }
                 }
             ]
         },
@@ -625,6 +680,17 @@
                     "partTexture": "bbq-part.png",
                     "texture": "bbq-part.png",
                     "isTopping": true
+                },
+                {
+                    "id": "powerups",
+                    "type": "tool_supply",
+                    "item": {
+                        "id": "keroscene",
+                        "type": "Ingredient",
+                        "category": "powerup",
+                        "texture": "keroscene.png",
+                        "trashOnly": true
+                    }
                 }
             ]
         },
@@ -654,6 +720,17 @@
                     "partTexture": "burger_sauce-part.png",
                     "texture": "burger_sauce-part.png",
                     "isTopping": true
+                },
+                {
+                    "id": "powerups",
+                    "type": "tool_supply",
+                    "item": {
+                        "id": "keroscene",
+                        "type": "Ingredient",
+                        "category": "powerup",
+                        "texture": "keroscene.png",
+                        "trashOnly": true
+                    }
                 }
             ]
         },
@@ -683,6 +760,17 @@
                     "partTexture": "ketchup-part.png",
                     "texture": "ketchup-part.png",
                     "isTopping": true
+                },
+                {
+                    "id": "powerups",
+                    "type": "tool_supply",
+                    "item": {
+                        "id": "keroscene",
+                        "type": "Ingredient",
+                        "category": "powerup",
+                        "texture": "keroscene.png",
+                        "trashOnly": true
+                    }
                 }
             ]
         },
@@ -742,6 +830,17 @@
                     "type": "Container",
                     "texture": "soda-old.png",
                     "trashOnly": true
+                },
+                {
+                    "id": "powerups",
+                    "type": "tool_supply",
+                    "item": {
+                        "id": "keroscene",
+                        "type": "Ingredient",
+                        "category": "powerup",
+                        "texture": "keroscene.png",
+                        "trashOnly": true
+                    }
                 }
             ]
         },
@@ -932,6 +1031,17 @@
                                 "texture": "sweet_potato_fries-done.png"
                             }
                         ]
+                    }
+                },
+                {
+                    "id": "powerups",
+                    "type": "tool_supply",
+                    "item": {
+                        "id": "keroscene",
+                        "type": "Ingredient",
+                        "category": "powerup",
+                        "texture": "keroscene.png",
+                        "trashOnly": true
                     }
                 }
             ]
@@ -1175,6 +1285,17 @@
                     "type": "Container",
                     "texture": "soda-old.png",
                     "trashOnly": true
+                },
+                {
+                    "id": "powerups",
+                    "type": "tool_supply",
+                    "item": {
+                        "id": "keroscene",
+                        "type": "Ingredient",
+                        "category": "powerup",
+                        "texture": "keroscene.png",
+                        "trashOnly": true
+                    }
                 }
             ]
         },
@@ -1191,7 +1312,7 @@
                     "isTopping": true,
                     "orderConfig": {
                         "type": "topping",
-                        "value": 2.0,
+                        "value": 2,
                         "capability": "ADD_FRIED_ONION"
                     }
                 },
@@ -1223,6 +1344,38 @@
                     "texture": "dispenser-empty.png"
                 }
             ]
+        },
+        {
+            "id": "powerup_keroscene",
+            "type": "tool_supply",
+            "item": {
+                "id": "keroscene",
+                "type": "Ingredient",
+                "category": "powerup",
+                "texture": "keroscene.png",
+                "trashOnly": true
+            }
+        },
+        {
+            "id": "powerup_freeze_clock",
+            "type": "tool_supply",
+            "item": {
+                "id": "freeze_clock",
+                "type": "Ingredient",
+                "category": "powerup",
+                "texture": "freeze_clock.png",
+                "trashOnly": true
+            }
+        },
+        {
+            "id": "magic_bag",
+            "type": "tool_supply",
+            "item": {
+                "id": "magic_bag",
+                "type": "Container",
+                "category": "powerup",
+                "texture": "magic_bag.png"
+            }
         }
     ]
 }

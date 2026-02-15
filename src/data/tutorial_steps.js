@@ -182,105 +182,24 @@ export const TUTORIAL_STEPS = [
         }
     },
     {
-        id: 'place_patty_box',
-        text: "Put down!\n[PICK_UP]",
-        targetType: 'COUNTER',
-        completionPredicate: (gameState) => {
-            if (!gameState.grid) return false;
-            // Complete if patty box is found on ANY counter tile
-            for (let y = 0; y < gameState.grid.height; y++) {
-                for (let x = 0; x < gameState.grid.width; x++) {
-                    const cell = gameState.grid.getCell(x, y);
-                    if (cell.type.id === 'COUNTER' && cell.object && cell.object.definitionId === 'patty_box') {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        },
-        predicate: (gameState, entity) => {
-            if (gameState.dayNumber !== 1) return false;
-            if (gameState.currentRoomId !== 'main') return false;
-
-            // Target the specific counter next to soda fountain (2,3)
-            if (!gameState.grid) return false;
-            if (gameState.grid.getCell(2, 3) !== entity) return false;
-
-            // Show if holding the patty box
-            return gameState.player.heldItem && gameState.player.heldItem.definitionId === 'patty_box';
-        }
-    },
-    {
-        id: 'open_patty_box',
-        text: "Open!\n[INTERACT]",
-        targetType: 'patty_box',
-        completionPredicate: (gameState) => {
-            // Complete if any patty box is open
-            if (gameState.grid) {
-                for (let y = 0; y < gameState.grid.height; y++) {
-                    for (let x = 0; x < gameState.grid.width; x++) {
-                        const cell = gameState.grid.getCell(x, y);
-                        if (cell.object && cell.object.definitionId === 'patty_box' && cell.object.state.isOpen) return true;
-                    }
-                }
-            }
-            return false;
-        },
-        predicate: (gameState, entity) => {
-            if (gameState.dayNumber !== 1) return false;
-            if (gameState.currentRoomId !== 'main') return false;
-
-            // Don't show if held (wait for it to be placed)
-            if (gameState.player.heldItem === entity.object) return false;
-
-            // Only show if closed
-            return entity.object && !entity.object.state.isOpen;
-        }
-    },
-    {
-        id: 'take_patty',
-        text: "Take!\n[PICK_UP]",
-        targetType: 'patty_box',
-        completionPredicate: (gameState) => {
-            // Complete if player is holding a beef patty
-            return gameState.player.heldItem && gameState.player.heldItem.definitionId === 'beef_patty';
-        },
-        predicate: (gameState, entity) => {
-            if (gameState.dayNumber !== 1) return false;
-            // Only show on open boxes
-            return entity.object && entity.object.state.isOpen;
-        }
-    },
-    {
-        id: 'cook_patty',
-        text: "Cook!\n[PICK_UP]",
+        id: 'deal_patty',
+        text: "Deal!\n[INTERACT]",
         targetType: 'GRILL',
-        completionPredicate: (gameState) => {
-            if (!gameState.grid) return false;
-            // Complete if there is a COOKED patty on any stove tile
-            for (let y = 0; y < gameState.grid.height; y++) {
-                for (let x = 0; x < gameState.grid.width; x++) {
-                    const cell = gameState.grid.getCell(x, y);
-                    if (cell.type.id === 'GRILL' && cell.object &&
-                        cell.object.definitionId === 'beef_patty' &&
-                        cell.object.state.cook_level === 'cooked') {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        },
+        completionPredicate: (gameState) => isPattyCooking(gameState),
         predicate: (gameState, entity) => {
             if (gameState.dayNumber !== 1) return false;
-            // Only show if holding a patty
-            if (!gameState.player.heldItem || gameState.player.heldItem.definitionId !== 'beef_patty') return false;
+            if (gameState.currentRoomId !== 'main') return false;
+
+            // Only show if holding a patty box
+            if (!gameState.player.heldItem || gameState.player.heldItem.definitionId !== 'patty_box') return false;
 
             // Find all grills to identify the middle one
             const grills = [];
-            if (gameState.grid) {
-                for (let y = 0; y < gameState.grid.height; y++) {
-                    for (let x = 0; x < gameState.grid.width; x++) {
-                        const cell = gameState.grid.getCell(x, y);
+            const mainRoom = gameState.rooms['main'];
+            if (mainRoom) {
+                for (let y = 0; y < mainRoom.height; y++) {
+                    for (let x = 0; x < mainRoom.width; x++) {
+                        const cell = mainRoom.getCell(x, y);
                         if (cell.type.id === 'GRILL') {
                             grills.push({ x, y, cell });
                         }
@@ -289,11 +208,7 @@ export const TUTORIAL_STEPS = [
             }
 
             if (grills.length === 0) return false;
-
-            // Sort by x position
             grills.sort((a, b) => a.x - b.x);
-
-            // Target the middle grill
             const middleIndex = Math.floor((grills.length - 1) / 2);
             return entity === grills[middleIndex].cell;
         }
@@ -399,18 +314,6 @@ export const TUTORIAL_STEPS = [
         }
     },
     {
-        id: 'add_second_burger',
-        text: "One more [burger-wrapped.png]!",
-        targetType: 'bag',
-        completionPredicate: (gameState) => gameState.dailyBagsSold > 0,
-        predicate: (gameState, entity) => {
-            if (gameState.dayNumber !== 1) return false;
-            // Target bag with exactly 1 burger
-            if (entity.object && getBagBurgerCount(entity.object) === 1) return true;
-            return false;
-        }
-    },
-    {
         id: 'retrieve_essentials',
         text: "Get the rest!",
         targetType: 'SHUTTER_DOOR',
@@ -421,36 +324,6 @@ export const TUTORIAL_STEPS = [
 
             // Show if any patty exists (raw/cooked) OR burger, AND we don't have everything yet
             return isPattyOrBurger(gameState) && !areAllEssentialsInKitchen(gameState);
-        }
-    },
-    {
-        id: 'check_orders_wheel',
-        targetType: 'TICKET_WHEEL',
-        text: (gameState) => {
-            if (gameState.ticketWheelAnimStartTime && (Date.now() - gameState.ticketWheelAnimStartTime < 1000)) {
-                return "Swapped ticket!\n[VIEW_ORDERS]";
-            }
-            return "Check!\n[VIEW_ORDERS]";
-        },
-        completionPredicate: (gameState) => gameState.isViewingOrders,
-        predicate: (gameState) => {
-            if (gameState.dayNumber !== 1) return false;
-            if (gameState.currentRoomId !== 'main') return false;
-
-            // Only show after the 'one more burger' step is complete (first sale made)
-            return gameState.dailyBagsSold > 0;
-        }
-    },
-    {
-        id: 'prep_time_warning',
-        text: "[INTERACT]\nto start cooking!",
-        targetType: 'TICKET_WHEEL',
-        predicate: (gameState) => {
-            if (gameState.showPrepTimeWarning && gameState.prepTimeWarningStartTime) {
-                // Show for 3 seconds after trigger
-                return (Date.now() - gameState.prepTimeWarningStartTime) < 3000;
-            }
-            return false;
         }
     }
 ];

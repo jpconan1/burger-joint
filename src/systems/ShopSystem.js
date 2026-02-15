@@ -9,166 +9,17 @@ export class ShopSystem {
     constructor(game) {
         this.game = game;
         this.selectedRenoIndex = 0;
-        this.selectedComputerItemId = null;
+        // this.selectedComputerItemId = null;
     }
 
-    handleComputerInput(event) {
-        // Navigation through ONLY Supply items (Boxes)
-        // We filter shopItems dynamically or cache it? Filter is cheap for small lists.
-        const computerItems = this.game.shopItems.filter(i => i.type === 'supply');
+    // handleComputerInput(event) {
+    //    // Removed obsolete supply ordering logic
+    // }
 
-        // Grid Navigation: 4 columns
-        const cols = 4;
-
-        // Find current selection
-        let selectedIndex = computerItems.findIndex(i => i.id === (this.selectedComputerItemId || computerItems[0].id));
-        if (selectedIndex === -1) selectedIndex = 0;
-
-        if (event.code === 'ArrowRight' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_RIGHT)) {
-            if (selectedIndex % cols === (cols - 1)) {
-                return 'START_DAY';
-            }
-            selectedIndex++;
-        }
-        if (event.code === 'ArrowLeft' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_LEFT)) selectedIndex--;
-        if (event.code === 'ArrowDown' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_DOWN)) selectedIndex += cols;
-        if (event.code === 'ArrowUp' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_UP)) selectedIndex -= cols;
-
-        // Clamp
-        if (selectedIndex < 0) selectedIndex = 0;
-        if (selectedIndex >= computerItems.length) selectedIndex = computerItems.length - 1;
-
-        this.selectedComputerItemId = computerItems[selectedIndex].id;
-
-        if (event.code === 'Enter' || event.code === this.game.settings.getBinding(ACTIONS.INTERACT)) {
-            if (event.repeat) return;
-            const item = computerItems[selectedIndex];
-
-            // 1. Determine Price & Mode
-            const isRush = this.game.isRushMode;
-            // Rush Markup: +100% (2x)
-            const price = isRush ? item.price * 2 : item.price;
-
-
-
-            if (!item.unlocked) {
-                this.game.addFloatingText("Item is Locked!", this.game.player.x, this.game.player.y, '#ff0000');
-                return;
-            }
-
-            // 2. Handle Purchase Logic
-            if (isRush) {
-                // RUSH MODE: Immediate Delivery
-                // Find space and spawn
-                let targetCell = null;
-                const rooms = ['store_room', 'office'];
-
-                for (const roomId of rooms) {
-                    const room = this.game.rooms[roomId];
-                    if (!room) continue;
-                    for (let y = 0; y < room.height; y++) {
-                        for (let x = 0; x < room.width; x++) {
-                            const cell = room.getCell(x, y);
-                            // Find empty spot (Relaxed: Delivery Tile OR Floor)
-                            if (!cell.object && (cell.type.id === 'DELIVERY_TILE' || cell.type.id === 'FLOOR')) {
-                                targetCell = cell;
-                                break;
-                            }
-                        }
-                        if (targetCell) break;
-                    }
-                    if (targetCell) break;
-                }
-
-                if (targetCell) {
-                    this.game.money -= price;
-                    const instance = new ItemInstance(item.id);
-                    if (item.id === 'insert') instance.state.count = 3;
-                    targetCell.object = instance;
-
-                    this.game.updateCapabilities();
-                    this.game.addFloatingText(`Rush Ordered ${item.id} (-$${price})`, this.game.player.x, this.game.player.y, '#ff4444');
-                } else {
-                    console.log("No space to place item!");
-                    this.game.addFloatingText("No Space!", this.game.player.x, this.game.player.y, '#ff0000');
-                }
-
-            } else {
-                // MORNING ORDER: Delayed Delivery
-                // Deduct money now
-                this.game.money -= price;
-
-                // Add to Pending Queue
-                if (!this.game.pendingOrders) this.game.pendingOrders = [];
-
-                // Check if we can merge validly? Or just push object
-                const existing = this.game.pendingOrders.find(o => o.id === item.id);
-                if (existing) {
-                    existing.qty = (existing.qty || 1) + 1;
-                } else {
-                    this.game.pendingOrders.push({ id: item.id, qty: 1 });
-                }
-
-                this.game.addFloatingText(`Ordered for Morning (-$${price})`, this.game.player.x, this.game.player.y, '#00ff00');
-            }
-        }
-
-        if (event.code === 'Escape') {
-            if (this.game.isDayActive) {
-                this.game.gameState = 'PLAYING';
-            } else {
-                this.game.gameState = 'POST_DAY';
-            }
-        }
-    }
-
-    getInventoryCount(itemId) {
-        // itemId e.g. 'patty_box'
-        const def = DEFINITIONS[itemId];
-        // If it's a box, we want to know what it produces?
-        // Or if the item IS the box (e.g. wrapper_box), we count wrapper_box + wrapper?
-        // DEFINITIONS[itemId].produces -> 'beef_patty'
-
-        // Count Loose Items + Items in Boxes
-        let count = 0;
-        const targetId = def ? def.produces : null; // e.g. beef_patty
-
-        // Scan Rooms
-        Object.values(this.game.rooms).forEach(room => {
-            if (!room) return;
-            for (let y = 0; y < room.height; y++) {
-                for (let x = 0; x < room.width; x++) {
-                    const cell = room.getCell(x, y);
-                    const obj = cell.object;
-                    if (obj) {
-                        // 1. Box itself (e.g. patty_box)
-                        if (obj.definitionId === itemId && obj.state && obj.state.count !== undefined) {
-                            count += obj.state.count;
-                        }
-                        // 2. Loose Product (e.g. beef_patty)
-                        else if (targetId && obj.definitionId === targetId) {
-                            count += 1;
-                        }
-                    }
-                }
-            }
-        });
-
-        // Add Cart content (Full Boxes)
-        const inCart = this.game.cart[itemId] || 0;
-        const perBox = def ? (def.maxCount || 1) : 1;
-        count += inCart * perBox;
-
-        // Add Pending Orders (Morning Delivery)
-        if (this.game.pendingOrders) {
-            const pending = this.game.pendingOrders.find(o => o.id === itemId);
-            if (pending) {
-                count += pending.qty * perBox;
-            }
-        }
-
-        return count;
-    }
+    // getInventoryCount(itemId) {
+    //    // Removed
+    //    return 0;
+    // }
 
     hasAppliance(itemId, tileTypeId) {
         // 1. Check Storage
@@ -259,8 +110,6 @@ export class ShopSystem {
                             this.game.expandKitchen();
                             currentItem.price *= 2; // Increase price
                             // if (this.game.audioSystem) this.game.audioSystem.playSound(ASSETS.AUDIO.PRINTER);
-                        } else {
-                            this.game.addFloatingText("Not enough money", this.game.player.x, this.game.player.y, '#ff0000');
                         }
                     } else if (currentItem.id === 'build_mode') {
                         this.game.constructionSystem.enterBuildMode();
@@ -305,8 +154,6 @@ export class ShopSystem {
                             }
                         }
 
-                    } else {
-                        this.game.addFloatingText("Not enough money", this.game.player.x, this.game.player.y, '#ff0000');
                     }
                 }
             }

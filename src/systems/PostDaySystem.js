@@ -18,10 +18,11 @@ export class PostDaySystem {
         // Row 0: Daily Rewards (3 items)
         // Row 0: Daily Rewards (3 items)
         // Row 1: Edit Kitchen / Edit Menu / Next Day (3 items)
-        this.selection = { row: 1, col: 2 };
+        this.selection = { row: 1, col: 1 };
 
         this.dailyRewards = []; // { def, claimed }
-        this.supplyItems = []; // { def, shopItem, cost }
+        this.dailyRewards = []; // { def, claimed }
+        // this.supplyItems = []; // Deprecated
 
         this.rewardClaimed = false;
     }
@@ -29,19 +30,19 @@ export class PostDaySystem {
     start() {
         this.reset();
         this.generateDailyRewards();
-        // this.generateSupplyItems(); // DISABLED
+        // this.generateSupplyItems(); // Deprecated
 
         // Default selection logic
         if (this.dailyRewards.length > 0) {
             this.selection = { row: 0, col: 0 };
         } else {
-            this.selection = { row: 1, col: 2 };
+            this.selection = { row: 1, col: 1 };
         }
     }
 
-    generateSupplyItems() {
-        this.supplyItems = []; // DISABLED
-    }
+    // generateSupplyItems() {
+    //    // Deprecated
+    // }
 
     generateDailyRewards() {
         // Generate 3 random candidates from the "Category 0" pool (Toppings, New Items)
@@ -153,89 +154,11 @@ export class PostDaySystem {
         }));
     }
 
-    calculateAutoRestock() {
-        console.log("Auto-Restock disabled for unlimited boxes.");
-        // DISABLED
-    }
+    // calculateAutoRestock() {
+    //    // Deprecated
+    // }
 
-    getDetailedInventoryCount(supplyId) {
-        let count = 0;
-        const def = DEFINITIONS[supplyId];
-        if (!def) return 0;
-        const prodId = def.produces || supplyId;
-
-        const yieldPerItem = this.getServingYield(prodId);
-
-        // Scan Rooms
-        Object.values(this.game.rooms).forEach(room => {
-            for (let y = 0; y < room.height; y++) {
-                for (let x = 0; x < room.width; x++) {
-                    const cell = room.getCell(x, y);
-
-                    // IGNORE DELIVERY TILES
-                    if (cell.type.id === 'DELIVERY_TILE') continue;
-
-                    // 1. Objects on floor/counters
-                    if (cell.object) {
-                        // Box/Self
-                        if (cell.object.definitionId === supplyId) {
-                            let itemCount = 0;
-                            if (cell.object.state && cell.object.state.count !== undefined) itemCount = cell.object.state.count;
-                            else itemCount = (def.maxCount || 1);
-
-                            count += (itemCount * yieldPerItem);
-                        }
-                        // Product (e.g. patty, syrup bottle)
-                        else if (cell.object.definitionId === prodId) {
-                            count += yieldPerItem;
-                        }
-                        // Contents (Inserts/Bags)
-                        else if (cell.object.state && cell.object.state.contents) {
-                            cell.object.state.contents.forEach(inItem => {
-                                if (inItem.definitionId === prodId) count += yieldPerItem;
-                            });
-                        }
-                    }
-
-                    // 3b. Sauces in Dispensers (Charges)
-                    if (cell.type.id === 'DISPENSER') {
-                        const state = cell.state || {};
-                        if (state.bagId === prodId) {
-                            count += (state.charges || 0); // Already in servings
-                        } else if (state.status === 'has_mayo' && supplyId === 'mayo_box') {
-                            count += (state.charges || 0);
-                        }
-                    }
-
-                    // 3c. Drinks in Soda Fountains (Charges)
-                    if (cell.type.id === 'SODA_FOUNTAIN') {
-                        const state = cell.state || {};
-                        if (state.syrupId === prodId) {
-                            count += (state.charges || 0); // Already in servings
-                        }
-                    }
-                }
-            }
-        });
-
-        return count;
-    }
-
-    getServingYield(itemId) {
-        const def = DEFINITIONS[itemId];
-        if (!def) return 1;
-
-        // Hardcoded Yields for Bulk Items
-        // These values should ideally match the default charges defined in InteractionHandlers
-        if (def.category === 'syrup') return 20;
-        if (def.category === 'sauce_refill' || def.type === 'SauceContainer') return 15;
-        if (def.id === 'lettuce_head') return 8;
-
-        // Fallback to definition state
-        if (def.initialState && def.initialState.charges) return def.initialState.charges;
-
-        return 1;
-    }
+    // getDetailedInventoryCount / getServingYield Removed
 
     handleInput(event, settings) {
 
@@ -259,8 +182,8 @@ export class PostDaySystem {
 
         // Determine grid structure
         const rewardsCount = this.dailyRewards.length + (hasRewards && !this.rewardClaimed ? 1 : 0); // +1 for Reroll
-        const supplyCount = this.supplyItems.length;
-        const actionCount = 3;
+        // const supplyCount = this.supplyItems.length;
+        const actionCount = 2;
 
         const rowCounts = {
             0: rewardsCount,
@@ -340,25 +263,21 @@ export class PostDaySystem {
                 reward.claimed = true;
                 this.rewardClaimed = true;
                 this.game.addFloatingText("Claimed!", this.game.player.x, this.game.player.y, '#ffd700');
-                this.generateSupplyItems();
+                // this.generateSupplyItems(); // Deprecated
             }
         } else if (row === 1) {
             // EDIT KITCHEN / EDIT MENU / NEXT DAY
             if (col === 0) { // Edit Kitchen (Build)
                 this.game.enterBuildMode();
                 this.cleanupDOM();
-            } else if (col === 1) { // Edit Menu
-                this.game.gameState = 'MENU_CUSTOM';
-                this.game.menuSystem.expandedSlotIndex = null;
-                this.cleanupDOM();
-            } else if (col === 2) { // Next Day
+            } else if (col === 1) { // Next Day (Shifted from col 2)
                 const isLocked = this.dailyRewards.length > 0 && !this.rewardClaimed;
                 if (!isLocked) {
                     this.calculateAutoRestock();
                     this.game.startDay();
                     this.cleanupDOM();
                 } else {
-                    this.game.audioSystem.playSFX('error'); // Optional: feedback if they try to click locked
+                    this.game.audioSystem.playSFX('error');
                 }
             }
         }
@@ -411,7 +330,7 @@ export class PostDaySystem {
         // 2. Update Stats
         const statsEl = document.getElementById('pd-stats');
         if (statsEl) {
-            statsEl.innerText = `Money: $${Math.floor(this.game.money)}`;
+            statsEl.innerText = '';
         }
 
         // 3. Update Rows
@@ -427,7 +346,6 @@ export class PostDaySystem {
         // Row 1: Edit Kitchen / Edit Menu / Next Day
         this.updateActionRowDOM('pd-row-1', 1, [
             { label: 'Edit Kitchen', id: 'build_mode', image: true },
-            { label: 'Edit Menu', id: 'menu_custom', image: true },
             { label: 'Next Day', id: 'start_day', image: true }
         ]);
     }
@@ -476,24 +394,12 @@ export class PostDaySystem {
                     el.classList.remove('supply-card');
                     this.buildRewardContent(el, item);
                 } else if (rowIndex === 1) { // Supply
-                    el.classList.add('supply-card');
-                    el.classList.remove('reward-card');
-                    this.buildSupplyContent(el, item);
+                    // Deprecated
                 }
                 el.dataset.itemId = itemId;
                 el.dataset.claimed = claimed;
             } else if (rowIndex === 1) {
-                // Smart Update for Supply Meter (avoid full rebuild to keep animations if possible, or just update data)
-                const def = item.def;
-                const maxCount = def.maxCount || 1;
-                const currentCount = this.getBoxedSupplyCount(def.id);
-                const ratio = Math.min(currentCount / maxCount, 1.0);
-
-                // Check if visually different
-                const prevRatio = parseFloat(el.dataset.ratio || -1);
-                if (Math.abs(ratio - prevRatio) > 0.01) {
-                    this.buildSupplyContent(el, item); // Rebuild to update meter
-                }
+                // Deprecated (Supply Meter Update)
             }
 
             // -- Selection State --
@@ -552,115 +458,8 @@ export class PostDaySystem {
                 ` : ''}
             </div>
             <div class="label item-text" style="position: absolute; top: -55px; width: 200%; left: -50%; text-align: center; font-size: 1rem; color: white;">${def.id.replace(/_/g, ' ')}</div>
+                <div class="label item-text" style="position: absolute; top: -55px; width: 200%; left: -50%; text-align: center; font-size: 1rem; color: white;">${def.id.replace(/_/g, ' ')}</div>
         `;
-    }
-
-    buildSupplyContent(el, item) {
-        const def = item.def;
-        // Logic for icon: use closed box texture or fallback
-        const iconName = def.texture || `${def.id}-closed.png`;
-
-        // Calculate Supply Meter
-        const maxCount = def.maxCount || 1;
-        const currentCount = this.getBoxedSupplyCount(def.id);
-        const ratio = Math.min(currentCount / maxCount, 1.0);
-
-        el.dataset.ratio = ratio; // Store for update check
-
-        let color = '#ff0000'; // Red (< 0.25)
-        if (ratio > 0.5) color = '#00ff00'; // Green
-        else if (ratio >= 0.25) color = '#ffff00'; // Yellow
-
-        // Max height reduced to 57px (from 63px) to allow 3px padding top/bottom
-        const barHeight = Math.floor(ratio * 57);
-        // Use percentage for CSS transition smoothness if we were updating style directly, but px is fine too.
-        // Actually, let's use percentage of the container (63pxish) 
-        // 57px is ~90% of 63. Let's stick to px for precision.
-
-        el.style.background = 'none';
-        el.style.border = 'none';
-
-        el.innerHTML = `
-            <div style="position: relative; display: inline-block;">
-                <div class="supply-boil-bg"></div>
-                <img class="item-icon" src="assets/${iconName}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.8); z-index: 1; image-rendering: pixelated; max-width: 48px; max-height: 48px;">
-                
-                <div class="item-text" style="position: absolute; bottom: 4px; width: 100%; text-align: center; z-index: 2; font-size: 1rem; color: white; pointer-events: none;">
-                    $${item.cost}
-                </div>
-
-                <!-- Supply Meter -->
-                <div style="position: absolute; right: -20px; bottom: 0; width: 15px; height: 63px;">
-                    <!-- Inner Bar: 9px wide (3px margin left/right), starts 3px from bottom -->
-                    <div class="supply-meter-bar" style="position: absolute; bottom: 3px; left: 3px; width: 9px; height: ${barHeight}px; background-color: ${color}; transition: height 0.3s; pointer-events: none;"></div>
-                    <img src="assets/ui/supply_meter.png" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; image-rendering: pixelated;">
-                </div>
-            </div>
-        `;
-    }
-
-    getBoxedSupplyCount(itemId, checked = new Set()) {
-        if (checked.has(itemId)) return 0;
-        checked.add(itemId);
-
-        // Count ONLY items in boxes (or full boxes in cart/pending)
-        // itemId should be the Box ID (e.g. patty_box)
-        const def = DEFINITIONS[itemId];
-        const perBox = def ? (def.maxCount || 1) : 1;
-
-        let count = 0;
-
-        // 1. Scan Rooms for this Item
-        Object.values(this.game.rooms).forEach(room => {
-            if (!room) return;
-            for (let y = 0; y < room.height; y++) {
-                for (let x = 0; x < room.width; x++) {
-                    const cell = room.getCell(x, y);
-                    const obj = cell.object;
-                    if (obj) {
-                        // Check if it's the item itself
-                        if (obj.definitionId === itemId) {
-                            if (obj.state && obj.state.count !== undefined) {
-                                count += obj.state.count;
-                            } else {
-                                count += 1;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // 2. Add Cart content (Full Boxes/Items)
-        const inCart = this.game.cart[itemId] || 0;
-        count += inCart * perBox;
-
-        // 3. Add Pending Orders (Morning Delivery)
-        if (this.game.pendingOrders) {
-            const pending = this.game.pendingOrders.find(o => o.id === itemId);
-            if (pending) {
-                count += pending.qty * perBox;
-            }
-        }
-
-        // 4. Recursive Upstream Check (Check Parent Box)
-        // If we are looking for 'ketchup_bag', also count them inside 'ketchup_box'
-        if (this.game && this.game.itemDependencyMap) {
-            const parentId = this.game.itemDependencyMap[itemId];
-            if (parentId) {
-                const parentDef = DEFINITIONS[parentId];
-                // Only follow if parent is a Box (container of this item)
-                if (parentDef && parentDef.type === 'Box') {
-                    // Start from parent count. 
-                    // Note: ensureSupply/logic usually sums up atomic units (patties, bags). 
-                    // getBoxedSupplyCount for a Box returns the sum of items inside it.
-                    // So we can just add the result directly.
-                    count += this.getBoxedSupplyCount(parentId, checked);
-                }
-            }
-        }
-
-        return count;
     }
 
     updateActionRowDOM(elementId, rowIndex, actions) {

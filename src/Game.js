@@ -22,6 +22,8 @@ import { TouchInputSystem } from './systems/TouchInputSystem.js';
 
 import { RatingPopup } from './ui/RatingPopup.js';
 import { AlertSystem } from './systems/AlertSystem.js';
+import { AutomatedRewardSystem } from './systems/AutomatedRewardSystem.js';
+import { PowerupSystem } from './systems/PowerupSystem.js';
 
 export class Game {
     constructor() {
@@ -41,6 +43,8 @@ export class Game {
         this.constructionSystem = new ConstructionSystem(this);
         this.menuSystem = new MenuSystem(this);
         this.touchInputSystem = new TouchInputSystem(this);
+        this.automatedRewardSystem = new AutomatedRewardSystem(this);
+        this.powerupSystem = new PowerupSystem(this);
 
         this.gameState = 'TITLE'; // TITLE, PLAYING, PLACEMENT, SETTINGS
         this.titleSelection = 0; // 0: New Game, 1: Settings
@@ -80,7 +84,7 @@ export class Game {
         this.rooms = {};
         this.currentRoomId = 'main';
         this.ticketWheelAnimStartTime = 0;
-        this.activeTicketIndex = 0;
+
 
         // Economy & Day Cycle
         this.money = 0;
@@ -103,10 +107,18 @@ export class Game {
         this.highScore = parseInt(localStorage.getItem('burger_joint_highscore')) || 0;
         this.sessionTickets = 0;
         this.dailyBagsSold = 0;
+        this.timeFreezeTimer = 0;
 
         // Stability Meter
         this.stability = 100;
+        // Stability Meter
+        this.stability = 100;
         this.maxStability = 100;
+
+        // Shift Tracking
+        this.currentShift = 'DAY'; // 'DAY' or 'NIGHT'
+        this.shiftCount = 0;
+        this.pattyBoxTutorialShown = false;
 
 
 
@@ -205,7 +217,10 @@ export class Game {
 
         // Cart for current order: { itemId: quantity }
         this.cart = {};
-        this.shopItems.forEach(item => this.cart[item.id] = 0);
+        // Cart for current order: { itemId: quantity }
+        this.cart = {};
+        // this.shopItems.forEach(item => this.cart[item.id] = 0); // Deprecated
+
 
         this.selectedOrderItemIndex = 0;
 
@@ -254,8 +269,12 @@ export class Game {
     get selectedRenoIndex() { return this.shopSystem.selectedRenoIndex; }
     set selectedRenoIndex(v) { this.shopSystem.selectedRenoIndex = v; }
 
-    get selectedComputerItemId() { return this.shopSystem.selectedComputerItemId; }
-    set selectedComputerItemId(v) { this.shopSystem.selectedComputerItemId = v; }
+    get selectedRenoIndex() { return this.shopSystem.selectedRenoIndex; }
+    set selectedRenoIndex(v) { this.shopSystem.selectedRenoIndex = v; }
+
+    // Computer Item Selection (Deprecated)
+    // get selectedComputerItemId() { return this.shopSystem.selectedComputerItemId; }
+    // set selectedComputerItemId(v) { this.shopSystem.selectedComputerItemId = v; }
 
     get isRushMode() {
         // RUSH if Day is Active AND Queue is NOT finished
@@ -270,9 +289,9 @@ export class Game {
         this.constructionSystem.exitBuildMode();
     }
 
-    getInventoryCount(itemId) {
-        return this.shopSystem.getInventoryCount(itemId);
-    }
+    // getInventoryCount(itemId) {
+    //    return this.shopSystem.getInventoryCount(itemId);
+    // }
 
     expandKitchen() {
         console.log("Expanding Kitchen!");
@@ -439,55 +458,8 @@ export class Game {
                 toppingId = pDef.id;
             }
 
-            // Add to Plain Burger (Index 0)
-            const plainSlot = this.menuSystem.menuSlots[0];
-            if (plainSlot && toppingId) {
-                // Check if already there
-                // Check if already there and clean up any potential duplicates (especially "required" ones that shouldn't be there)
-                // Filter out any existing instances of this topping to ensure we start fresh
-                plainSlot.state.toppings = plainSlot.state.toppings.filter(t => t.definitionId !== toppingId);
-
-                // Add as optional
-                plainSlot.state.toppings.push({ definitionId: toppingId, optional: true });
-                console.log(`Added ${toppingId} to Plain Burger (Optional)`);
-            }
-        } else {
-            // For Sides and Drinks
-            let itemId = null;
-            let pDef = itemDef.produces ? DEFINITIONS[itemDef.produces] : itemDef;
-
-            // For syrup -> drink logic
-            if (pDef.category === 'syrup' && pDef.result) {
-                itemId = pDef.result;
-            } else if (pDef.process && pDef.process.result) {
-                if (pDef.result) itemId = pDef.result;
-                else itemId = pDef.id;
-            } else if (pDef.fryContent) {
-                // Resolve fry content (Bag -> Raw -> Cooked)
-                const rawDef = DEFINITIONS[pDef.fryContent];
-                if (rawDef && rawDef.result) {
-                    itemId = rawDef.result;
-                } else {
-                    itemId = pDef.id;
-                }
-            } else {
-                itemId = pDef.id;
-            }
-
-            if (categoryIndex === 1) { // Side
-                if (itemDef.id === 'fry_box') itemId = 'fries'; // Manual Override
-
-                if (itemId && !this.menuSystem.sides.some(s => s.definitionId === itemId)) {
-                    this.menuSystem.sides.push({ definitionId: itemId });
-                    console.log(`Added ${itemId} to Menu Sides`);
-                }
-            } else if (categoryIndex === 2) { // Drink
-                if (itemId && !this.menuSystem.drinks.some(d => d.definitionId === itemId)) {
-                    this.menuSystem.drinks.push({ definitionId: itemId });
-                    console.log(`Added ${itemId} to Menu Drinks`);
-                }
-            }
         }
+
 
         // --- Helper Unlock Logic ---
         // "Helpers come free with your first side (1), drink (2) or topping (0) unlock"
@@ -599,6 +571,7 @@ export class Game {
 
     startNewGame() {
         console.log('Starting new game with default layout.');
+        this.pattyBoxTutorialShown = false;
 
         // Continue Title Theme (Muffled) for Day 0 Setup
         this.audioSystem.setMuffled(true);
@@ -613,9 +586,21 @@ export class Game {
         // const mainGrid = new Grid(GRID_WIDTH, GRID_HEIGHT);
         // mainGrid.deserialize(DEFAULT_LEVEL);
         // 1. Setup Main Room (Kitchen)
+        // 1. Setup Main Room (Kitchen)
         const mainGrid = new Grid(DEFAULT_LEVEL.width, DEFAULT_LEVEL.height);
         mainGrid.deserialize(DEFAULT_LEVEL);
         this.rooms['main'] = mainGrid;
+
+        // Spawn Starting Inserts (Stack of 9)
+        const insertStack = new ItemInstance('insert');
+        insertStack.state.count = 9;
+        // Bottom row, second last column
+        const startX = mainGrid.width - 2;
+        const startY = mainGrid.height - 1;
+        const targetCell = mainGrid.getCell(startX, startY);
+        if (targetCell && targetCell.type.id === 'COUNTER') {
+            targetCell.object = insertStack;
+        }
 
         // 2. Setup Store Room
         const storeRoomGrid = new Grid(DEFAULT_STORE_ROOM.width, DEFAULT_STORE_ROOM.height);
@@ -726,6 +711,9 @@ export class Game {
 
         this.postDaySystem.state = 'SUPPLY_ORDER';
         this.updateCapabilities();
+
+        // Show welcome alert for new players
+        this.alertSystem.trigger('welcome_alert');
     }
 
     updateCapabilities() {
@@ -1066,34 +1054,6 @@ export class Game {
         this.constructionSystem.handleInput(event);
     }
 
-    handleMenuInput(event) {
-        const result = this.menuSystem.handleInput(event, this.settings);
-        // Linear "NEXT" flow disabled for Hub-based navigation
-        /*
-        if (result === 'NEXT') {
-            if (this.gameState === 'MENU_CUSTOM') {
-                this.gameState = 'COMPUTER_ORDERING';
-                this.shopSystem.selectedComputerItemId = null;
-            }
-            return;
-        }
-        */
-        if (result) return;
-
-        if (event.code === 'Escape') {
-            // Explicitly hide the menu overlay
-            if (this.menuSystem) {
-                this.menuSystem.close();
-            }
-
-            if (this.isDayActive) {
-                this.gameState = 'PLAYING';
-            } else {
-                this.gameState = 'POST_DAY';
-            }
-            return;
-        }
-    }
 
 
     // Deprecated but kept for reference if needed (removed usage above)
@@ -1413,7 +1373,6 @@ export class Game {
 
         this.queueFinishedTime = null;
         this.activeTickets = [];
-        this.activeTicketIndex = 0;
         this.orders = [];
         this.gameState = 'PLAYING';
         this.isDayActive = true;
@@ -1472,12 +1431,12 @@ export class Game {
         this.audioSystem.playMusic(songIntro, songLoop);
         this.audioSystem.setMuffled(false);
 
-        // --- PREP TIME LOGIC ---
+        // --- PREP TIME REMOVED ---
         const complexity = this.menuSystem.calculateComplexity();
-        this.prepTime = Infinity;
-        this.maxPrepTime = 15 + Math.floor(complexity) * 5;
-        this.isPrepTime = true;
-        this.ticketTimer = 0; // Reset timer so tickets don't start yet
+        this.prepTime = 0;
+        this.maxPrepTime = 0;
+        this.isPrepTime = false;
+        this.ticketTimer = 0;
 
         // Reset Stability
         this.stability = 100;
@@ -1498,8 +1457,11 @@ export class Game {
         }
 
         // Initialize Loop Timers
+        // Initialize Loop Timers
         this.dayTimer = 0; // Starts at 0 (Morning)
-        this.ticketSpawnTimer = 0;
+        this.currentShift = 'DAY';
+        this.shiftCount = 0;
+        this.ticketSpawnTimer = 9999; // Force immediate ticket
         this.lightingIntensity = 0;
 
         console.log(`Starting Continuous Service Loop. Complexity: ${complexity})`);
@@ -1616,6 +1578,10 @@ export class Game {
         if (!this.keys) this.keys = {};
         this.keys[event.code] = true;
 
+        if (this.settings) {
+            this.settings.updateControlScheme(event.code);
+        }
+
         if (this.alertSystem && this.alertSystem.isVisible) {
             this.alertSystem.handleInput(event.code);
             return;
@@ -1628,22 +1594,27 @@ export class Game {
             console.log(`Cheat: Added $500. New Balance: ${this.money}`);
         }
 
-        if (event.code === 'KeyU' && event.shiftKey) {
-            this.unlockAllCheat();
+        if (event.code === 'KeyA' && event.shiftKey) {
+            this.alertSystem.trigger('unlock_alert', () => { }, {
+                rewards: [
+                    DEFINITIONS['bacon_box'],
+                    DEFINITIONS['cheddar_box'],
+                    DEFINITIONS['tomato_box']
+                ]
+            });
         }
 
         if (this.gameState === 'TITLE') {
-            const UP = this.settings.getBinding(ACTIONS.MOVE_UP);
-            const DOWN = this.settings.getBinding(ACTIONS.MOVE_DOWN);
-            const SELECT = [this.settings.getBinding(ACTIONS.INTERACT), 'Enter', 'Space'];
+            const action = this.settings.getAction(event.code);
+            const SELECT = ['Enter', 'Space'];
 
-            if (event.code === UP || event.code === 'ArrowUp') {
+            if (action === ACTIONS.MOVE_UP) {
                 this.titleSelection--;
                 if (this.titleSelection < 0) this.titleSelection = 1;
-            } else if (event.code === DOWN || event.code === 'ArrowDown') {
+            } else if (action === ACTIONS.MOVE_DOWN) {
                 this.titleSelection++;
                 if (this.titleSelection > 1) this.titleSelection = 0;
-            } else if (SELECT.includes(event.code)) {
+            } else if (SELECT.includes(event.code) || action === ACTIONS.INTERACT) {
                 if (this.titleSelection === 0) {
                     // New Game
                     this.startNewGame();
@@ -1675,15 +1646,14 @@ export class Game {
                 return;
             }
 
-            const UP = this.settings.getBinding(ACTIONS.MOVE_UP);
-            const DOWN = this.settings.getBinding(ACTIONS.MOVE_DOWN);
-            const INTERACT = this.settings.getBinding(ACTIONS.INTERACT);
+            const action = this.settings.getAction(event.code);
 
             // Hardcoded navigation for menu in case user breaks bindings? 
             // It's safer to always allow Arrows/Enter in menus.
-            const isUp = event.code === UP || event.code === 'ArrowUp';
-            const isDown = event.code === DOWN || event.code === 'ArrowDown';
-            const isSelect = event.code === INTERACT || event.code === 'Enter' || event.code === 'Space';
+            const isUp = action === ACTIONS.MOVE_UP;
+            const isDown = action === ACTIONS.MOVE_DOWN;
+            const isSelect = action === ACTIONS.INTERACT || event.code === 'Enter' || event.code === 'Space';
+
             const isBack = event.code === 'Escape';
 
             // Define available items (Audio Toggles + Bindings)
@@ -1766,20 +1736,16 @@ export class Game {
             return;
         }
 
-        if (this.gameState === 'COMPUTER_ORDERING') {
-            this.handleComputerInput(event);
-            return;
-        }
+        // if (this.gameState === 'COMPUTER_ORDERING') {
+        //    this.handleComputerInput(event);
+        //    return;
+        // }
 
         if (this.gameState === 'RENO_SHOP') {
             this.handleRenoInput(event);
             return;
         }
 
-        if (this.gameState === 'MENU_CUSTOM') {
-            this.handleMenuInput(event);
-            return;
-        }
 
         if (this.gameState === 'BUILD_MODE') {
             if (this.gameState === 'BUILD_MODE') {
@@ -1806,14 +1772,16 @@ export class Game {
         const code = event.code;
 
         // Determine Action
-        if (code === this.settings.getBinding(ACTIONS.MOVE_UP)) dy = -1;
-        if (code === this.settings.getBinding(ACTIONS.MOVE_DOWN)) dy = 1;
-        if (code === this.settings.getBinding(ACTIONS.MOVE_LEFT)) dx = -1;
-        if (code === this.settings.getBinding(ACTIONS.MOVE_RIGHT)) dx = 1;
+        const action = this.settings.getAction(code);
+
+        if (action === ACTIONS.MOVE_UP) dy = -1;
+        if (action === ACTIONS.MOVE_DOWN) dy = 1;
+        if (action === ACTIONS.MOVE_LEFT) dx = -1;
+        if (action === ACTIONS.MOVE_RIGHT) dx = 1;
 
 
 
-        if (code === this.settings.getBinding(ACTIONS.PICK_UP)) {
+        if (action === ACTIONS.PICK_UP) {
             if (event.repeat) return; // Disable turbo for Pick Up
 
             // Block normal pickup if we just triggered the hold action (Appliance Pickup)
@@ -1836,14 +1804,14 @@ export class Game {
             this.player.actionPickUp(this.grid, this);
         }
 
-        if (code === this.settings.getBinding(ACTIONS.INTERACT)) {
+        if (action === ACTIONS.INTERACT) {
             if (event.repeat) return; // Disable turbo for Interact
 
             const facingCell = this.player.getTargetCell(this.grid);
-            if (facingCell && facingCell.type.id === 'COMPUTER') {
+            /* if (facingCell && facingCell.type.id === 'COMPUTER') {
                 this.gameState = 'COMPUTER_ORDERING';
                 return;
-            }
+            } */
             console.log('Interacting. Facing:', facingCell ? facingCell.type.id : 'null');
             if (facingCell && facingCell.type.id === 'RENO') {
                 console.log('entering Build Mode from Reno Tile');
@@ -1870,7 +1838,7 @@ export class Game {
                     console.log("Prep time ended by user interaction.");
                     return;
                 }
-                this.cycleActiveTicket();
+                // Removed cycleActiveTicket call
                 return;
             }
 
@@ -2070,7 +2038,21 @@ export class Game {
     update(dt) {
         if (!dt) return;
 
+        this.powerupSystem.update(dt);
         this.alertSystem.update(dt);
+
+        if (this.timeFreezeTimer > 0 && !this.timeFreezeManual) {
+            this.timeFreezeTimer = Math.max(0, this.timeFreezeTimer - dt);
+        }
+
+        // Patty Box Tutorial Trigger
+        const isHoldingPattyBox = this.player.heldItem && (this.player.heldItem.definitionId === 'patty_box');
+        if (isHoldingPattyBox && !this.pattyBoxTutorialShown) {
+            this.pattyBoxTutorialShown = true;
+            this.alertSystem.trigger('container_tutorial_1');
+            this.saveLevel();
+        }
+
 
         // Ticket Wheel Interaction
         if (this.gameState === 'PLAYING') {
@@ -2102,7 +2084,7 @@ export class Game {
         }
 
         // Ticket Arrival Logic
-        if (this.isDayActive) {
+        if (this.isDayActive && this.timeFreezeTimer <= 0) {
             // 0. Update Day/Night Cycle (Continuous Loop)
             if (!this.isPrepTime) {
                 this.dayTimer += dt / 1000;
@@ -2114,14 +2096,40 @@ export class Game {
 
                 const cyclePos = this.dayTimer % fullCycle;
 
-                // Calculate Lighting Intensity (0 = Day, 1 = Night)
-                // Triangle Wave: 0 -> 1 -> 0 over fullCycle
+                // Calculate Lighting Intensity (0 = Day/Clear, 1 = Max Darkness)
+                // New Requirement: Only visible during Night Shift (second half)
+                // Fade in to Peak, then fade out quickly.
                 if (cyclePos <= halfCycle) {
-                    // Morning to Night
-                    this.lightingIntensity = cyclePos / halfCycle;
+                    // Day Shift: No overlay
+                    this.lightingIntensity = 0;
+
+                    if (this.currentShift !== 'DAY') {
+                        this.currentShift = 'DAY';
+                        this.shiftCount++;
+                        this.automatedRewardSystem.processShiftChange(this.shiftCount);
+                    }
                 } else {
-                    // Night to Morning
-                    this.lightingIntensity = 1 - ((cyclePos - halfCycle) / halfCycle);
+                    // Night Shift
+                    if (this.currentShift !== 'NIGHT') {
+                        this.currentShift = 'NIGHT';
+                        this.shiftCount++;
+                        this.automatedRewardSystem.processShiftChange(this.shiftCount);
+                    }
+
+                    const nightElapsed = cyclePos - halfCycle;
+                    const nightProgress = nightElapsed / halfCycle; // 0.0 to 1.0
+                    const peakRatio = SCORING_CONFIG.GAME_PACING.NIGHT_PEAK_TIME_RATIO;
+
+                    if (nightProgress <= peakRatio) {
+                        // Fade In: 0 -> 1
+                        this.lightingIntensity = nightProgress / peakRatio;
+                    } else {
+                        // Fade Out: 1 -> 0
+                        // Remap remainder (peakRatio to 1.0) to (1.0 to 0.0)
+                        const remaining = 1.0 - peakRatio;
+                        const progressPastPeak = nightProgress - peakRatio;
+                        this.lightingIntensity = 1.0 - (progressPastPeak / remaining);
+                    }
                 }
 
                 // Ticket Generation Loop
@@ -2235,7 +2243,9 @@ export class Game {
                     drainRate = 2.0 + (count - 4);
                 }
 
-                this.stability -= (drainRate * (dt / 1000));
+                if (this.timeFreezeTimer <= 0) {
+                    this.stability -= (drainRate * (dt / 1000));
+                }
 
                 if (this.stability <= 0 && !this.timeoutAlertShown) {
                     console.log("Stability Depleted! Triggering Failure Alert!");
@@ -2269,7 +2279,7 @@ export class Game {
                             const currentStage = item.state.cook_level || 'raw';
                             const stageDef = item.definition.cooking.stages[currentStage];
 
-                            if (stageDef) {
+                            if (stageDef && this.timeFreezeTimer <= 0) {
                                 item.state.cookingProgress = (item.state.cookingProgress || 0) + dt;
                                 // Use time from definition, fallback to stove speed if defined (or combine?)
                                 // For now, let's use the definition duration as primary if it exists.
@@ -2286,7 +2296,7 @@ export class Game {
 
                     // Fryer Logic
                     if (cell.type.id === 'FRYER' && cell.state) {
-                        if (cell.state.status === 'down') {
+                        if (cell.state.status === 'down' && this.timeFreezeTimer <= 0) {
                             cell.state.timer = (cell.state.timer || 0) + dt;
 
                             let max = cell.state.cookingSpeed || 2000;
@@ -2312,7 +2322,7 @@ export class Game {
                             const currentStage = item.state.cook_level || 'raw';
                             const stageDef = item.definition.cooking.stages[currentStage];
 
-                            if (stageDef && stageDef.cookMethod === 'fry') {
+                            if (stageDef && stageDef.cookMethod === 'fry' && this.timeFreezeTimer <= 0) {
                                 item.state.cookingProgress = (item.state.cookingProgress || 0) + dt;
                                 // Use definition duration
                                 const requiredTime = stageDef.duration || 2000;
@@ -2328,7 +2338,7 @@ export class Game {
 
                     // Soda Fountain Logic (Tile)
                     if (cell.type.id === 'SODA_FOUNTAIN' && cell.state) {
-                        if (cell.state.status === 'filling') {
+                        if (cell.state.status === 'filling' && this.timeFreezeTimer <= 0) {
                             cell.state.timer = (cell.state.timer || 0) + dt;
                             const max = cell.state.fillDuration || 3000;
                             if (cell.state.timer >= max) {
@@ -2354,25 +2364,21 @@ export class Game {
                     }
 
                     // Service Counter Logic
-                    if (cell.type.id === 'SERVICE' && cell.object && cell.object.definitionId === 'bag') {
+                    if (cell.type.id === 'SERVICE' && cell.object && (cell.object.definitionId === 'bag' || cell.object.definitionId === 'magic_bag')) {
                         if (this.activeTickets.length > 0) {
 
-                            // Ensure activeTicketIndex is valid
-                            if (this.activeTicketIndex === undefined || this.activeTicketIndex < 0) {
-                                this.activeTicketIndex = 0;
-                            }
-
-                            // Try to satisfy ONLY the ACTIVE ticket
+                            // Try to satisfy ANY active ticket
                             let matchedTicketIndex = -1;
                             let matchResult = null;
 
-                            // Check if active index is within bounds
-                            if (this.activeTicketIndex < this.activeTickets.length) {
-                                const t = this.activeTickets[this.activeTicketIndex];
+                            // Iterate all active tickets
+                            for (let i = 0; i < this.activeTickets.length; i++) {
+                                const t = this.activeTickets[i];
                                 const res = t.verifyBag(cell.object);
                                 if (res.matched) {
-                                    matchedTicketIndex = this.activeTicketIndex;
+                                    matchedTicketIndex = i;
                                     matchResult = res;
+                                    break; // Stop at first match
                                 }
                             }
 
@@ -2384,10 +2390,6 @@ export class Game {
                                 this.money += matchResult.payout;
                                 this.dailyMoneyEarned += matchResult.payout;
                                 this.dailyBagsSold++;
-
-                                // Update Display
-                                // We need to re-generate the orders display list
-                                // But first we check if ticket is totally done
 
                                 // Destroy Bag
                                 cell.object = null;
@@ -2414,9 +2416,6 @@ export class Game {
                                         message = "ON TIME";
                                         color = "#ffff00";
                                     } else {
-                                        // "Late" relative to Par, but in Universal Timer mode, this is just "Served"
-                                        // We do not penalize 'currentDayPerfect' here anymore. 
-                                        // Survival is the only metric for perfection.
                                         bonus = SCORING_CONFIG.REWARDS.SLOW;
                                         message = "SERVED";
                                         color = "#ffffff";
@@ -2427,10 +2426,7 @@ export class Game {
 
                                     this.addFloatingText(message + ` ($${bonus})`, x, y, color);
 
-                                    this.addFloatingText(message + ` ($${bonus})`, x, y, color);
-
                                     // Stability Refill
-                                    // Use Par Time as base for stability gain
                                     const stabilityGain = par;
                                     this.stability = Math.min(this.stability + stabilityGain, 100);
                                     this.addFloatingText(`Stability +${Math.round(stabilityGain)}%`, x, y - 1, '#00ffff');
@@ -2441,8 +2437,7 @@ export class Game {
                                     if (this.sessionTickets > this.highScore) {
                                         this.highScore = this.sessionTickets;
                                         localStorage.setItem('burger_joint_highscore', this.highScore);
-                                        // Optional: Celebrate new high score?
-                                        if (this.sessionTickets === this.highScore && this.sessionTickets > 1) { // Only notify if meaningful
+                                        if (this.sessionTickets === this.highScore && this.sessionTickets > 1) {
                                             this.addFloatingText("NEW HIGH SCORE!", x, y - 2, '#ffcc00');
                                         }
                                     }
@@ -2450,24 +2445,9 @@ export class Game {
                                     // Remove from active list
                                     this.activeTickets.splice(matchedTicketIndex, 1);
 
-                                    // Check if Day is Done (No queue, no active) - REMOVED AUTO END
-                                    /*
-                                    if (this.ticketQueue.length === 0 && this.activeTickets.length === 0) {
-                                        // End Day Immediately
-                                        setTimeout(() => {
-                                            this.endDay();
-                                        }, 1500);
-                                    }
-                                    */
-                                    // Adjust active index if needed
-                                    if (this.activeTicketIndex >= this.activeTickets.length) {
-                                        this.activeTicketIndex = 0;
-                                    }
+                                    // Refresh orders view
+                                    this.orders = this.activeTickets.map(t => t.toDisplayFormat());
                                 }
-                                // NOTE: If ticket is NOT complete, we do NOT remove it.
-
-                                // Refresh orders view
-                                this.orders = this.activeTickets.map(t => t.toDisplayFormat());
                             }
                         }
                     }
@@ -2732,7 +2712,7 @@ export class Game {
                 appliedExpansions: Array.from(this.appliedExpansions),
                 autoUpgradedAppliances: Array.from(this.autoUpgradedAppliances),
                 pendingOrders: this.pendingOrders,
-                pendingOrders: this.pendingOrders,
+                pattyBoxTutorialShown: this.pattyBoxTutorialShown,
                 rooms: {}
             };
 
@@ -2829,6 +2809,9 @@ export class Game {
             if (Array.isArray(data.autoUpgradedAppliances)) {
                 this.autoUpgradedAppliances = new Set(data.autoUpgradedAppliances);
             }
+            if (typeof data.pattyBoxTutorialShown === 'boolean') {
+                this.pattyBoxTutorialShown = data.pattyBoxTutorialShown;
+            }
 
             // Re-sort shop items
             this.sortShopItems();
@@ -2840,23 +2823,7 @@ export class Game {
         }
         return false;
     }
-    cycleActiveTicket() {
-        if (this.activeTickets.length <= 1) {
-            this.ticketWheelAnimStartTime = Date.now();
-            return;
-        }
 
-        // Just increment index instead of rotating array
-        this.activeTicketIndex++;
-        if (this.activeTicketIndex >= this.activeTickets.length) {
-            this.activeTicketIndex = 0;
-        }
-
-        console.log("Cycled active ticket index. Now pointing to:", this.activeTickets[this.activeTicketIndex].id);
-
-        // Trigger Animation
-        this.ticketWheelAnimStartTime = Date.now();
-    }
 
     addFloatingText(text, gridX, gridY, color = '#fff') {
         // Convert grid coords to pixel coords estimation or store grid coords and let renderer handle it
@@ -2871,12 +2838,12 @@ export class Game {
         });
     }
 
-    handleComputerInput(event) {
-        const result = this.shopSystem.handleComputerInput(event);
-        if (result === 'START_DAY') {
-            this.startDay();
-        }
-    }
+    // handleComputerInput(event) {
+    //    const result = this.shopSystem.handleComputerInput(event);
+    //    if (result === 'START_DAY') {
+    //        this.startDay();
+    //    }
+    // }
 
 
 

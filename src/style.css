@@ -774,27 +774,87 @@ canvas {
     transition: height 0.1s !important;
 }
 
-@keyframes boil {
+@keyframes boil-horizontal {
+    0% {
+        background-position: 0% 0%;
+    }
+
     100% {
-        background-position: 100% 0;
+        background-position: 150% 0%;
     }
 }
 
+@keyframes boil-vertical {
+    0% {
+        background-position: 0% 0%;
+    }
+
+    100% {
+        background-position: 0% 150%;
+    }
+}
+
+/* Generic horizontal boil (3 frames) */
 .boil-bg {
     width: 100%;
     height: 100%;
     background-size: 300% 100%;
-    background-image: url('assets/ui/button_background-boil.png');
-    animation: boil 0.4s steps(3) infinite;
+    background-image: url('/assets/ui/button_background-boil.png');
+    animation: boil-horizontal 0.4s steps(3) infinite;
+    image-rendering: pixelated;
+    display: block;
+    pointer-events: none;
+}
+
+/* Generic vertical boil (3 frames) */
+.boil-vertical-bg {
+    width: 100%;
+    height: 100%;
+    background-size: 100% 300%;
+    /* Default image, but can be overridden */
+    animation: boil-vertical 0.4s steps(3) infinite;
+    image-rendering: pixelated;
+    display: block;
+    pointer-events: none;
+}
+
+/* A class that can be applied to an element that ALREADY has a background-image spritesheet */
+.boiling-horizontal {
+    background-size: 300% 100% !important;
+    animation: boil-horizontal 0.4s steps(3) infinite !important;
+    image-rendering: pixelated !important;
+}
+
+.boiling-vertical {
+    background-size: 100% 300% !important;
+    animation: boil-vertical 0.4s steps(3) infinite !important;
+    image-rendering: pixelated !important;
+}
+
+.supply-boil-bg {
+    width: 100%;
+    height: 100%;
+    background-image: url('/assets/ui/supply_button_background-boil.png');
+    background-size: 300% 100%;
+    animation: boil-horizontal 0.4s steps(3) infinite;
     image-rendering: pixelated;
     display: block;
 }
 
-.supply-boil-bg {
-    width: 73px;
-    height: 73px;
-    background-image: url('assets/ui/supply_button_background-boil.png');
-    animation: boil 0.4s steps(3) infinite;
-    image-rendering: pixelated;
-    display: block;
+@keyframes bump-horizontal {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.1);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+.bump-ui {
+    animation: bump-horizontal 0.2s ease-out;
 }

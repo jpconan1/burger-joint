@@ -345,14 +345,10 @@ export class ConstructionSystem {
             if (isInteract) {
                 // Trigger Expansion Logic (Reuse from 'X' key logic)
                 const expandItem = this.game.shopItems.find(i => i.id === 'expansion');
-                if (expandItem) {
-                    if (this.game.money >= expandItem.price) {
-                        this.game.money -= expandItem.price;
-                        this.game.expandKitchen();
-                        expandItem.price *= 2; // Increase price
-                    } else {
-                        this.game.addFloatingText("Need $" + expandItem.price, state.x, state.y, '#ff0000');
-                    }
+                if (this.game.money >= expandItem.price) {
+                    this.game.money -= expandItem.price;
+                    this.game.expandKitchen();
+                    expandItem.price *= 2; // Increase price
                 }
                 return;
             }
@@ -398,7 +394,7 @@ export class ConstructionSystem {
             const appliances = this.game.shopItems.filter(i => i.type === 'appliance' && i.unlocked);
             appliances.forEach(app => {
                 options.push({
-                    label: `Buy ${app.id.replace('_', ' ').toUpperCase()} ($${app.price})`,
+                    label: `Buy ${app.id.replace('_', ' ').toUpperCase()}`,
                     action: 'buy',
                     itemId: app.id,
                     price: app.price,
@@ -516,9 +512,6 @@ export class ConstructionSystem {
                 this.state.isPurchase = false; // Stay in build mode
                 this.game.updateCapabilities();
                 console.log(`Bought ${option.itemId}`);
-
-            } else {
-                this.game.addFloatingText("Not enough money", state.x, state.y, '#ff0000');
             }
         }
     }

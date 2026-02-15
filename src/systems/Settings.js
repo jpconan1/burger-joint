@@ -20,12 +20,22 @@ export const DEFAULT_BINDINGS = {
 
 };
 
+export const ALT_BINDINGS = {
+    [ACTIONS.MOVE_UP]: 'ArrowUp',
+    [ACTIONS.MOVE_DOWN]: 'ArrowDown',
+    [ACTIONS.MOVE_LEFT]: 'ArrowLeft',
+    [ACTIONS.MOVE_RIGHT]: 'ArrowRight',
+    [ACTIONS.INTERACT]: 'KeyX',
+    [ACTIONS.PICK_UP]: 'KeyZ',
+};
+
 export class Settings {
     constructor() {
         this.bindings = { ...DEFAULT_BINDINGS };
         this.preferences = {
             musicEnabled: true,
             sfxEnabled: true,
+            controlScheme: 'primary'
         };
         this.load();
     }
@@ -35,23 +45,13 @@ export class Settings {
         if (stored) {
             try {
                 const parsed = JSON.parse(stored);
-                if (parsed.bindings) this.bindings = { ...this.bindings, ...parsed.bindings };
-                // Backwards compatibility for old format (which was just bindings)
-                else if (parsed.MOVE_UP) this.bindings = { ...this.bindings, ...parsed }; // It looked like definitions were at root level? No, stored was just bindings object.
-
-                // Oops, the previous save method was: localStorage.setItem('burger_joint_settings', JSON.stringify(this.bindings));
-                // So parsing it creates an object that IS the bindings.
-                // We need to detect if it's the new format { bindings: {}, preferences: {} } or old format { key: val }
-
                 if (parsed.bindings || parsed.preferences) {
-                    // New format
                     if (parsed.bindings) this.bindings = { ...this.bindings, ...parsed.bindings };
                     if (parsed.preferences) this.preferences = { ...this.preferences, ...parsed.preferences };
-                } else {
-                    // Old format (just bindings)
+                } else if (parsed.MOVE_UP) {
+                    // Old format
                     this.bindings = { ...this.bindings, ...parsed };
                 }
-
             } catch (e) {
                 console.error('Failed to load settings', e);
             }
@@ -71,16 +71,59 @@ export class Settings {
     }
 
     setBinding(action, code) {
-        // Optional: Check for conflicts?
-        // For now, allow duplicates or just overwrite.
-        // It is better to clear other actions using this code if we want to avoid conflicts.
-        // However, a simple overwrite is safer for MVP.
         this.bindings[action] = code;
         this.save();
     }
 
     getActionForCode(code) {
-        // Reverse lookup, useful for UI display or checking what key does
         return Object.keys(this.bindings).find(key => this.bindings[key] === code);
+    }
+
+    // --- Alt Controls Logic ---
+
+    getAction(code) {
+        // 1. Check Primary
+        const primary = this.getActionForCode(code);
+        if (primary) return primary;
+
+        // 2. Check Alt
+        return Object.keys(ALT_BINDINGS).find(key => ALT_BINDINGS[key] === code);
+    }
+
+    updateControlScheme(code) {
+        const isPrimary = Object.values(this.bindings).includes(code);
+        const isAlt = Object.values(ALT_BINDINGS).includes(code);
+
+        // Preference Switching
+        if (isAlt && !isPrimary) {
+            if (this.preferences.controlScheme !== 'alternative') {
+                console.log("Switching to Alternative Controls (Silent)");
+                this.preferences.controlScheme = 'alternative';
+                // Don't save to disk automatically unless desired? 
+                // "silently change the flag... messages should display the alt controls"
+                // Probably fine to keep in memory or save on specific actions.
+                // Let's save it so it persists if they reload.
+                this.save();
+            }
+        } else if (isPrimary && !isAlt) {
+            if (this.preferences.controlScheme !== 'primary') {
+                console.log("Switching to Primary Controls (Silent)");
+                this.preferences.controlScheme = 'primary';
+                this.save();
+            }
+        }
+    }
+
+    getDisplayKey(action) {
+        if (this.preferences.controlScheme === 'alternative') {
+            const alt = ALT_BINDINGS[action];
+            if (alt) return this.formatKeyName(alt);
+        }
+        const prim = this.bindings[action];
+        return prim ? this.formatKeyName(prim) : '???';
+    }
+
+    formatKeyName(code) {
+        return code.replace('Key', '').replace('Digit', '').replace('Arrow', '');
     }
 }

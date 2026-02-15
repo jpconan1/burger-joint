@@ -3,6 +3,7 @@ import { drawStabilityMeter } from '../renderers/StabilityMeterRenderer.js';
 import { DEFINITIONS } from '../data/definitions.js';
 import { SPRITE_DEFINITIONS } from '../data/sprite_definitions.js';
 import { TutorialOverlay } from '../renderers/TutorialOverlay.js';
+import { ACTIONS, ALT_BINDINGS } from './Settings.js';
 
 export class Renderer {
     constructor(canvasId, assetLoader) {
@@ -116,8 +117,10 @@ export class Renderer {
         this.ctx.translate(TILE_SIZE, TILE_SIZE);
 
         // Helper to check for counter connections
-        const isCounter = (id) => id === 'COUNTER';
+        const isCounter = (id) => id === 'COUNTER' || id === 'SERVICE';
         const isGrill = (id) => id === 'GRILL';
+
+        let serviceCounterIndex = 0;
 
         // 1. Draw Floor/Walls (Base Layer)
         const progressBars = [];
@@ -225,13 +228,13 @@ export class Renderer {
                 // Layer 0: Floor drawn in Pass 1
 
                 // Auto-tiling Logic for COUNTER and SERVICE base
-                if (cell.type.id === 'COUNTER') {
+                if (cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE') {
                     // Calculate Bitmask
                     // N=1, E=2, S=4, W=8
                     let mask = 0;
 
                     // North
-                    if (y > 0 && isCounter(gameState.grid.getCell(x, y - 1).type.id)) mask |= 1;
+                    if ((y > 0 && isCounter(gameState.grid.getCell(x, y - 1).type.id)) || (y === 0 && cell.type.id === 'SERVICE')) mask |= 1;
                     // East
                     if (x < gameState.grid.width - 1 && isCounter(gameState.grid.getCell(x + 1, y).type.id)) mask |= 2;
                     // South
@@ -259,7 +262,7 @@ export class Renderer {
                 let tileTexture = cell.type.texture;
 
                 // Prevent double-drawing COUNTER (handled by auto-tile above)
-                if (cell.type.id === 'COUNTER' || cell.type.id === 'GRILL') {
+                if (cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE' || cell.type.id === 'GRILL') {
                     tileTexture = null;
                 }
 
@@ -460,21 +463,7 @@ export class Renderer {
                 }
 
                 if (cell.type.id === 'SERVICE') {
-                    if (gameState.isPrepTime && gameState.maxPrepTime > 0) {
-                        const pct = isFinite(gameState.prepTime) ? Math.max(0, gameState.prepTime / gameState.maxPrepTime) : 1;
-                        this.drawServiceTimer(x, y, pct);
-                    } else if (gameState.activeTickets && gameState.activeTickets.length > 0) {
-                        // Use Global Service Timer for visualization
-                        let totalActivePar = 0;
-                        gameState.activeTickets.forEach(t => totalActivePar += t.parTime);
-
-                        if (totalActivePar > 0 && typeof gameState.serviceTimer === 'number') {
-                            // Percent of the "current workload" that we have time for
-                            // If we have extra time banked from previous orders, this might stay full longer, which is good.
-                            const pct = Math.min(1, Math.max(0, gameState.serviceTimer / totalActivePar));
-                            this.drawServiceTimer(x, y, pct);
-                        }
-                    }
+                    // Deprecated: Service Timer (removed)
                 }
 
                 // 1.5 Draw Soda Fountain Sign (Overlay)
@@ -535,12 +524,12 @@ export class Renderer {
                             }
                         }
                         let yOffset = 0;
-                        if (cell.type.id === 'COUNTER') {
+                        if (cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE') {
                             yOffset = -29;
                         }
 
                         let alpha = 1.0;
-                        if (cell.type.id === 'COUNTER') {
+                        if (cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE') {
                             if (gameState.player) {
                                 const playerX = Math.round(gameState.player.x);
                                 const playerY = Math.round(gameState.player.y);
@@ -617,17 +606,21 @@ export class Renderer {
                     }
                 }
 
-                // 2.7 Draw Box Quantity (Always, regardless of state)
+                // 2.7 Draw Box Quantity (Disabled: Unlimited)
+                /*
                 if (cell.object && cell.object.type === 'Box' && cell.object.state) {
                     const count = cell.object.state.count;
                     if (count !== undefined) {
                         this.drawTinyNumber(x, y, count);
                     }
                 }
+                */
 
                 // 2.8 Draw Service Counter Active Ticket Hints
                 if (cell.type.id === 'SERVICE') {
-                    this.drawServiceHint(x, y, gameState, cell.object);
+                    // For service counters, we use the same offset as normal counters
+                    this.drawServiceHint(x, y, gameState, cell.object, -29, serviceCounterIndex);
+                    serviceCounterIndex++;
                 }
             }
 
@@ -649,10 +642,17 @@ export class Renderer {
 
 
         // 3.5 Draw Lighting Effect
-        if (gameState.grid && gameState.lightingIntensity > 0) {
+        if (gameState.grid) {
             const gridPixelWidth = gameState.grid.width * TILE_SIZE;
             const gridPixelHeight = gameState.grid.height * TILE_SIZE;
-            this.drawLightingEffect(gridPixelWidth, gridPixelHeight, gameState.lightingIntensity);
+
+            if (gameState.lightingIntensity > 0) {
+                this.drawLightingEffect(gridPixelWidth, gridPixelHeight, gameState.lightingIntensity);
+            }
+
+            if (gameState.timeFreezeTimer > 0) {
+                this.drawTimeFreezeFilter(gridPixelWidth, gridPixelHeight);
+            }
         }
 
         // Draw End Day Stars (Overlay) via RatingPopup
@@ -697,7 +697,7 @@ export class Renderer {
 
         // 4. Draw UI Overlays (Screen Space)
         if (gameState.isViewingOrders) {
-            this.drawOrderTickets(gameState.orders || [], gameState.pickUpKey, gameState.penalty, gameState.possibleMenu, gameState.activeTicketIndex || 0);
+            this.drawOrderTickets(gameState.orders || [], gameState.pickUpKey, gameState.penalty, gameState.possibleMenu);
         }
 
         // Draw Stability Meter
@@ -718,9 +718,6 @@ export class Renderer {
         if (gameState.gameState === 'RENO_SHOP') {
             // console.log("Renderer: Calling renderRenoScreen");
             this.renderRenoScreen(gameState);
-        }
-        if (gameState.menuSystem) {
-            gameState.menuSystem.render(this);
         }
 
         if (gameState.gameState === 'APPLIANCE_SWAP' && gameState.swappingState) {
@@ -763,7 +760,10 @@ export class Renderer {
 
             // Draw Held Item (ItemInstance)
             if (gameState.player.heldItem) {
+                const isBox = gameState.player.heldItem.type === 'Box';
+                if (isBox) this.ctx.globalAlpha = 0.6;
                 this.drawEntity(gameState.player.heldItem, gameState.player.x, gameState.player.y);
+                if (isBox) this.ctx.globalAlpha = 1.0;
             }
 
             // Draw Held Appliance (New)
@@ -784,6 +784,8 @@ export class Renderer {
                 if (app.attachedObject) {
                     this.ctx.save();
                     this.ctx.translate(0, -20);
+                    const isBox = app.attachedObject.type === 'Box';
+                    if (isBox) this.ctx.globalAlpha = 0.6;
                     this.drawObject(app.attachedObject, gameState.player.x, gameState.player.y);
                     this.ctx.restore();
                 }
@@ -1457,6 +1459,29 @@ export class Renderer {
             currentY += rowHeight;
         });
 
+        // 3. Alternate Controls (Read Only)
+        currentY += 20;
+        this.ctx.fillStyle = '#333';
+        this.ctx.font = '24px Arial';
+        this.ctx.fillText("Alternative Controls", 100, currentY);
+        currentY += 30;
+
+        Object.keys(ALT_BINDINGS).forEach((action, i) => {
+            const key = ALT_BINDINGS[action].replace('Key', '').replace('Arrow', '');
+            let niceName = action.replace(/_/g, ' ');
+            if (action === 'VIEW_ORDERS') niceName = 'SHOW TICKET';
+
+            this.ctx.font = '16px Monospace';
+            this.ctx.fillStyle = '#666';
+            this.ctx.fillText(niceName, 120, currentY);
+
+            this.ctx.textAlign = 'right';
+            this.ctx.fillText(key, this.canvas.width - 120, currentY);
+            this.ctx.textAlign = 'left';
+
+            currentY += 25;
+        });
+
         // Instructions
         this.ctx.textAlign = 'center';
         this.ctx.fillStyle = '#333';
@@ -1464,7 +1489,7 @@ export class Renderer {
         this.ctx.fillText('Use Arrows/WASD to Navigate. ENTER to Rebind. ESC to Back.', this.canvas.width / 2, this.canvas.height - 30);
     }
 
-    drawOrderTickets(orders, pickUpKey, penalty, menuItems, activeIndex = 0) {
+    drawOrderTickets(orders, pickUpKey, penalty, menuItems) {
         const ticketImg = this.assetLoader.get(ASSETS.UI.ORDER_TICKET);
         if (!ticketImg) return;
 
@@ -1501,9 +1526,7 @@ export class Renderer {
             const angle = (Math.sin(index * 997) * 0.1); // +/- 0.1 radians (~5 degrees)
             const offsetY = Math.cos(index * 457) * 10; // +/- 10px vertical bounce
 
-            // Use activeIndex to determine active ticket
-            const isActive = (index === activeIndex);
-            this.drawSingleTicket(ticketImg, x, y + offsetY, ticketW, ticketH, angle, order, isActive);
+            this.drawSingleTicket(ticketImg, x, y + offsetY, ticketW, ticketH, angle, order);
         });
 
         const displayKey = pickUpKey ? pickUpKey.replace('Key', '').replace('Digit', '') : '???';
@@ -1521,7 +1544,7 @@ export class Renderer {
             this.ctx.textBaseline = 'bottom';
             this.ctx.shadowColor = 'black';
             this.ctx.shadowBlur = 4;
-            this.ctx.fillText(`Press [${displayKey}] to end day. Unfinished order penalty: $${penalty}`, this.canvas.width / 2, this.canvas.height - 40);
+            this.ctx.fillText(`Press [${displayKey}] to end day.`, this.canvas.width / 2, this.canvas.height - 40);
         }
 
         if (menuItems && menuItems.length > 0) {
@@ -1544,7 +1567,7 @@ export class Renderer {
         this.ctx.restore();
     }
 
-    drawSingleTicket(img, x, y, w, h, angle, order, isActive = false) {
+    drawSingleTicket(img, x, y, w, h, angle, order) {
         this.ctx.save();
 
         // Pivot around center of ticket for rotation
@@ -1558,11 +1581,7 @@ export class Renderer {
         // Draw Ticket
         this.ctx.drawImage(img, x, y, w, h);
 
-        if (isActive) {
-            this.ctx.lineWidth = 4;
-            this.ctx.strokeStyle = '#00ff00';
-            this.ctx.strokeRect(x, y, w, h);
-        }
+        // Active ticket highlight removed
 
         // Draw Text
         this.ctx.fillStyle = '#000';
@@ -1610,6 +1629,14 @@ export class Renderer {
 
         this.ctx.restore();
     }
+
+    drawTimeFreezeFilter(width, height) {
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(0, 100, 255, 0.2)';
+        this.ctx.fillRect(0, 0, width, height);
+        this.ctx.restore();
+    }
+
 
     drawControlsHelp(gameState) {
         if (!gameState.grid) return;
@@ -1659,25 +1686,8 @@ export class Renderer {
         }
 
         this.ctx.save();
-
         this.ctx.font = '20px Arial';
-        this.ctx.textAlign = 'left';
         this.ctx.textBaseline = 'top';
-        this.ctx.lineWidth = 3;
-        this.ctx.strokeStyle = 'black';
-
-        // Money
-        const moneyText = `$${gameState.money || 0}`;
-        this.ctx.strokeText(moneyText, 10, 10);
-
-        if (gameState.money < 0) {
-            this.ctx.fillStyle = '#ff0000';
-        } else {
-            this.ctx.fillStyle = '#ffd700';
-        }
-        this.ctx.fillText(moneyText, 10, 10);
-
-        this.ctx.fillText(moneyText, 10, 10);
 
         // High Score Display (Top Right)
         const scoreText = `HIGH SCORE: ${gameState.highScore || 0}`;
@@ -1738,7 +1748,7 @@ export class Renderer {
             const expItem = gameState.shopItems.find(i => i.id === 'expansion');
             if (expItem) {
                 this.ctx.fillStyle = '#ffd700';
-                this.ctx.fillText(`[X] Expand Kitchen ($${expItem.price})`, this.canvas.width / 2, 85);
+                this.ctx.fillText(`[X] Expand Kitchen`, this.canvas.width / 2, 85);
             }
         }
 
@@ -1902,258 +1912,12 @@ export class Renderer {
         this.ctx.fillText(number, x, y);
         this.ctx.restore();
     }
-    renderComputerScreen(gameState) {
-        // Darken background
-        this.ctx.save();
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.9)'; // Slightly darker
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Title
-        this.ctx.fillStyle = '#fff';
-        this.ctx.font = '32px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'top';
-        this.ctx.fillText("OFFICE COMPUTER", this.canvas.width / 2, 40);
 
-        // Money
-        this.ctx.font = '24px Arial';
-        this.ctx.fillStyle = '#ffd700';
-        this.ctx.textAlign = 'right';
-        this.ctx.fillText(`$${gameState.money}`, this.canvas.width - 50, 40);
 
-        const items = gameState.shopItems.filter(i => i.type === 'supply');
-        const selectedId = gameState.selectedComputerItemId || items[0].id;
 
-        // Grid Layout
-        // 4 Columns
-        const cols = 4;
-        const buttonSize = 120;
-        const gap = 30;
-        const cellStride = buttonSize + gap;
 
-        // Calculate Visible Area
-        const startY = 120;
-        const bottomMargin = 60;
-        const availableHeight = this.canvas.height - startY - bottomMargin;
-        const visibleRows = Math.max(1, Math.floor(availableHeight / cellStride));
 
-        // Calculate Grid Dims
-        const totalRows = Math.ceil(items.length / cols);
-        const gridW = cols * buttonSize + (cols - 1) * gap;
-        // Start X to center the grid
-        const startX = (this.canvas.width - gridW) / 2;
-
-        // Determine Selection Row
-        const selectedIndex = items.findIndex(i => i.id === selectedId);
-        const selectedRow = Math.floor(selectedIndex / cols);
-
-        // Manage Scroll State
-        if (this.computerScrollRow === undefined) this.computerScrollRow = 0;
-
-        // Auto-Scroll to keep selection in view
-        if (selectedRow < this.computerScrollRow) {
-            this.computerScrollRow = selectedRow;
-        } else if (selectedRow >= this.computerScrollRow + visibleRows) {
-            this.computerScrollRow = selectedRow - visibleRows + 1;
-        }
-
-        // Clamp Scroll
-        const maxScroll = Math.max(0, totalRows - visibleRows);
-        this.computerScrollRow = Math.max(0, Math.min(this.computerScrollRow, maxScroll));
-        // Reset if we can see everything
-        if (totalRows <= visibleRows) this.computerScrollRow = 0;
-
-        const buttonImg = this.assetLoader.get(ASSETS.UI.BUY_BUTTON);
-
-        // Render Visible Items
-        const startItemIndex = this.computerScrollRow * cols;
-        const endRow = this.computerScrollRow + visibleRows;
-        // We render slightly past visible to catch partials if we wanted, 
-        // but row-by-row clipping is simplest.
-        const endItemIndex = Math.min(items.length, endRow * cols);
-
-        for (let i = startItemIndex; i < endItemIndex; i++) {
-            const item = items[i];
-            const relativeRow = Math.floor(i / cols) - this.computerScrollRow;
-            const col = i % cols;
-
-            const x = startX + col * cellStride;
-            const y = startY + relativeRow * cellStride;
-
-            const isSelected = (item.id === selectedId);
-
-            // Data
-            const currentCount = gameState.getInventoryCount(item.id);
-            // Heuristic Max (Since we don't handle imports here easily, hardcode map for now)
-            const capacityMap = {
-                'patty_box': 12, 'bun_box': 32, 'wrapper_box': 100,
-                'fry_box': 3, 'side_cup_box': 25, 'syrup_box': 1,
-                'drink_cup_box': 15, 'mayo_box': 3, 'tomato_box': 25, 'bag_box': 20,
-                'lettuce_box': 25
-            };
-            const max = capacityMap[item.id] || 20;
-
-            const fillPct = Math.min(currentCount / max, 1.0);
-
-            // Draw Button Base
-            if (buttonImg) {
-                this.ctx.drawImage(buttonImg, x, y, buttonSize, buttonSize);
-            } else {
-                this.ctx.fillStyle = '#333';
-                this.ctx.fillRect(x, y, buttonSize, buttonSize);
-            }
-
-            // Draw "Meter" Fill
-            if (fillPct > 0) {
-                this.ctx.save();
-                // Fill from bottom
-                const fillH = buttonSize * fillPct;
-                this.ctx.beginPath();
-                this.ctx.rect(x, y + buttonSize - fillH, buttonSize, fillH);
-                this.ctx.clip();
-
-                // Color: If full or over, green. If low, maybe warning?
-                // User said "instantly fills with color".
-                this.ctx.fillStyle = '#2ecc71'; // Green
-                if (isSelected) this.ctx.fillStyle = '#3498db'; // Blueish if selected
-
-                this.ctx.globalAlpha = 0.7;
-                this.ctx.fillRect(x, y, buttonSize, buttonSize);
-                this.ctx.restore();
-            }
-
-            // Draw Icon
-            // Heuristic for texture name: usually item.id + '-closed.png'
-            let textureName = item.id + '-closed.png';
-            // Specific overrides if needed (some assets might be named differently)
-            if (item.id === 'bag_box') textureName = 'bag_box-closed.png';
-            if (item.id === 'insert') textureName = 'insert.png';
-            // AssetLoader keys are derived from filenames visually in listing
-            // bag_box-closed.png exists.
-
-            const icon = this.assetLoader.get(textureName);
-            if (icon) {
-                const pad = 20;
-                const size = buttonSize - pad * 2;
-                this.ctx.drawImage(icon, x + pad, y + pad, size, size);
-            }
-
-            // Draw Lock Overlay if Locked (ON TOP of Icon)
-            if (!item.unlocked) {
-                const lockImg = this.assetLoader.get(ASSETS.TILES.LOCKED);
-
-                // Dimming (Semi-transparent background)
-                this.ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                this.ctx.fillRect(x, y, buttonSize, buttonSize);
-
-                if (lockImg) {
-                    const pad = 30;
-                    this.ctx.drawImage(lockImg, x + pad, y + pad, buttonSize - pad * 2, buttonSize - pad * 2);
-                }
-            }
-
-            // Price Label
-            this.ctx.fillStyle = 'white';
-            this.ctx.font = 'bold 16px Arial';
-            this.ctx.textAlign = 'right';
-            this.ctx.shadowColor = 'black';
-            this.ctx.shadowBlur = 4;
-            this.ctx.fillText(`$${item.price}`, x + buttonSize - 5, y + buttonSize - 5);
-            this.ctx.shadowBlur = 0;
-
-            // RUSH Markup Indicator
-            if (gameState.isRushMode) {
-                this.ctx.fillStyle = '#ff0000';
-                this.ctx.font = 'bold 12px Arial';
-                this.ctx.fillText("RUSH +100%", x + buttonSize - 5, y + buttonSize - 22);
-            } else {
-                this.ctx.fillStyle = '#00ff00';
-                this.ctx.font = 'bold 12px Arial';
-                this.ctx.fillText("MORNING", x + buttonSize - 5, y + buttonSize - 22);
-            }
-
-            // Selection Highlight
-            if (isSelected) {
-                this.ctx.strokeStyle = '#fff';
-                this.ctx.lineWidth = 4;
-                this.ctx.strokeRect(x - 2, y - 2, buttonSize + 4, buttonSize + 4);
-
-                // Name
-                this.ctx.fillStyle = '#fff';
-                this.ctx.textAlign = 'center';
-                this.ctx.font = '18px Arial';
-                this.ctx.fillText(item.id.replace(/_/g, ' ').toUpperCase(), x + buttonSize / 2, y - 15);
-
-                // Inventory Text
-                this.ctx.fillStyle = '#ccc';
-                this.ctx.font = '14px Monospace';
-                this.ctx.fillText(`${currentCount} / ${max}`, x + buttonSize / 2, y + buttonSize + 20);
-
-                // Helper text for cart
-                const inCart = gameState.cart[item.id] || 0;
-                if (inCart > 0) {
-                    this.ctx.fillStyle = '#ffff00';
-                    this.ctx.fillText(`+${inCart} Ordered`, x + buttonSize / 2, y + buttonSize + 35);
-                }
-            }
-        }
-
-        // Draw Scrollbar (if needed)
-        if (totalRows > visibleRows) {
-            const trackH = visibleRows * cellStride - gap; // Match grid height roughly
-            const barW = 12;
-            const barX = startX + gridW + 20; // To the right of grid
-            const barY = startY;
-
-            // Track
-            this.ctx.fillStyle = '#555';
-            this.ctx.fillRect(barX, barY, barW, trackH);
-
-            // Thumb
-            // Calculate thumb size and position
-            const viewRatio = visibleRows / totalRows;
-            const thumbH = Math.max(30, trackH * viewRatio);
-
-            // Correct Thumb Position
-            // The scrollable range is (trackH - thumbH)
-            // The scroll index range is (totalRows - visibleRows)
-            // But implementing proportional scroll is safer visually:
-            // ThumbTop = (CurrentRow / TotalRows) * TrackH ?? 
-            // Better: ThumbTop = (CurrentRow / (TotalRows - VisibleRows)) * (TrackH - ThumbH) if we view it as a slider.
-            // But standard list scrollbar:
-            // Top = (ScrollRow / TotalRows) * TrackH
-
-            const thumbY = barY + (this.computerScrollRow / totalRows) * trackH;
-
-            this.ctx.fillStyle = '#ccc';
-            this.ctx.fillRect(barX, thumbY, barW, thumbH);
-        }
-
-        // Instructions
-        this.ctx.fillStyle = '#888';
-        this.ctx.font = '16px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText("ARROWS to Navigate  |  ENTER to Order  |  ESC to Exit", this.canvas.width / 2, this.canvas.height - 40);
-
-        // Draw START DAY Arrow (Right Side)
-        if (gameState.gameState === 'COMPUTER_ORDERING') {
-            const arrowImg = this.assetLoader.get(ASSETS.UI.GREEN_ARROW);
-            if (arrowImg) {
-                const arrowSize = 64;
-                const arrowX = startX + gridW + 40;
-                const arrowY = this.canvas.height / 2;
-
-                this.ctx.drawImage(arrowImg, arrowX - arrowSize / 2, arrowY - arrowSize / 2, arrowSize, arrowSize);
-
-                this.ctx.fillStyle = '#fff';
-                this.ctx.font = 'bold 16px Arial';
-                this.ctx.textAlign = 'center';
-                this.ctx.fillText("START DAY >", arrowX, arrowY + arrowSize / 2 + 20);
-            }
-        }
-
-        this.ctx.restore();
-    }
 
     renderRenoScreen(gameState) {
         // Background
@@ -2173,11 +1937,7 @@ export class Renderer {
         this.ctx.textBaseline = 'top';
         this.ctx.fillText("RENO SHOP", this.canvas.width / 2, 40);
 
-        // Money
-        this.ctx.font = '24px Arial';
-        this.ctx.fillStyle = '#ffd700';
-        this.ctx.textAlign = 'right';
-        this.ctx.fillText(`$${gameState.money}`, this.canvas.width - 50, 40);
+
 
         // Filter items
         // Note: Sort order is Action (0,1) -> Appliances (2+) due to Game.js sortShopItems
@@ -2275,17 +2035,7 @@ export class Renderer {
                 this.ctx.restore();
             }
 
-            // 4. Price Tag (only if > 0)
-            if (item.price > 0) {
-                this.ctx.fillStyle = 'white';
-                this.ctx.font = 'bold 20px Arial';
-                this.ctx.textAlign = 'right';
-                this.ctx.shadowColor = 'black';
-                this.ctx.shadowBlur = 4;
-                this.ctx.lineWidth = 3;
-                this.ctx.strokeText(`$${item.price}`, x + w - 10, y + h - 10);
-                this.ctx.fillText(`$${item.price}`, x + w - 10, y + h - 10);
-            }
+
 
             // 5. Owned Count (if > 0)
             const count = gameState.storage[item.id] || 0;
@@ -2307,16 +2057,15 @@ export class Renderer {
         this.ctx.restore();
     }
 
-    drawServiceHint(x, y, gameState, cellObject) {
+    drawServiceHint(x, y, gameState, cellObject, yOffset = 0, ticketIndex = 0) {
         if (!gameState.activeTickets || gameState.activeTickets.length === 0) return;
 
-        const idx = gameState.activeTicketIndex || 0;
-        const ticket = gameState.activeTickets[idx] || gameState.activeTickets[0]; // Fallback
+        const ticket = gameState.activeTickets[ticketIndex];
 
         if (!ticket) return;
 
         // 1. Draw Bag Outline (Always if active ticket exists)
-        this.drawTile('bag-trans.png', x, y);
+        this.drawTile('bag-trans.png', x, y, yOffset);
 
         // 2. Determine Requirements
         // Using "One Bag Rule" logic
@@ -2459,31 +2208,31 @@ export class Renderer {
 
         // 4. Render Tags (Dynamic Fill or Error)
         if (totalReqBurgers > 0) {
-            this.drawProgressTag('burger', x, y, validBurgers, totalReqBurgers, errorBurgers);
+            this.drawProgressTag('burger', x, y, validBurgers, totalReqBurgers, errorBurgers, yOffset);
         }
         if (totalReqSides > 0) {
-            this.drawProgressTag('side', x, y, validSides, totalReqSides, errorSides);
+            this.drawProgressTag('side', x, y, validSides, totalReqSides, errorSides, yOffset);
         }
         if (totalReqDrinks > 0) {
-            this.drawProgressTag('drink', x, y, validDrinks, totalReqDrinks, errorDrinks);
+            this.drawProgressTag('drink', x, y, validDrinks, totalReqDrinks, errorDrinks, yOffset);
         }
     }
 
-    drawProgressTag(type, x, y, current, total, isError = false) {
+    drawProgressTag(type, x, y, current, total, isError = false, yOffset = 0) {
         // 0. Error State
         if (isError) {
-            this.drawTile(`${type}-tag-wrong.png`, x, y);
+            this.drawTile(`${type}-tag-wrong.png`, x, y, yOffset);
             return;
         }
 
         // 1. Finished State: Draw 'Done' tag (fully filled + checkmark)
         if (current >= total) {
-            this.drawTile(`${type}-tag-done.png`, x, y);
+            this.drawTile(`${type}-tag-done.png`, x, y, yOffset);
             return;
         }
 
         // 2. In Progress: Draw Empty Base + Clipped Partial Fill
-        this.drawTile(`${type}-tag-trans.png`, x, y);
+        this.drawTile(`${type}-tag-trans.png`, x, y, yOffset);
 
         if (current > 0) {
             const pct = Math.min(current / total, 1.0);
@@ -2495,7 +2244,7 @@ export class Renderer {
             // Calculate Clipping Rect
             // We want to reveal the image from layout.bottom upwards.
             const gridPixelX = x * TILE_SIZE;
-            const gridPixelY = y * TILE_SIZE;
+            const gridPixelY = y * TILE_SIZE + yOffset;
 
             const clipY = gridPixelY + layout.bottom - fillHeight;
 
@@ -2506,7 +2255,7 @@ export class Renderer {
             this.ctx.clip();
 
             // Use 'partial' for the filling animation
-            this.drawTile(`${type}-tag-partial.png`, x, y);
+            this.drawTile(`${type}-tag-partial.png`, x, y, yOffset);
 
             this.ctx.restore();
         }
@@ -2658,6 +2407,42 @@ export class Renderer {
 
                 // Draw centered relative to the translation
                 this.ctx.drawImage(img, sx, sy, frameWidth, frameHeight, -TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
+                this.ctx.restore();
+            } else if (effect.type === 'fire') {
+                const img = this.assetLoader.get(ASSETS.EFFECTS.FIRE_SHEET);
+                if (!img) return;
+
+                const elapsed = Date.now() - effect.startTime;
+                const totalFrames = 7;
+                const frameDuration = effect.duration / totalFrames;
+                const currentFrame = Math.floor(elapsed / frameDuration);
+
+                if (currentFrame >= totalFrames) return;
+
+                const frameWidth = img.width / totalFrames;
+                const frameHeight = img.height;
+
+                const sx = currentFrame * frameWidth;
+                const sy = 0;
+
+                const x = effect.x * TILE_SIZE;
+                const y = effect.y * TILE_SIZE;
+
+                this.ctx.save();
+                // Nudge the fire up further so it's clearly visible above appliances
+                const yOffset = -32;
+                this.ctx.translate(x + TILE_SIZE / 2, y + TILE_SIZE / 2 + yOffset);
+
+                if (effect.rotation) {
+                    this.ctx.rotate(effect.rotation);
+                }
+
+                // Support custom scale or default to normal size
+                const scale = (effect.scale || 1.0);
+                const drawWidth = TILE_SIZE * scale;
+                const drawHeight = TILE_SIZE * scale;
+
+                this.ctx.drawImage(img, sx, sy, frameWidth, frameHeight, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
                 this.ctx.restore();
             }
         });

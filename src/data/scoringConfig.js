@@ -55,8 +55,8 @@ export const SCORING_CONFIG = {
         HALF_CYCLE_DURATION: 120,
 
         // Ticket Logic
-        SLOW_TICKET_INTERVAL: 27,
-        FAST_TICKET_INTERVAL: 3,
+        SLOW_TICKET_INTERVAL: 33,
+        FAST_TICKET_INTERVAL: 5,
 
         // Pacing Curves
         DAY_PEAK_TIME_RATIO: 0.75, // Peak at 75% of the day
