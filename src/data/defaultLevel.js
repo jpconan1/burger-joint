@@ -1,8 +1,9 @@
 export const DEFAULT_LEVEL = {
-    "width": 14,
-    "height": 7,
+    "width": 15,
+    "height": 9,
     "cells": [
         [
+            { "typeId": "CHUTE", "state": {}, "object": null },
             {
                 "typeId": "PRINTER",
                 "state": {
@@ -71,7 +72,9 @@ export const DEFAULT_LEVEL = {
                 "state": {
                     "facing": 0
                 },
-                "object": null
+                "object": {
+                    "definitionId": "dish_rack"
+                }
             },
             {
                 "typeId": "COUNTER",
@@ -87,6 +90,7 @@ export const DEFAULT_LEVEL = {
             }
         ],
         [
+            { "typeId": "CHUTE", "state": {}, "object": null },
             {
                 "typeId": "COUNTER",
                 "state": {
@@ -166,6 +170,7 @@ export const DEFAULT_LEVEL = {
             }
         ],
         [
+            { "typeId": "CHUTE", "state": {}, "object": null },
             {
                 "typeId": "COUNTER",
                 "state": {
@@ -268,14 +273,10 @@ export const DEFAULT_LEVEL = {
             }
         ],
         [
+            { "typeId": "CHUTE", "state": {}, "object": null },
             {
-                "typeId": "SODA_FOUNTAIN",
-                "state": {
-                    "status": "full",
-                    "charges": 20,
-                    "syrupId": "cola_box",
-                    "resultId": "cola"
-                },
+                "typeId": "COUNTER",
+                "state": {},
                 "object": null
             },
             {
@@ -345,6 +346,7 @@ export const DEFAULT_LEVEL = {
             }
         ],
         [
+            { "typeId": "CHUTE", "state": {}, "object": null },
             {
                 "typeId": "COUNTER",
                 "state": {},
@@ -433,6 +435,7 @@ export const DEFAULT_LEVEL = {
             }
         ],
         [
+            { "typeId": "CHUTE", "state": {}, "object": null },
             {
                 "typeId": "COUNTER",
                 "state": {},
@@ -507,6 +510,171 @@ export const DEFAULT_LEVEL = {
             }
         ],
         [
+            { "typeId": "CHUTE", "state": {}, "object": null },
+            {
+                "typeId": "COUNTER",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {},
+                "object": null
+            }
+        ],
+        [
+            { "typeId": "CHUTE", "state": {}, "object": null },
+            {
+                "typeId": "COUNTER",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            }
+        ],
+        [
+            { "typeId": "CHUTE", "state": {}, "object": null },
             {
                 "typeId": "COUNTER",
                 "state": {},
@@ -573,22 +741,24 @@ export const DEFAULT_LEVEL = {
             {
                 "typeId": "COUNTER",
                 "state": {},
+                "object": null
+            },
+            {
+                "typeId": "DISHWASHER",
+                "state": {
+                    "isOpen": true
+                },
                 "object": null
             },
             {
                 "typeId": "COUNTER",
                 "state": {},
                 "object": {
-                    "definitionId": "insert",
+                    "definitionId": "plate",
                     "state": {
                         "count": 9
                     }
                 }
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {},
-                "object": null
             }
         ]
     ]

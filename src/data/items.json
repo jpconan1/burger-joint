@@ -495,6 +495,7 @@
                     "capability": "CUT_TOPPINGS"
                 },
                 "texture": "onion-slice.png",
+                "result": "onion_rings",
                 "cooking": {
                     "stages": {
                         "raw": {
@@ -782,7 +783,7 @@
                 "maxCount": 50,
                 "price": 15,
                 "produces": "drink_cup",
-                "isEssential": true,
+                "isEssential": false,
                 "unlocked": false,
                 "classification": "helper",
                 "helperUnlockCriteria": "drink"
@@ -853,7 +854,40 @@
                 "category": "tool",
                 "unlocked": false,
                 "texture": "insert.png",
-                "partTexture": "insert-part.png"
+                "partTexture": "insert-part.png",
+                "useStackRender": true
+            }
+        },
+        {
+            "id": "plate_group",
+            "type": "tool_supply",
+            "item": {
+                "id": "plate",
+                "type": "Ingredient",
+                "category": "tool",
+                "unlocked": true,
+                "texture": "plates/plate.png",
+                "partTexture": "plates/plate-part.png",
+                "useStackRender": true,
+                "showLabel": false,
+                "stackNudge": 4,
+                "contentNudge": 8
+            }
+        },
+        {
+            "id": "dirty_plate_group",
+            "type": "tool_supply",
+            "item": {
+                "id": "dirty_plate",
+                "type": "Ingredient",
+                "category": "tool",
+                "unlocked": true,
+                "texture": "plates/plate.png",
+                "partTexture": "plates/plate-part.png",
+                "useStackRender": true,
+                "showLabel": false,
+                "stackNudge": 4,
+                "contentNudge": 8
             }
         },
         {
@@ -1375,6 +1409,17 @@
                 "type": "Container",
                 "category": "powerup",
                 "texture": "magic_bag.png"
+            }
+        },
+        {
+            "id": "dish_rack",
+            "type": "tool_supply",
+            "item": {
+                "id": "dish_rack",
+                "type": "Container",
+                "category": "tool",
+                "texture": "dish_rack-base.png",
+                "maxCount": 6
             }
         }
     ]

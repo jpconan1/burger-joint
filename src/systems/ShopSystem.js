@@ -31,7 +31,10 @@ export class ShopSystem {
             for (let y = 0; y < room.height; y++) {
                 for (let x = 0; x < room.width; x++) {
                     const cell = room.getCell(x, y);
-                    if (cell.type && cell.type.id === tileTypeId) {
+                    if (tileTypeId && cell.type && cell.type.id === tileTypeId) {
+                        return true;
+                    }
+                    if (cell.object && cell.object.definitionId === itemId) {
                         return true;
                     }
                 }
@@ -215,14 +218,28 @@ export class ShopSystem {
                     // Map appliance item ID to tile type if needed, or assume target is tile ID
                     const applianceId = def.unlockCondition.target;
                     const applianceDef = DEFINITIONS[applianceId];
-                    if (applianceDef && applianceDef.tileType) {
+                    if (applianceId === 'dispenser') {
+                        // Check if ANY room has a dispenser object
+                        for (const room of Object.values(this.game.rooms)) {
+                            for (let y = 0; y < room.height; y++) {
+                                for (let x = 0; x < room.width; x++) {
+                                    const cell = room.getCell(x, y);
+                                    if (cell.object && cell.object.definitionId === 'dispenser') {
+                                        unlocked = true;
+                                        break;
+                                    }
+                                }
+                                if (unlocked) break;
+                            }
+                            if (unlocked) break;
+                        }
+                    } else if (applianceDef && applianceDef.tileType) {
                         if (activeTileTypes.has(applianceDef.tileType)) {
                             unlocked = true;
                         }
                     } else if (applianceId === 'cutting_board' && activeTileTypes.has('CUTTING_BOARD')) unlocked = true;
                     else if (applianceId === 'fryer' && activeTileTypes.has('FRYER')) unlocked = true;
                     else if (applianceId === 'soda_fountain' && activeTileTypes.has('SODA_FOUNTAIN')) unlocked = true;
-                    else if (applianceId === 'dispenser' && activeTileTypes.has('DISPENSER')) unlocked = true;
                     else if (applianceId === 'grill' && activeTileTypes.has('GRILL')) unlocked = true;
                 } else if (def.unlockCondition.type === 'star') {
                     if (def.unlockCondition.target === 3 && this.game.earnedServiceStar) {

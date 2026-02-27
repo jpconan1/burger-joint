@@ -42,9 +42,18 @@ export const EXPANSIONS = [
                         "object": null
                     },
                     {
-                        "typeId": "DISPENSER",
+                        "typeId": "COUNTER",
                         "state": {},
-                        "object": null
+                        "object": {
+                            "definitionId": "dispenser",
+                            "state": {
+                                "status": "loaded",
+                                "charges": 9999,
+                                "sauceId": "mayo",
+                                "bagId": "mayo_bag",
+                                "isInfinite": true
+                            }
+                        }
                     },
                     {
                         "typeId": "CUTTING_BOARD",
@@ -323,9 +332,18 @@ export const EXPANSIONS = [
                         "object": null
                     },
                     {
-                        "typeId": "DISPENSER",
+                        "typeId": "COUNTER",
                         "state": {},
-                        "object": null
+                        "object": {
+                            "definitionId": "dispenser",
+                            "state": {
+                                "status": "loaded",
+                                "charges": 9999,
+                                "sauceId": "mayo",
+                                "bagId": "mayo_bag",
+                                "isInfinite": true
+                            }
+                        }
                     },
                     {
                         "typeId": "CUTTING_BOARD",
@@ -691,9 +709,18 @@ export const EXPANSIONS = [
                         "object": null
                     },
                     {
-                        "typeId": "DISPENSER",
+                        "typeId": "COUNTER",
                         "state": {},
-                        "object": null
+                        "object": {
+                            "definitionId": "dispenser",
+                            "state": {
+                                "status": "loaded",
+                                "charges": 9999,
+                                "sauceId": "mayo",
+                                "bagId": "mayo_bag",
+                                "isInfinite": true
+                            }
+                        }
                     },
                     {
                         "typeId": "CUTTING_BOARD",
@@ -1254,9 +1281,18 @@ export const EXPANSIONS = [
                         "object": null
                     },
                     {
-                        "typeId": "DISPENSER",
+                        "typeId": "COUNTER",
                         "state": {},
-                        "object": null
+                        "object": {
+                            "definitionId": "dispenser",
+                            "state": {
+                                "status": "loaded",
+                                "charges": 9999,
+                                "sauceId": "mayo",
+                                "bagId": "mayo_bag",
+                                "isInfinite": true
+                            }
+                        }
                     },
                     {
                         "typeId": "CUTTING_BOARD",
@@ -1936,9 +1972,18 @@ export const EXPANSIONS = [
                         "object": null
                     },
                     {
-                        "typeId": "DISPENSER",
+                        "typeId": "COUNTER",
                         "state": {},
-                        "object": null
+                        "object": {
+                            "definitionId": "dispenser",
+                            "state": {
+                                "status": "loaded",
+                                "charges": 9999,
+                                "sauceId": "mayo",
+                                "bagId": "mayo_bag",
+                                "isInfinite": true
+                            }
+                        }
                     },
                     {
                         "typeId": "CUTTING_BOARD",

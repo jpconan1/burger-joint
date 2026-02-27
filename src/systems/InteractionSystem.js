@@ -65,6 +65,9 @@ export class InteractionSystem {
             if (this._dispatch('pickup', cell.object.definitionId, player, cell.object, cell, 'ITEMS', game)) return true;
         }
 
+        // 2.5. Special: Pick Up into Held Stacked Container (Insert/Plate)
+        if (InteractionHandlers.handle_stacked_container_pickup(player, cell)) return true;
+
         // 3. Standard Put Down / Pick Up Logic (Default)
         if (this._standardTransfer(player, cell)) return true;
 
@@ -131,7 +134,7 @@ export class InteractionSystem {
             if (player.heldItem && cell.type.id === 'FLOOR' && !cell.object) {
                 // Check if held item is an appliance (via definition type or specific whitelist)
                 const def = player.heldItem.definition;
-                const isApplianceItem = (def.type === 'appliance' || ['dispenser', 'soda_fountain', 'fryer', 'grill', 'counter'].includes(def.id));
+                const isApplianceItem = (def.type === 'appliance' || ['soda_fountain', 'fryer', 'grill', 'counter'].includes(def.id));
 
                 if (isApplianceItem) {
                     // Convert Item -> Tile

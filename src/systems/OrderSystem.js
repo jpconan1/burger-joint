@@ -89,29 +89,34 @@ export class OrderSystem {
         const tickets = [];
         let i = 0;
         while (i < customers.length) {
+            // 66% Dine-In vs 33% Takeout
+            const isDineIn = Math.random() < 0.66;
             const ticketCustomers = [customers[i]];
             i++;
-            // 33% chance to merge next customer if exists
-            // "one in three chance to be combined with another customer OR group"
-            // We treat the current accumulation as the group.
-            while (i < customers.length && Math.random() < 0.33) {
-                ticketCustomers.push(customers[i]);
-                i++;
+
+            // Only Takeout supports grouping multiple customers into one bag
+            if (!isDineIn) {
+                // 40% chance to merge next customer if exists (slightly higher for more groups)
+                while (i < customers.length && Math.random() < 0.40) {
+                    ticketCustomers.push(customers[i]);
+                    i++;
+                }
             }
-            // Create a Ticket with a SINGLE Bag containing all these orders
-            tickets.push(this.createTicketFromCustomers(ticketCustomers, tickets.length + 1));
+
+            // Create a Ticket
+            tickets.push(this.createTicketFromCustomers(ticketCustomers, tickets.length + 1, isDineIn));
         }
 
         // Force First Ticket on Day 1 to be 2 Basic Burgers
         if (dayNumber === 1 && tickets.length > 0) {
             const tutTicket = new Ticket(1);
-            const tutBag = new Bag();
-            tutBag.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
-            // tutBag.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
-            tutBag.addItem('fries');
-            tutBag.addItem('cola');
-            tutBag.payout = this.calculateBagPayout(tutBag);
-            tutTicket.addBag(tutBag);
+            const tutGroup = new OrderGroup('bag');
+            tutGroup.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
+            // tutGroup.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
+            tutGroup.addItem('fries');
+            tutGroup.addItem('cola');
+            tutGroup.payout = this.calculateGroupPayout(tutGroup);
+            tutTicket.addGroup(tutGroup);
 
             tickets[0] = tutTicket;
         }
@@ -226,36 +231,61 @@ export class OrderSystem {
         return order;
     }
 
-    createTicketFromCustomers(customerGroup, id) {
+    createTicketFromCustomers(customerGroup, id, isDineIn = null) {
         const ticket = new Ticket(id);
-        const bag = new Bag(); // One Bag Rule
 
-        customerGroup.forEach(cust => {
-            // Add Burger
-            if (cust.burger) {
-                bag.addBurger(cust.burger);
+        // Use provided type or decide (66% Dine-In vs 33% Takeout)
+        const finalizeDineIn = isDineIn !== null ? isDineIn : Math.random() < 0.66;
+
+        if (finalizeDineIn) {
+            // Dine-In: One plate per customer. 
+            // Rule: Dine-in tickets are always for exactly one customer.
+            const singleCust = customerGroup[0];
+            if (singleCust) {
+                const group = new OrderGroup('plate');
+                if (singleCust.burger) {
+                    group.addBurger(singleCust.burger);
+                }
+                // Add Sides (Plates only hold Burger + Side)
+                singleCust.items.forEach(itm => {
+                    const def = DEFINITIONS[itm];
+                    const isSide = def && (def.orderConfig?.type === 'side' || def.category === 'side' || def.category === 'side_prep');
+                    if (isSide) {
+                        group.addItem(itm);
+                    }
+                });
+
+                group.payout = this.calculateGroupPayout(group);
+                ticket.addGroup(group);
             }
-            // Add Items
-            cust.items.forEach(itm => bag.addItem(itm));
-        });
+        } else {
+            // Takeout: One Bag for the whole group
+            const group = new OrderGroup('bag');
+            customerGroup.forEach(cust => {
+                // Add Burger
+                if (cust.burger) {
+                    group.addBurger(cust.burger);
+                }
+                // Add Items
+                cust.items.forEach(itm => group.addItem(itm));
+            });
+            group.payout = this.calculateGroupPayout(group);
+            ticket.addGroup(group);
+        }
 
-        // Calculate Dynamic Payout
-        bag.payout = this.calculateBagPayout(bag);
-
-        ticket.addBag(bag);
         return ticket;
     }
 
-    calculateBagPayout(bag) {
+    calculateGroupPayout(group) {
         let total = 0;
 
         // Burgers
-        bag.burgers.forEach(burger => {
+        group.burgers.forEach(burger => {
             total += this.calculateBurgerPrice(burger);
         });
 
         // Items
-        bag.items.forEach(itemId => {
+        group.items.forEach(itemId => {
             total += this.calculateItemPrice(itemId);
         });
 
@@ -302,7 +332,7 @@ export class OrderSystem {
 export class Ticket {
     constructor(id) {
         this.id = id;
-        this.bags = [];
+        this.groups = []; // Formerly bags
         this.parTime = 0;
         this.elapsedTime = 0;
     }
@@ -311,9 +341,9 @@ export class Ticket {
         let totalTime = 0;
         const TIMES = SCORING_CONFIG.PAR_TIMES;
 
-        this.bags.forEach(bag => {
+        this.groups.forEach(group => {
             // Burgers
-            bag.burgers.forEach(burger => {
+            group.burgers.forEach(burger => {
                 totalTime += TIMES.burger;
                 if (burger.modifications) {
                     burger.modifications.forEach(mod => {
@@ -335,7 +365,7 @@ export class Ticket {
                 }
             });
             // Generic Items (Fries, Soda, etc.)
-            bag.items.forEach(itemId => {
+            group.items.forEach(itemId => {
                 const def = DEFINITIONS[itemId];
                 if (def && def.orderConfig) {
                     if (def.orderConfig.type === 'side') {
@@ -353,21 +383,19 @@ export class Ticket {
         // console.log(`Ticket #${this.id} Par Time: ${this.parTime}s`);
     }
 
-    addBag(bag) {
-        this.bags.push(bag);
+    addGroup(group) {
+        this.groups.push(group);
     }
 
     // Convert to format expected by Renderer
     toDisplayFormat() {
         const lines = [];
-        this.bags.forEach((bag, index) => {
-            // Assuming 1 bag per ticket now, but looping safely
-            // const prefix = bag.completed ? '[DONE] ' : ''; 
-            // Actually, we usually display the Ticket contents.
+        this.groups.forEach((group, index) => {
+            // Assuming 1 group per ticket now, but looping safely
             const prefix = '';
 
             // Render Burgers
-            bag.burgers.forEach((burger, bIdx) => {
+            group.burgers.forEach((burger, bIdx) => {
                 const displayName = (burger.base && burger.base !== 'Burger') ? `${burger.base} Burger` : `Burger ${bIdx + 1}`;
                 lines.push(`${prefix}${displayName}`);
                 burger.modifications.forEach(mod => {
@@ -376,7 +404,7 @@ export class Ticket {
             });
 
             // Generic Items
-            bag.items.forEach(itemId => {
+            group.items.forEach(itemId => {
                 const displayName = itemId.charAt(0).toUpperCase() + itemId.slice(1);
                 lines.push(`${prefix}${displayName}`);
             });
@@ -392,33 +420,33 @@ export class Ticket {
     }
 
     isComplete() {
-        return this.bags.every(b => b.completed);
+        return this.groups.every(g => g.completed);
     }
 
-    // Returns true if the submitted bag matches a pending bag requirement
-    verifyBag(submittedBagItem) {
-        // MAGIC BAG WILDCARD logic
-        if (submittedBagItem.definitionId === 'magic_bag') {
-            const matchIndex = this.bags.findIndex(bag => !bag.completed);
+    // Returns true if the submitted container matches a pending group requirement
+    verifyContainerItem(submittedItem) {
+        // MAGIC BAG WILDCARD logic (still legacy support for the name)
+        if (submittedItem.definitionId === 'magic_bag') {
+            const matchIndex = this.groups.findIndex(g => !g.completed);
             if (matchIndex !== -1) {
-                const bag = this.bags[matchIndex];
-                bag.completed = true;
+                const group = this.groups[matchIndex];
+                group.completed = true;
                 return {
                     matched: true,
-                    payout: bag.payout || 50
+                    payout: group.payout || 50
                 };
             }
         }
 
-        // Iterate through incomplete bags to find a match
-        const matchIndex = this.bags.findIndex(bag => !bag.completed && bag.matches(submittedBagItem));
+        // Iterate through incomplete groups to find a match
+        const matchIndex = this.groups.findIndex(g => !g.completed && g.matches(submittedItem));
 
         if (matchIndex !== -1) {
-            const bag = this.bags[matchIndex];
-            bag.completed = true;
+            const group = this.groups[matchIndex];
+            group.completed = true;
             return {
                 matched: true,
-                payout: bag.payout || 50 // Default payout if missing
+                payout: group.payout || 50 // Default payout if missing
             };
         }
 
@@ -426,8 +454,9 @@ export class Ticket {
     }
 }
 
-export class Bag {
-    constructor() {
+export class OrderGroup {
+    constructor(containerType = 'bag') {
+        this.containerType = containerType; // 'bag' or 'plate'
         this.burgers = []; // List of burger configs
         this.items = []; // List of item IDs required (fries, soda)
         this.completed = false;
@@ -448,7 +477,18 @@ export class Bag {
     }
 
     matches(itemInstance) {
-        // 1. Analyze Contents of the submitted bag
+        // 0. Verify Container Type
+        if (itemInstance.definitionId !== this.containerType) {
+            // Legacy support: 'bag' matches 'magic_bag' too if we want, 
+            // but for now let's be strict or allow it if it's a bag.
+            if (this.containerType === 'bag' && itemInstance.definitionId === 'magic_bag') {
+                // Allow
+            } else {
+                return false;
+            }
+        }
+
+        // 1. Analyze Contents of the submitted container
         const contents = [...(itemInstance.state.contents || [])]; // Shallow copy for consumption
 
         // 2. Check Generic Requirements (Sides, Drinks)
@@ -456,11 +496,25 @@ export class Bag {
             // Find match
             const matchIndex = contents.findIndex(i => {
                 const defId = i.definitionId;
-                // Aliases for legacy items
-                if (reqId === 'fries' && (defId === 'fries' || defId === 'fry_bag')) return true;
-                if (reqId === 'soda' && (defId === 'soda' || defId === 'drink_cup')) return true;
-                // Default exact match
-                return defId === reqId;
+                const def = i.definition || {};
+
+                // 1. Exact Match
+                if (defId === reqId) return true;
+
+                // 2. Side Aliases (Fries/Soda)
+                if (reqId === 'fries' && (defId === 'fry_bag' || defId === 'fries')) return true;
+                if (reqId === 'soda' && (defId === 'drink_cup' || defId === 'soda' || defId === 'cola')) return true;
+
+                // 3. "Naked" Cooked Sides (e.g. raw_fries that is cooked)
+                if (def.category === 'side_prep' && i.state.cook_level === 'cooked') {
+                    // Check if this cooked prep item results in the required side
+                    if (def.result === reqId) return true;
+                    // Fallback for direct reqId match to result (some definitions might be loose)
+                    if (reqId === 'fries' && defId === 'raw_fries') return true;
+                    if (reqId === 'sweet_potato_fries' && defId === 'raw_sweet_potato_fries') return true;
+                }
+
+                return false;
             });
 
             if (matchIndex === -1) return false;

@@ -170,7 +170,7 @@ export class AutomatedRewardSystem {
             }
 
             // Unlock the Appliance in Shop
-            const appShopItem = this.game.shopItems.find(i => i.tileType === machineType);
+            const appShopItem = this.game.shopItems.find(i => (i.tileType === machineType || i.id === applianceId));
             if (appShopItem) appShopItem.unlocked = true;
 
             // Do NOT unlock the supply bag/box (deprecated)

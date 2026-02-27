@@ -16,7 +16,6 @@ export const ASSETS = {
         CUTTING_BOARD_TOMATO: 'cutting_board-tomato.png',
         CUTTING_BOARD_SLICE: 'cutting_board-tomato-slice.png',
         CUTTING_BOARD_DIRTY: 'cutting_board-dirty.png',
-        DISPENSER: 'dispenser.png',
         DISPENSER_EMPTY: 'dispenser-empty.png',
         DISPENSER_FULL: 'dispenser-full.png', // Overlay
         DISPENSER_PARTIAL1: 'dispenser-partial1.png', // Overlay
@@ -54,6 +53,13 @@ export const ASSETS = {
         MENU: 'menu.png',
         PREP: 'prep.png',
         DUST_SHEET: 'sheets/dust_sheet.png',
+        DISHWASHER_OPEN: 'ui/dishwasher-open.png',
+        DISHWASHER_CLOSED: 'ui/dishwasher-closed.png',
+        DISH_RACK_BASE: 'dish_rack-base.png',
+        DISH_RACK_LAYER1: 'dish_rack-layer1.png',
+        DISH_RACK_LAYER2: 'dish_rack-layer2.png',
+        CHUTE_BACK: 'chute/chute_back.png',
+        CHUTE_FRONT: 'chute/chute_front.png',
     },
     EFFECTS: {
         DUST_SHEET: 'sheets/dust_sheet.png',
@@ -146,7 +152,12 @@ export const ASSETS = {
         LETTUCE_HEAD_OLD: 'lettuce-head-old.png',
         LETTUCE_HEAD_WILT1: 'lettuce-head-wilt1.png',
         LETTUCE_HEAD_WILT2: 'lettuce-head-wilt2.png',
-        MAGIC_BAG: 'magic_bag.png'
+        MAGIC_BAG: 'magic_bag.png',
+        PLATE: 'plates/plate.png',
+        PLATE_PART: 'plates/plate-part.png',
+        PLATE_DIRTY_PART1: 'plates/plate-dirty-part1.png',
+        PLATE_DIRTY_PART2: 'plates/plate-dirty-part2.png',
+        PLATE_DIRTY_PART3: 'plates/plate-dirty-part3.png'
     },
     PLAYER: {
         NEUTRAL: 'player-neutral.png',
@@ -274,14 +285,6 @@ export const TILE_TYPES = {
         cutting: true,
         grantedCapabilities: [CAPABILITY.CUT_TOPPINGS],
     },
-    DISPENSER: {
-        id: 'DISPENSER',
-        texture: ASSETS.TILES.DISPENSER,
-        walkable: false,
-        holdsItems: false, // Dispenser logic is specific (holds internal mayo)
-        dispenser: true,
-        grantedCapabilities: [CAPABILITY.ADD_COLD_SAUCE],
-    },
     FRYER: {
         id: 'FRYER',
         texture: ASSETS.TILES.FRYER,
@@ -374,10 +377,22 @@ export const TILE_TYPES = {
         texture: ASSETS.TILES.MENU,
         walkable: false,
         holdsItems: false,
+    },
+    DISHWASHER: {
+        id: 'DISHWASHER',
+        texture: ASSETS.TILES.DISHWASHER_CLOSED,
+        walkable: false,
+        holdsItems: true, // Maybe we can put things on top?
+    },
+    CHUTE: {
+        id: 'CHUTE',
+        texture: ASSETS.TILES.CHUTE_BACK,
+        walkable: false,
+        holdsItems: false,
     }
 };
 
-export const GRID_WIDTH = 14;
+export const GRID_WIDTH = 15;
 export const GRID_HEIGHT = 10;
 
 export const TAG_LAYOUTS = {

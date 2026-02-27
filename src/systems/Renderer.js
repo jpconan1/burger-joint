@@ -349,32 +349,6 @@ export class Renderer {
                     tileTexture = null;
                 }
 
-                if (cell.type.id === 'DISPENSER') {
-                    // Default to Empty
-                    tileTexture = ASSETS.TILES.DISPENSER_EMPTY;
-
-                    const status = cell.state ? cell.state.status : null;
-
-                    if (status === 'loaded' || status === 'has_mayo') {
-                        // 1. Draw Sauce Item Underneath
-                        let bagTexture = ASSETS.OBJECTS.MAYO_BAG; // Default fallback
-
-                        if (cell.state.bagId && DEFINITIONS[cell.state.bagId]) {
-                            bagTexture = DEFINITIONS[cell.state.bagId].texture;
-                        }
-
-                        const bagImg = this.assetLoader.get(bagTexture);
-                        if (bagImg) {
-                            this.ctx.drawImage(bagImg, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                        }
-
-                        // 2. Select Overlay based on charges
-                        const charges = cell.state.charges;
-                        if (charges > 10) tileTexture = ASSETS.TILES.DISPENSER_FULL;
-                        else if (charges > 5) tileTexture = ASSETS.TILES.DISPENSER_PARTIAL1;
-                        else tileTexture = ASSETS.TILES.DISPENSER_PARTIAL2;
-                    }
-                }
 
                 if (cell.type.id === 'FRYER' && cell.state) {
                     // Check for Item Cooking (Patty or Fries)
@@ -452,8 +426,41 @@ export class Renderer {
                         }
                     }
                 }
+                if (cell.type.id === 'DISHWASHER') {
+                    if (cell.state && cell.state.isOpen) {
+                        tileTexture = ASSETS.TILES.DISHWASHER_OPEN;
+                        // Fade if player is "behind" the tall dishwasher image
+                        if (gameState.player) {
+                            const px = Math.round(gameState.player.x);
+                            const py = Math.round(gameState.player.y);
+                            if (px === x && py === y - 1) {
+                                this.ctx.globalAlpha = 0.5;
+                            }
+                        }
+                    } else {
+                        tileTexture = ASSETS.TILES.DISHWASHER_CLOSED;
+                    }
+                }
 
+                if (cell.type.id === 'CHUTE') {
+                    this.drawChuteSegment(ASSETS.TILES.CHUTE_BACK, x, y);
 
+                    // Render falling boxes that overlap this vertical segment
+                    if (gameState.fallingBoxes && x === 0) {
+                        gameState.fallingBoxes.forEach(box => {
+                            if (y >= box.y - 1 && y <= box.y + 1) {
+                                this.ctx.save();
+                                this.ctx.beginPath();
+                                this.ctx.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                                this.ctx.clip();
+                                this.drawObject(box.item, x, box.y);
+                                this.ctx.restore();
+                            }
+                        });
+                    }
+
+                    tileTexture = null;
+                }
 
                 if (cell.state && cell.state.facing !== undefined) {
                     const rotation = cell.state.facing * (Math.PI / 2);
@@ -461,6 +468,7 @@ export class Renderer {
                 } else {
                     this.drawTile(tileTexture, x, y);
                 }
+                this.ctx.globalAlpha = 1.0;
 
                 if (cell.type.id === 'SERVICE') {
                     // Deprecated: Service Timer (removed)
@@ -606,6 +614,15 @@ export class Renderer {
                     }
                 }
 
+                // 2.6.5 Draw Dishwasher Progress
+                if (cell.type.id === 'DISHWASHER') {
+                    if (cell.state && cell.state.status === 'washing') {
+                        const max = 60000;
+                        const pct = Math.min(1 - ((cell.state.timer || 0) / max), 1);
+                        progressBars.push({ x, y, pct });
+                    }
+                }
+
                 // 2.7 Draw Box Quantity (Disabled: Unlimited)
                 /*
                 if (cell.object && cell.object.type === 'Box' && cell.object.state) {
@@ -621,6 +638,10 @@ export class Renderer {
                     // For service counters, we use the same offset as normal counters
                     this.drawServiceHint(x, y, gameState, cell.object, -29, serviceCounterIndex);
                     serviceCounterIndex++;
+                }
+
+                if (cell.type.id === 'CHUTE') {
+                    this.drawChuteSegment(ASSETS.TILES.CHUTE_FRONT, x, y);
                 }
             }
 
@@ -760,10 +781,7 @@ export class Renderer {
 
             // Draw Held Item (ItemInstance)
             if (gameState.player.heldItem) {
-                const isBox = gameState.player.heldItem.type === 'Box';
-                if (isBox) this.ctx.globalAlpha = 0.6;
                 this.drawEntity(gameState.player.heldItem, gameState.player.x, gameState.player.y);
-                if (isBox) this.ctx.globalAlpha = 1.0;
             }
 
             // Draw Held Appliance (New)
@@ -784,8 +802,6 @@ export class Renderer {
                 if (app.attachedObject) {
                     this.ctx.save();
                     this.ctx.translate(0, -20);
-                    const isBox = app.attachedObject.type === 'Box';
-                    if (isBox) this.ctx.globalAlpha = 0.6;
                     this.drawObject(app.attachedObject, gameState.player.x, gameState.player.y);
                     this.ctx.restore();
                 }
@@ -855,8 +871,27 @@ export class Renderer {
         if (!textureName) return;
         const img = this.assetLoader.get(textureName);
         if (img) {
-            this.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE + yOffset, TILE_SIZE, TILE_SIZE);
+            const hOffset = TILE_SIZE - img.height;
+            this.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE + hOffset + yOffset, img.width, img.height);
         }
+    }
+
+    drawChuteSegment(textureName, x, y) {
+        const img = this.assetLoader.get(textureName);
+        if (!img) return;
+
+        // The chute is 9 tiles high. We map y to the segment.
+        const segmentHeight = TILE_SIZE;
+        const sourceY = y * segmentHeight;
+
+        // Safety check in case image is shorter than expected or y is out of range
+        if (sourceY >= img.height) return;
+
+        this.ctx.drawImage(
+            img,
+            0, sourceY, img.width, segmentHeight,
+            x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE
+        );
     }
 
     drawSodaFountain(object, x, y, yOffset = 0) {
@@ -935,9 +970,14 @@ export class Renderer {
             return;
         }
 
-        // Stackable Inserts
-        if (object.definitionId === 'insert') {
-            this.drawInsertStack(object, x, y, 1.0, yOffset);
+        // Stackable Items (Inserts, Plates etc)
+        if (object.definition && object.definition.useStackRender) {
+            this.drawStackedItem(object, x, y, 1.0, yOffset);
+            return;
+        }
+
+        if (object.definitionId === 'dish_rack') {
+            this.drawDishRack(object, x, y, yOffset);
             return;
         }
 
@@ -947,6 +987,72 @@ export class Renderer {
         if (img) {
             // Objects also align to grid
             this.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE + yOffset, TILE_SIZE, TILE_SIZE);
+        }
+    }
+
+    drawDishRack(rack, x, y, yOffset = 0) {
+        const contents = rack.state.contents || [];
+        const bx = x * TILE_SIZE;
+        const by = y * TILE_SIZE + yOffset;
+
+        // 1. Base Layer
+        this.drawTile(ASSETS.TILES.DISH_RACK_BASE, x, y, yOffset);
+
+        // Plate positioning config
+        // Two rows of 3.
+        // Row 1 (Back): indices 0, 1, 2
+        // Row 2 (Front): indices 3, 4, 5
+        const plateOffsets = [
+            { dx: 12, dy: 12 }, { dx: 24, dy: 12 }, { dx: 36, dy: 12 }, // Row 1 (Back)
+            { dx: 12, dy: 28 }, { dx: 24, dy: 28 }, { dx: 36, dy: 28 } // Row 2 (Front)
+        ];
+
+        // 2. Render first row (indices 0, 1, 2)
+        for (let i = 0; i < Math.min(contents.length, 3); i++) {
+            const plate = contents[i];
+            const offset = plateOffsets[i];
+            this.drawDishRackPlate(plate, bx + offset.dx, by + offset.dy);
+        }
+
+        // 3. Layer 1 (behind back prongs/middle)
+        this.drawTile(ASSETS.TILES.DISH_RACK_LAYER1, x, y, yOffset);
+
+        // 4. Render second row (indices 3, 4, 5)
+        for (let i = 3; i < Math.min(contents.length, 6); i++) {
+            const plate = contents[i];
+            const offset = plateOffsets[i];
+            this.drawDishRackPlate(plate, bx + offset.dx, by + offset.dy);
+        }
+
+        // 5. Layer 2 (Front prongs)
+        this.drawTile(ASSETS.TILES.DISH_RACK_LAYER2, x, y, yOffset);
+    }
+
+    drawDishRackPlate(plate, px, py) {
+        // Plates in rack need to be scaled down
+        // The plate asset is 64x64, but we need it to fit in a small slot.
+        // Scale 0.4 seems reasonable for 3 in a row.
+        const scale = 0.4;
+        const size = TILE_SIZE * scale;
+
+        const texture = plate.texture || 'plates/plate.png';
+        const img = this.assetLoader.get(texture);
+        if (img) {
+            this.ctx.drawImage(img, px, py, size, size);
+        }
+
+        // If dirty plate, draw layers
+        if (plate.definitionId === 'dirty_plate' && plate.state.dirtyLayers) {
+            plate.state.dirtyLayers.forEach(layer => {
+                const layerImg = this.assetLoader.get(layer.texture);
+                if (layerImg) {
+                    this.ctx.save();
+                    this.ctx.translate(px + size / 2, py + size / 2);
+                    this.ctx.rotate(layer.rotation);
+                    this.ctx.drawImage(layerImg, -size / 2, -size / 2, size, size);
+                    this.ctx.restore();
+                }
+            });
         }
     }
 
@@ -1039,7 +1145,8 @@ export class Renderer {
         );
     }
 
-    drawInsertStack(item, x, y, scale = 1.0, yOffset = 0) {
+    drawStackedItem(item, x, y, scale = 1.0, yOffset = 0) {
+        const def = item.definition;
         const count = item.state.count || 1;
         const contents = item.state.contents;
 
@@ -1050,87 +1157,141 @@ export class Renderer {
         const cy = y * TILE_SIZE + TILE_SIZE / 2 + yOffset;
         this.ctx.translate(cx, cy);
         this.ctx.scale(scale, scale);
-        // Reset manual translate for loop
 
         // Base coordinate (relative to center)
-        // Draw centered on tile: -TILE_SIZE/2 offset
         const baseX = -TILE_SIZE / 2;
         const baseY = -TILE_SIZE / 2;
 
-        const partTexture = item.definition.partTexture || 'insert-part.png';
-        const fullTexture = item.definition.texture || 'insert.png';
+        const partTexture = def.partTexture;
+        const fullTexture = def.texture;
 
-        // Render from Top (Back) to Bottom (Front) so that the lower items (parts) 
-        // are drawn *over* the items behind them, matching the visual stack style.
-        // i = count-1 is the Top item (highest negative offset).
-        // i = 0 is the Bottom item (0 offset).
+        // Use def values if present, else fallback to defaults
+        const stackNudge = def.stackNudge || 6;
+        const contentNudge = def.contentNudge || 12;
+
+        // Render from Top (Back/Farthest) to Bottom (Front/Closest)
+        // This ensures the stacking looks correct with the bottom-most item overlapping those above it visually.
         for (let i = count - 1; i >= 0; i--) {
             const isTop = (i === count - 1);
-
-            // Offset: Each item is nudged UP by 6px relative to the one below it.
-            // i=0 (Bottom): offset 0.
-            const yOffset = i * -6;
+            const nudgeY = i * -stackNudge;
 
             if (isTop) {
-                // 1. Draw Base (insert.png) - Back
+                // 1. Draw Base Texture (Back)
                 const imgFull = this.assetLoader.get(fullTexture);
-                if (imgFull) this.ctx.drawImage(imgFull, baseX, baseY + yOffset, TILE_SIZE, TILE_SIZE);
+                if (imgFull) this.ctx.drawImage(imgFull, baseX, baseY + nudgeY, TILE_SIZE, TILE_SIZE);
 
-                // 2. Draw Contents (sandwiched)
+                // 1.5. Draw Dirty Plate Layers (if applicable)
+                if (def.id === 'dirty_plate') {
+                    const layers = item.state.dirtyLayers || [];
+                    const contentY = baseY + nudgeY;
+
+                    layers.forEach(layer => {
+                        const img = this.assetLoader.get(layer.texture);
+                        if (img) {
+                            this.ctx.save();
+                            this.ctx.translate(baseX + TILE_SIZE / 2, contentY + TILE_SIZE / 2);
+                            this.ctx.rotate(layer.rotation);
+                            this.ctx.drawImage(img, -TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
+                            this.ctx.restore();
+                        }
+                    });
+                }
+
+                // 2. Draw Contents (if any, sandwiched between base and part)
                 if (contents && contents.length > 0) {
-                    const firstContent = contents[0];
-                    let contentTexture = null;
+                    if (def.id === 'plate' || def.id === 'dirty_plate') {
+                        // Plate Logic: Render burger and side side-by-side
+                        const burger = contents.find(c => (c.definition && (c.definition.category === 'burger' || c.definitionId.includes('burger'))) || c.category === 'burger');
+                        const side = contents.find(c => c.definition && c.definition.category === 'side_prep');
 
-                    // Resolve texture
-                    if (firstContent.texture) {
-                        contentTexture = firstContent.texture;
-                    } else if (firstContent.definitionId && DEFINITIONS[firstContent.definitionId]) {
-                        contentTexture = DEFINITIONS[firstContent.definitionId].texture;
-                    } else if (typeof firstContent === 'string' && DEFINITIONS[firstContent]) {
-                        contentTexture = DEFINITIONS[firstContent].texture;
-                    }
+                        const innerScale = 0.55;
+                        const innerSize = TILE_SIZE * innerScale;
+                        const contentY = baseY + nudgeY - contentNudge;
 
-                    if (contentTexture) {
-                        const imgContent = this.assetLoader.get(contentTexture);
-                        if (imgContent) {
-                            // Nudge up 12px more relative to the top insert
-                            const contentY = baseY + yOffset - 12;
-                            this.ctx.drawImage(imgContent, baseX, contentY, TILE_SIZE, TILE_SIZE);
+                        // 1. Draw Side first (so it appears behind/below the burger)
+                        if (side) {
+                            // Right side
+                            if (side.definitionId === 'raw_fries' || side.definitionId === 'raw_sweet_potato_fries') {
+                                // Use specialized fitted asset for fries if available
+                                const plateFriesImg = this.assetLoader.get('plates/fries-plate-part.png');
+                                if (plateFriesImg) {
+                                    this.ctx.drawImage(plateFriesImg, baseX, baseY + nudgeY, TILE_SIZE, TILE_SIZE);
+                                } else {
+                                    // Fallback if asset missing
+                                    const sideTex = side.getTexture();
+                                    const sideImg = this.assetLoader.get(sideTex);
+                                    if (sideImg) {
+                                        this.ctx.drawImage(sideImg, 0, contentY + 10, innerSize, innerSize);
+                                    }
+                                }
+                            } else {
+                                // Other sides use scaled fallback
+                                const sideTex = side.getTexture();
+                                const sideImg = this.assetLoader.get(sideTex);
+                                if (sideImg) {
+                                    this.ctx.drawImage(sideImg, 0, contentY + 10, innerSize, innerSize);
+                                }
+                            }
+                        }
 
+                        // 2. Draw Burger second (so it appears on top)
+                        if (burger) {
+                            // Left side
+                            this.drawBurgerPixels(burger, -innerSize + 4, contentY + 15, innerScale);
+                        }
+                    } else {
+                        // Standard logic for other containers
+                        const firstContent = contents[0];
+                        let contentTexture = null;
 
+                        if (firstContent.texture) {
+                            contentTexture = firstContent.texture;
+                        } else if (firstContent.definitionId && DEFINITIONS[firstContent.definitionId]) {
+                            contentTexture = DEFINITIONS[firstContent.definitionId].texture;
+                        } else if (typeof firstContent === 'string' && DEFINITIONS[firstContent]) {
+                            contentTexture = DEFINITIONS[firstContent].texture;
+                        }
+
+                        if (contentTexture) {
+                            const imgContent = this.assetLoader.get(contentTexture);
+                            if (imgContent) {
+                                const contentY = baseY + nudgeY - contentNudge;
+                                this.ctx.drawImage(imgContent, baseX, contentY, TILE_SIZE, TILE_SIZE);
+                            }
                         }
                     }
                 }
 
-                // 3. Draw Front (insert-part.png) - Top Layer
-                // Only if needed? User asked for "sandwiching" so I assume partTexture is the front.
-                const imgPart = this.assetLoader.get(partTexture);
-                if (imgPart) this.ctx.drawImage(imgPart, baseX, baseY + yOffset, TILE_SIZE, TILE_SIZE);
+                // 3. Draw Part Texture (Front/Top Layer)
+                if (partTexture) {
+                    const imgPart = this.assetLoader.get(partTexture);
+                    if (imgPart) this.ctx.drawImage(imgPart, baseX, baseY + nudgeY, TILE_SIZE, TILE_SIZE);
+                }
 
-                // 4. Draw Age Label (stuck to insert)
-                if (contents && contents.length > 0 && contents[0].age === 1) {
-                    const imgLabel = this.assetLoader.get(ASSETS.UI.INSERT_LABEL);
+                // 4. Optional Label (Age/Status)
+                // We keep this generic but check if the definition requests it (insert uses this)
+                if (def.showLabel !== false && contents && contents.length > 0 && contents[0].age === 1) {
+                    const labelAsset = def.labelAsset || ASSETS.UI.INSERT_LABEL;
+                    const imgLabel = this.assetLoader.get(labelAsset);
                     if (imgLabel) {
-                        this.ctx.drawImage(imgLabel, baseX, baseY + yOffset, TILE_SIZE, TILE_SIZE);
+                        this.ctx.drawImage(imgLabel, baseX, baseY + nudgeY, TILE_SIZE, TILE_SIZE);
                     }
                 }
 
-            } else {
-                // Non-top items: Just draw the partTexture to simulate the stack depth
+            } else if (partTexture) {
+                // Non-top items: Just draw the partTexture to simulate stack depth
                 const img = this.assetLoader.get(partTexture);
                 if (img) {
-                    this.ctx.drawImage(img, baseX, baseY + yOffset, TILE_SIZE, TILE_SIZE);
+                    this.ctx.drawImage(img, baseX, baseY + nudgeY, TILE_SIZE, TILE_SIZE);
                 }
             }
         }
 
         this.ctx.restore();
 
-        // Draw Quantity Number
-        if (contents && contents.length > 0) {
-            // Note: This draws in grid coords, but relies on x, y being correct.
-            // If scale is small (0.5), the text might look large relative to the item, 
-            // but for readability this is usually preferred.
+        // Draw Quantity Number (number of items inside the container)
+        // Plates don't show the count as they are purely visual/served containers
+        if (contents && contents.length > 0 && !['plate', 'dirty_plate'].includes(def.id) && def.showLabel !== false) {
             this.drawTinyNumber(x, y, contents.length);
         }
     }
@@ -1145,7 +1306,7 @@ export class Renderer {
             this.ctx.save();
             this.ctx.translate(centerX, centerY);
             this.ctx.rotate(rotation);
-            this.ctx.drawImage(img, -TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
+            this.ctx.drawImage(img, -img.width / 2, TILE_SIZE / 2 - img.height, img.width, img.height);
             this.ctx.restore();
         }
     }
@@ -1169,8 +1330,10 @@ export class Renderer {
                 this.drawBurger(itemOrTexture, x, y);
             } else if (itemOrTexture.type === 'Box') {
                 this.drawBox(itemOrTexture, x, y);
-            } else if (itemOrTexture.definitionId === 'insert') {
-                this.drawInsertStack(itemOrTexture, x, y, scale);
+            } else if (itemOrTexture.definitionId === 'dish_rack') {
+                this.drawDishRack(itemOrTexture, x, y, 0);
+            } else if (itemOrTexture.definitionId === 'insert' || itemOrTexture.definition.useStackRender) {
+                this.drawStackedItem(itemOrTexture, x, y, scale);
             } else {
                 // Fallback to texture property
                 const textureName = itemOrTexture.texture;
@@ -2064,20 +2227,23 @@ export class Renderer {
 
         if (!ticket) return;
 
-        // 1. Draw Bag Outline (Always if active ticket exists)
-        this.drawTile('bag-trans.png', x, y, yOffset);
+        // 1. Determine Requirements & Container Type
+        // Using "First Group" logic (usually only 1 group per ticket right now)
+        const orderGroup = ticket.groups && ticket.groups[0];
+        if (!orderGroup) return;
 
-        // 2. Determine Requirements
-        // Using "One Bag Rule" logic
-        const bagReq = ticket.bags && ticket.bags[0];
-        if (!bagReq) return;
+        const containerType = orderGroup.containerType || 'bag';
 
-        let reqBurgers = bagReq.burgers ? [...bagReq.burgers] : []; // Copy for matching
+        // 2. Draw Container Outline (Always if active ticket exists)
+        const outlineTex = containerType === 'plate' ? 'plates/plate-outline.png' : 'bag-trans.png';
+        this.drawTile(outlineTex, x, y, yOffset);
+
+        let reqBurgers = orderGroup.burgers ? [...orderGroup.burgers] : []; // Copy for matching
         let reqSides = [];
         let reqDrinks = [];
 
-        if (bagReq.items) {
-            bagReq.items.forEach(itemId => {
+        if (orderGroup.items) {
+            orderGroup.items.forEach(itemId => {
                 const def = DEFINITIONS[itemId];
                 if (def && def.orderConfig) {
                     if (def.orderConfig.type === 'side') reqSides.push(itemId);
@@ -2101,7 +2267,7 @@ export class Renderer {
         let errorSides = false;
         let errorDrinks = false;
 
-        if (cellObject && cellObject.definitionId === 'bag' && cellObject.state && cellObject.state.contents) {
+        if (cellObject && cellObject.definitionId === containerType && cellObject.state && cellObject.state.contents) {
 
             // Helper function to check topping arrays
             const checkBurgerMatch = (reqModifications, actualItem) => {
@@ -2206,15 +2372,78 @@ export class Renderer {
             });
         }
 
-        // 4. Render Tags (Dynamic Fill or Error)
-        if (totalReqBurgers > 0) {
-            this.drawProgressTag('burger', x, y, validBurgers, totalReqBurgers, errorBurgers, yOffset);
-        }
-        if (totalReqSides > 0) {
-            this.drawProgressTag('side', x, y, validSides, totalReqSides, errorSides, yOffset);
-        }
-        if (totalReqDrinks > 0) {
-            this.drawProgressTag('drink', x, y, validDrinks, totalReqDrinks, errorDrinks, yOffset);
+        // 4. Render Hooks (Dynamic Fill or Error)
+        if (containerType === 'plate') {
+            // Plate Specific Rendering: Ghost outlines on the plate itself
+            this.ctx.save();
+            const cx = x * TILE_SIZE + TILE_SIZE / 2;
+            const cy = y * TILE_SIZE + TILE_SIZE / 2 + yOffset;
+            this.ctx.translate(cx, cy);
+
+            const baseX = -TILE_SIZE / 2;
+            const baseY = -TILE_SIZE / 2;
+            const innerScale = 0.55;
+            const innerSize = TILE_SIZE * innerScale;
+            const contentNudge = 8;
+            const contentY = baseY - contentNudge;
+
+            // Burger Ghost
+            if (totalReqBurgers > 0 && validBurgers < totalReqBurgers) {
+                const bOutline = this.assetLoader.get('plates/burger-plate-outline.png');
+                if (bOutline) {
+                    this.ctx.drawImage(bOutline, -innerSize + 4, contentY + 15, innerSize, innerSize);
+                }
+            }
+
+            // Side Ghost
+            if (totalReqSides > 0 && validSides < totalReqSides) {
+                const sOutline = this.assetLoader.get('plates/fries-plate-outline.png');
+                if (sOutline) {
+                    // Positioned to match the side slot
+                    this.ctx.drawImage(sOutline, baseX, baseY, TILE_SIZE, TILE_SIZE);
+                }
+            }
+
+            // 5. Indicators (Correct/Wrong)
+            if (cellObject) {
+                const correctImg = this.assetLoader.get('plates/correct.png');
+                const wrongImg = this.assetLoader.get('plates/wrong.png');
+
+                // Burger Indicator
+                if (validBurgers > 0) {
+                    const img = (errorBurgers || (totalReqBurgers === 0)) ? wrongImg : correctImg;
+                    if (img) {
+                        // Center over burger slot (-innerSize + 4, contentY + 15)
+                        const ix = -innerSize + 4 + (innerSize - 24) / 2;
+                        const iy = contentY + 15 + (innerSize - 24) / 2;
+                        this.ctx.drawImage(img, ix, iy, 24, 24);
+                    }
+                }
+
+                // Side Indicator
+                if (validSides > 0) {
+                    const img = (errorSides || (totalReqSides === 0)) ? wrongImg : correctImg;
+                    if (img) {
+                        // Center over side slot (0, contentY + 10)
+                        const ix = 0 + (innerSize - 24) / 2;
+                        const iy = contentY + 10 + (innerSize - 24) / 2;
+                        this.ctx.drawImage(img, ix, iy, 24, 24);
+                    }
+                }
+            }
+
+            this.ctx.restore();
+        } else {
+            // Bag/Standard Rendering: Uses progress tags
+            if (totalReqBurgers > 0) {
+                this.drawProgressTag('burger', x, y, validBurgers, totalReqBurgers, errorBurgers, yOffset);
+            }
+            if (totalReqSides > 0) {
+                this.drawProgressTag('side', x, y, validSides, totalReqSides, errorSides, yOffset);
+            }
+            if (totalReqDrinks > 0) {
+                this.drawProgressTag('drink', x, y, validDrinks, totalReqDrinks, errorDrinks, yOffset);
+            }
         }
     }
 

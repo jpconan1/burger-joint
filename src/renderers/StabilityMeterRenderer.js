@@ -22,40 +22,63 @@ export function drawStabilityMeter(renderer, gameState) {
         maxFps: 15
     });
 
-    const frameWidth = frameData.width;
-    const frameHeight = frameData.height;
+    // Dimensions
+    const frameWidth = frameData.width * renderer.zoomLevel;
+    const frameHeight = frameData.height * renderer.zoomLevel;
 
-    // Position: Centered relative to grid
+    // Meter is rotated -90 degrees, so:
+    // Screen width = asset height
+    // Screen height = asset width
+    const meterScreenWidth = frameHeight;
+    const meterScreenHeight = frameWidth;
+
+    // Position: Beside game tiles, on the right
     const gridPixelWidth = gameState.grid.width * TILE_SIZE * renderer.zoomLevel;
-    const x = renderer.offsetX + (gridPixelWidth / 2) - (frameWidth / 2); // Center on grid
-    const y = renderer.offsetY - frameHeight - 10 - 64; // Bump up 64px + 10px padding above grid
+    const gridPixelHeight = gameState.grid.height * TILE_SIZE * renderer.zoomLevel;
+
+    // Padding from grid edge
+    const paddingFromGrid = 48 * renderer.zoomLevel;
+    const x = renderer.offsetX + gridPixelWidth + paddingFromGrid;
+    const y = renderer.offsetY + (gridPixelHeight / 2) - (meterScreenHeight / 2); // Center vertically on grid
 
     // Draw
     renderer.ctx.save();
     renderer.ctx.imageSmoothingEnabled = false;
 
-    // 1. Draw Fill Bar Logic (Behind the sprite frame)
-    // Assuming generic padding for a meter frame.
-    const paddingX = 4; // Adjust based on visual
-    const paddingY = 4;
+    // 1. Position and Rotate
+    // We want the bar to be vertical. Original asset is horizontal.
+    // Translate to center of where we want the meter to be.
+    renderer.ctx.translate(x + meterScreenWidth / 2, y + meterScreenHeight / 2);
+    renderer.ctx.rotate(-Math.PI / 2); // Rotate -90 degrees to make it vertical
+
+    // Drawing coordinates (centered in native space)
+    const drawX = -frameWidth / 2;
+    const drawY = -frameHeight / 2;
+
+    const paddingX = 4 * renderer.zoomLevel;
+    const paddingY = 4 * renderer.zoomLevel;
     const barMaxWidth = Math.max(0, frameWidth - (paddingX * 2));
     const barMaxHeight = Math.max(0, frameHeight - (paddingY * 2));
 
     // Background (Black)
-    renderer.ctx.fillStyle = '#000000';
-    renderer.ctx.fillRect(x + paddingX, y + paddingY, barMaxWidth, barMaxHeight);
+    renderer.ctx.fillStyle = '#1a1a1a';
+    renderer.ctx.fillRect(drawX + paddingX, drawY + paddingY, barMaxWidth, barMaxHeight);
 
     // Foreground (Color based on pct)
-    renderer.ctx.fillStyle = stabilityPct > 0.5 ? '#00ff00' : (stabilityPct > 0.25 ? '#ffff00' : '#ff0000');
-    // Draw fill based on percentage
-    renderer.ctx.fillRect(x + paddingX, y + paddingY, barMaxWidth * stabilityPct, barMaxHeight);
+    // Green (Safe) -> Yellow (Warning) -> Red (Danger)
+    renderer.ctx.fillStyle = stabilityPct > 0.5 ? '#2ecc71' : (stabilityPct > 0.25 ? '#f1c40f' : '#e74c3c');
 
-    // 2. Draw Boiling Sprite Frame (Foreground)
+    // Draw fill based on percentage (Horizontal in native space = Vertical in screen space)
+    // Fills from "left" in native space which is "bottom" in rotated space.
+    renderer.ctx.fillRect(drawX + paddingX, drawY + paddingY, barMaxWidth * stabilityPct, barMaxHeight);
+
+    // 2. Draw Boiling Sprite Frame (Foreground / Border)
     renderer.ctx.drawImage(
         img,
         frameData.sx, frameData.sy, frameData.width, frameData.height,
-        x, y, frameWidth, frameHeight
+        drawX, drawY, frameWidth, frameHeight
     );
 
     renderer.ctx.restore();
 }
+

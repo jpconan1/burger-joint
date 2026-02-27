@@ -17,13 +17,13 @@ import { AudioSystem } from './systems/AudioSystem.js';
 import { ShopSystem } from './systems/ShopSystem.js';
 import { ConstructionSystem } from './systems/ConstructionSystem.js';
 import { MenuSystem } from './systems/MenuSystem.js';
-import { PostDaySystem } from './systems/PostDaySystem.js';
 import { TouchInputSystem } from './systems/TouchInputSystem.js';
 
 import { RatingPopup } from './ui/RatingPopup.js';
 import { AlertSystem } from './systems/AlertSystem.js';
 import { AutomatedRewardSystem } from './systems/AutomatedRewardSystem.js';
 import { PowerupSystem } from './systems/PowerupSystem.js';
+import { CHUTE_TRIGGERS } from './data/chute_triggers.js';
 
 export class Game {
     constructor() {
@@ -32,7 +32,6 @@ export class Game {
         this.renderer = null;
         this.player = new Player(4, 4);
 
-        this.postDaySystem = new PostDaySystem(this);
         this.ratingPopup = new RatingPopup(this);
         this.alertSystem = new AlertSystem(this);
         this.settings = new Settings();
@@ -119,6 +118,7 @@ export class Game {
         this.currentShift = 'DAY'; // 'DAY' or 'NIGHT'
         this.shiftCount = 0;
         this.pattyBoxTutorialShown = false;
+        this.pendingDirtyPlates = [];
 
 
 
@@ -198,10 +198,11 @@ export class Game {
 
             { id: 'counter', price: SCORING_CONFIG.PRICES.counter, type: 'appliance', unlocked: true, tileType: 'COUNTER', uiAsset: 'RENO_ICON_COUNTER' },
             { id: 'cutting_board', price: SCORING_CONFIG.PRICES.cutting_board, type: 'appliance', unlocked: true, tileType: 'CUTTING_BOARD', uiAsset: 'RENO_ICON_CUTTING_BOARD' },
-            { id: 'dispenser', price: SCORING_CONFIG.PRICES.dispenser, type: 'appliance', unlocked: true, tileType: 'DISPENSER', uiAsset: 'RENO_ICON_DISPENSER' },
+            { id: 'dispenser', price: SCORING_CONFIG.PRICES.dispenser, type: 'appliance', unlocked: true, tileType: null, uiAsset: 'RENO_ICON_DISPENSER' },
             { id: 'fryer', price: SCORING_CONFIG.PRICES.fryer, type: 'appliance', unlocked: true, tileType: 'FRYER', uiAsset: 'RENO_ICON_FRYER' },
             { id: 'soda_fountain', price: SCORING_CONFIG.PRICES.soda_fountain, type: 'appliance', unlocked: true, tileType: 'SODA_FOUNTAIN', uiAsset: 'RENO_ICON_SODA_FOUNTAIN' },
             { id: 'grill', price: SCORING_CONFIG.PRICES.grill, type: 'appliance', unlocked: true, tileType: 'GRILL' },
+            { id: 'dishwasher', price: SCORING_CONFIG.PRICES.dishwasher, type: 'appliance', unlocked: true, tileType: 'DISHWASHER' },
         ];
 
         // Add manual items (Inserts)
@@ -260,6 +261,7 @@ export class Game {
         this.itemDependencyMap['onion_rings'] = 'onion_box';
 
         this.allowedOrderItems = new Set();
+        this.fallingBoxes = [];
     }
 
     // Proxy getters/setters for compatibility with Renderer and legacy code
@@ -349,9 +351,19 @@ export class Game {
                 for (let y = 0; y < room.height; y++) {
                     for (let x = 0; x < room.width; x++) {
                         const cell = room.getCell(x, y);
-                        if (cell.type.id === 'FLOOR' && !cell.object) {
-                            targetCell = cell;
-                            break;
+                        const isFloor = cell.type.id === 'FLOOR';
+                        const isCounter = cell.type.id === 'COUNTER';
+
+                        if (machineType === 'DISPENSER') {
+                            if (isCounter && !cell.object) {
+                                targetCell = cell;
+                                break;
+                            }
+                        } else {
+                            if (isFloor && !cell.object) {
+                                targetCell = cell;
+                                break;
+                            }
                         }
                     }
                     if (targetCell) break;
@@ -360,7 +372,23 @@ export class Game {
                 if (targetCell) {
                     console.log(`Spawning ${machineType} at ${targetCell.x},${targetCell.y} in store_room for ${pDef.id}`);
 
-                    targetCell.type = TILE_TYPES[machineType];
+                    if (machineType === 'DISPENSER') {
+                        const dispenser = new ItemInstance('dispenser');
+                        let sauceId = pDef.id;
+                        if (pDef.id.endsWith('_bag')) sauceId = pDef.id.replace('_bag', '');
+                        else if (pDef.produces) sauceId = pDef.produces;
+
+                        dispenser.state = {
+                            status: 'loaded',
+                            charges: 9999,
+                            sauceId: sauceId,
+                            bagId: pDef.id,
+                            isInfinite: true
+                        };
+                        targetCell.object = dispenser;
+                    } else {
+                        targetCell.type = TILE_TYPES[machineType];
+                    }
 
                     if (isDrinkTrigger) {
                         targetCell.state = {
@@ -370,7 +398,7 @@ export class Game {
                             resultId: (pDef.result || pDef.id),
                             isInfinite: true
                         };
-                    } else {
+                    } else if (machineType !== 'DISPENSER') { // Dispenser state handled above
                         let sauceId = pDef.id;
                         if (pDef.id.endsWith('_bag')) sauceId = pDef.id.replace('_bag', '');
                         else if (pDef.produces) sauceId = pDef.produces;
@@ -594,8 +622,8 @@ export class Game {
         // Spawn Starting Inserts (Stack of 9)
         const insertStack = new ItemInstance('insert');
         insertStack.state.count = 9;
-        // Bottom row, second last column
-        const startX = mainGrid.width - 2;
+        // Bottom row, column 11
+        const startX = mainGrid.width - 3;
         const startY = mainGrid.height - 1;
         const targetCell = mainGrid.getCell(startX, startY);
         if (targetCell && targetCell.type.id === 'COUNTER') {
@@ -692,7 +720,7 @@ export class Game {
         let kStartCost = 0;
 
         this.shopItems.forEach(item => {
-            if (item.isEssential) {
+            if (item.id === 'patty_box' || item.id === 'bun_box') {
                 this.pendingOrders.push({ id: item.id, qty: 1 });
                 kStartCost += item.price;
             }
@@ -709,7 +737,7 @@ export class Game {
         this.isDayActive = false;
         this.testAlertShown = false;
 
-        this.postDaySystem.state = 'SUPPLY_ORDER';
+        this.gameState = 'TITLE';
         this.updateCapabilities();
 
         // Show welcome alert for new players
@@ -777,9 +805,8 @@ export class Game {
         }
 
         // CAPABILITY.ADD_COLD_SAUCE: Dispenser + Mayo (Box/Bag)
-        // Note: We also should ideally check if the dispenser is loaded, but for now we check for presence of mayo source in the room.
         const hasMayo = activeDefIds.has('mayo_box') || activeDefIds.has('mayo_bag');
-        if ((activeTileTypes.has('DISPENSER') || activeDefIds.has('dispenser')) && hasMayo) {
+        if (activeDefIds.has('dispenser') && hasMayo) {
             this.capabilities.add(CAPABILITY.ADD_COLD_SAUCE);
         }
 
@@ -1351,13 +1378,23 @@ export class Game {
                 if (order.id === 'insert') {
                     instance.state.count = 3;
                 }
-                targetTile.object = instance;
+
+                // Push to falling boxes queue
+                this.fallingBoxes.push({
+                    x: 0,
+                    y: -1 - this.fallingBoxes.length, // Stack them above the screen
+                    vy: 0,
+                    item: instance
+                });
 
                 // Update cart for compatibility if needed (e.g. UI)
                 this.cart[order.id] = (this.cart[order.id] || 0) + (order.qty || 1);
             }
             this.pendingOrders = [];
         }
+
+        // 1. Handle Morning Orders via Trigger System
+        this.triggerChute('START_DAY');
 
         // 2. Update Capabilities (Now that supplies are in the world/truck)
         this.updateCapabilities();
@@ -1545,27 +1582,8 @@ export class Game {
             return;
         }
 
-        console.log('Transitioning to Post-Day...');
-
-        this.gameState = 'POST_DAY';
-        this.postDaySystem.start();
-        this.postDayStartTime = Date.now();
-
-        // Robust Cart Reset / Cleanup
-        this.ticketQueue = [];
-        this.activeTickets = [];
-        this.incomingTicket = null;
-
-        // Force player back to kitchen if in store_room or office
-        if (this.currentRoomId === 'store_room' || this.currentRoomId === 'office') {
-            this.currentRoomId = 'main';
-            this.grid = this.rooms['main'];
-            this.player.x = 1;
-            this.player.y = 1;
-            this.saveLevel();
-        }
-
-        // Save progression
+        this.startDay();
+        this.gameState = 'PLAYING';
         this.saveLevel();
         this.audioSystem.setMuffled(true);
         console.log(`End of Day. Remaining Money: $${this.money}`);
@@ -1602,6 +1620,17 @@ export class Game {
                     DEFINITIONS['tomato_box']
                 ]
             });
+        }
+
+        if (event.code === 'KeyO') {
+            const cell = this.player.getTargetCell(this.grid);
+            if (cell && cell.type.id === 'COUNTER' && !cell.object) {
+                const stack = new ItemInstance('dirty_plate');
+                stack.state.count = 9;
+                cell.object = stack;
+                console.log("Cheat: Added stack of 9 dirty plates");
+                this.addFloatingText("Cheat: 9 Dirty Plates!", this.player.x, this.player.y, '#ff0000');
+            }
         }
 
         if (this.gameState === 'TITLE') {
@@ -1699,35 +1728,7 @@ export class Game {
 
 
 
-        if (this.gameState === 'DAY_SUMMARY') {
-            // Handle Rating Popup Input
-            if (this.ratingPopup.isVisible) {
-                const consumed = this.ratingPopup.handleInput(event, this.settings, ACTIONS);
 
-                // If popup just closed (consumed input and is no longer visible)
-                if (!this.ratingPopup.isVisible) {
-                    console.log(`[Game] Rating Popup dismissed. Transitioning to POST_DAY.`);
-                    this.gameState = 'POST_DAY';
-                    this.postDayStartTime = Date.now();
-                    this.postDaySystem.start();
-                }
-                return;
-            } else {
-                // Safety catch
-                this.gameState = 'POST_DAY';
-                this.postDayStartTime = Date.now();
-                this.postDaySystem.start();
-            }
-            return;
-        }
-
-        if (this.gameState === 'POST_DAY') {
-            const result = this.postDaySystem.handleInput(event, this.settings);
-            if (result === 'DONE') {
-                // State transition handled in grantDailyReward usually, or here if we prefer explicit
-            }
-            return;
-        }
 
 
 
@@ -2041,9 +2042,23 @@ export class Game {
         this.powerupSystem.update(dt);
         this.alertSystem.update(dt);
 
+        // Process pending dirty plates
+        if (this.pendingDirtyPlates && this.pendingDirtyPlates.length > 0) {
+            this.pendingDirtyPlates = this.pendingDirtyPlates.filter(p => {
+                p.timer -= dt;
+                if (p.timer <= 0) {
+                    this.spawnDirtyPlate(p.x, p.y);
+                    return false;
+                }
+                return true;
+            });
+        }
+
         if (this.timeFreezeTimer > 0 && !this.timeFreezeManual) {
             this.timeFreezeTimer = Math.max(0, this.timeFreezeTimer - dt);
         }
+
+        this.updateFallingBoxes(dt);
 
         // Patty Box Tutorial Trigger
         const isHoldingPattyBox = this.player.heldItem && (this.player.heldItem.definitionId === 'patty_box');
@@ -2336,6 +2351,26 @@ export class Game {
                         }
                     }
 
+                    // Dishwasher Logic
+                    if (cell.type.id === 'DISHWASHER' && cell.state) {
+                        if (cell.state.status === 'washing' && this.timeFreezeTimer <= 0) {
+                            cell.state.timer = (cell.state.timer || 0) - dt;
+                            if (cell.state.timer <= 0) {
+                                const count = cell.state.dishCount || 0;
+                                cell.state.status = 'idle';
+                                cell.state.dishCount = 0;
+                                cell.state.timer = 0;
+                                cell.state.isOpen = true;
+                                console.log('Dishwashing completed!');
+
+                                // Spawn Clean Dish Rack
+                                const cleanRack = new ItemInstance('dish_rack');
+                                cleanRack.state.contents = Array.from({ length: count }, () => new ItemInstance('plate'));
+                                cell.object = cleanRack;
+                            }
+                        }
+                    }
+
                     // Soda Fountain Logic (Tile)
                     if (cell.type.id === 'SODA_FOUNTAIN' && cell.state) {
                         if (cell.state.status === 'filling' && this.timeFreezeTimer <= 0) {
@@ -2364,7 +2399,7 @@ export class Game {
                     }
 
                     // Service Counter Logic
-                    if (cell.type.id === 'SERVICE' && cell.object && (cell.object.definitionId === 'bag' || cell.object.definitionId === 'magic_bag')) {
+                    if (cell.type.id === 'SERVICE' && cell.object && (cell.object.definitionId === 'bag' || cell.object.definitionId === 'magic_bag' || cell.object.definitionId === 'plate')) {
                         if (this.activeTickets.length > 0) {
 
                             // Try to satisfy ANY active ticket
@@ -2374,7 +2409,7 @@ export class Game {
                             // Iterate all active tickets
                             for (let i = 0; i < this.activeTickets.length; i++) {
                                 const t = this.activeTickets[i];
-                                const res = t.verifyBag(cell.object);
+                                const res = t.verifyContainerItem(cell.object);
                                 if (res.matched) {
                                     matchedTicketIndex = i;
                                     matchResult = res;
@@ -2397,6 +2432,16 @@ export class Game {
                                 // Check Ticket Completion
                                 if (ticket.isComplete()) {
                                     console.log("Ticket Completed!");
+
+                                    // Spawn dirty plate for dine-in orders after 3 seconds
+                                    const isDineIn = ticket.groups.some(g => g.containerType === 'plate');
+                                    if (isDineIn) {
+                                        this.pendingDirtyPlates.push({
+                                            timer: 3000,
+                                            x: 12,
+                                            y: 0
+                                        });
+                                    }
 
                                     // SCORING LOGIC
                                     const par = ticket.parTime;
@@ -2455,10 +2500,86 @@ export class Game {
             }
         });
 
-
-
         // Dynamically update Office State (Door & Reno Tile)
         this.updateOfficeState();
+    }
+
+    updateFallingBoxes(dt) {
+        if (!this.fallingBoxes || this.fallingBoxes.length === 0) return;
+
+        const gravity = 0.00001;
+        const groundY = 7;
+        const stackOffset = 0.7; // How much of a tile each box takes up in the stack
+
+        const landingCell = this.grid.getCell(0, 7);
+        const isLandingOccupied = !!landingCell.object;
+
+        for (let i = 0; i < this.fallingBoxes.length; i++) {
+            const box = this.fallingBoxes[i];
+
+            // Calculate target Y based on stack position
+            let limitY = groundY;
+            if (i > 0) {
+                limitY = this.fallingBoxes[i - 1].y - stackOffset;
+            } else if (isLandingOccupied) {
+                limitY = groundY - stackOffset;
+            }
+
+            if (box.y < limitY) {
+                box.vy += gravity * dt;
+                box.y += box.vy * dt;
+
+                if (box.y >= limitY) {
+                    box.y = limitY;
+                    box.vy = 0;
+                }
+            } else if (box.y > limitY) {
+                // Adjust if box below moved down
+                box.y = limitY;
+                box.vy = 0;
+            }
+        }
+
+        // Potential landing: Move box 0 to grid if it's at groundY and grid is clear
+        if (this.fallingBoxes.length > 0) {
+            const firstBox = this.fallingBoxes[0];
+            // Allow a small epsilon for float comparison
+            if (firstBox.y >= groundY - 0.01 && !isLandingOccupied) {
+                landingCell.object = firstBox.item;
+                this.fallingBoxes.shift();
+            }
+        }
+    }
+
+    triggerChute(triggerId, data = null) {
+        const trigger = CHUTE_TRIGGERS.find(t => t.id === triggerId);
+        if (!trigger) {
+            console.warn(`Chute trigger '${triggerId}' not found.`);
+            return;
+        }
+
+        if (trigger.condition && !trigger.condition(this, data)) {
+            return;
+        }
+
+        const itemsToDrop = trigger.getItems(this, data);
+        if (!itemsToDrop || itemsToDrop.length === 0) return;
+
+        console.log(`Chute Triggered: ${triggerId}. Dropping ${itemsToDrop.length} items.`);
+
+        itemsToDrop.forEach(order => {
+            for (let i = 0; i < (order.qty || 1); i++) {
+                const instance = new ItemInstance(order.id);
+                if (order.id === 'insert') instance.state.count = 3;
+
+                this.fallingBoxes.push({
+                    x: 0,
+                    y: -1 - this.fallingBoxes.length,
+                    vy: 0,
+                    item: instance
+                });
+            }
+        });
     }
 
     updateOfficeState() {
@@ -2514,19 +2635,6 @@ export class Game {
                 this.renderer.renderTitleScreen(this.titleSelection);
             } else if (this.gameState === 'SETTINGS') {
                 this.renderer.renderSettingsMenu(this.settingsState, this.settings);
-            } else if (this.gameState === 'DAY_SUMMARY') {
-                // Render the game world in background, then the popup over it (via Renderer.render logic)
-                this.renderer.render(this);
-            } else if (this.gameState === 'POST_DAY') {
-                this.postDaySystem.render(this.renderer.ctx, {
-                    moneyEarned: this.dailyMoneyEarned,
-                    bagsSold: this.dailyBagsSold,
-                    rent: 0,
-                    netTotal: this.dailyMoneyEarned,
-                    starCount: this.dailyStarCount || 0,
-                    startTime: this.postDayStartTime || Date.now()
-                });
-
             } else if (this.gameState === 'BUILD_MODE') {
                 // Special Render for Build Mode (hides player)
                 this.renderer.render({
@@ -2623,7 +2731,8 @@ export class Game {
             'COUNTER',
             'CUTTING_BOARD',
             'FRYER',
-            'GRILL'
+            'GRILL',
+            'DISHWASHER'
         ];
 
         if (cyclable.includes(cell.type.id)) {
@@ -2687,6 +2796,42 @@ export class Game {
                 this.addFloatingText("Set!", this.player.x, this.player.y, '#00ff00');
             }
 
+        }
+    }
+
+    spawnDirtyPlate(x, y) {
+        const grid = this.rooms['main'];
+        if (!grid) return;
+        const cell = grid.getCell(x, y);
+        if (!cell || !cell.type.holdsItems) return;
+
+        // Dirty parts to choose from
+        const partPool = [
+            'plates/plate-dirty-part1.png',
+            'plates/plate-dirty-part2.png',
+            'plates/plate-dirty-part3.png'
+        ];
+
+        // Pick 2 of 3
+        const shuffled = [...partPool].sort(() => 0.5 - Math.random());
+        const chosen = shuffled.slice(0, 2);
+
+        const layers = chosen.map(texture => ({
+            texture: texture,
+            rotation: Math.random() * Math.PI * 2
+        }));
+
+        if (cell.object && cell.object.definitionId === 'dirty_plate') {
+            // Stack it
+            cell.object.state.count = (cell.object.state.count || 1) + 1;
+            // Update top looks to the newest plate
+            cell.object.state.dirtyLayers = layers;
+        } else if (!cell.object) {
+            // New dirty plate
+            const item = new ItemInstance('dirty_plate');
+            item.state.count = 1;
+            item.state.dirtyLayers = layers;
+            cell.object = item;
         }
     }
 

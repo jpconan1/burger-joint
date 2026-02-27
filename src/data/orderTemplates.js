@@ -31,13 +31,15 @@ export function getMenuForCapabilities(capabilities, allowedItems = null) {
         }
     });
 
-    // Drinks
+    // Drinks - DISABLED
+    /*
     drinks.forEach(d => {
         if (isItemAllowed(d)) {
             const name = d.id.charAt(0).toUpperCase() + d.id.slice(1);
             menu.push(`Drink: ${name}`);
         }
     });
+    */
 
     return menu;
 }
@@ -104,13 +106,15 @@ export function generateMealConfig(capabilities, allowedItems = null) {
         payout += side.value;
     }
 
-    // 3. Drink (75% chance)
+    // 3. Drink (75% chance) - DISABLED
     const validDrinks = drinks.filter(d => isItemAllowed(d));
+    /*
     if (Math.random() < 0.75 && validDrinks.length > 0) {
         const drink = validDrinks[Math.floor(Math.random() * validDrinks.length)];
         components.push({ type: drink.id });
         payout += drink.value;
     }
+    */
 
     return {
         components,

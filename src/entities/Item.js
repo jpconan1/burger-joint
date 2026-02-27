@@ -91,6 +91,21 @@ export class ItemInstance {
                 }
                 break;
         }
+
+        // 3. Custom Dirty Plate Logic
+        if (this.definitionId === 'dirty_plate' && !this.state.dirtyLayers) {
+            const partPool = [
+                'plates/plate-dirty-part1.png',
+                'plates/plate-dirty-part2.png',
+                'plates/plate-dirty-part3.png'
+            ];
+            const shuffled = [...partPool].sort(() => 0.5 - Math.random());
+            const chosen = shuffled.slice(0, 2);
+            this.state.dirtyLayers = chosen.map(texture => ({
+                texture: texture,
+                rotation: Math.random() * Math.PI * 2
+            }));
+        }
     }
 
     get texture() {

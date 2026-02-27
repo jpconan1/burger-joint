@@ -121,9 +121,7 @@ export class ConstructionSystem {
 
         // 3. Pick Up / Place (Space)
         const isPickUp = event.code === this.game.settings.getBinding(ACTIONS.PICK_UP) || event.code === 'Space';
-        // Allow Interact key for placement only if in purchase mode
         const isInteract = event.code === this.game.settings.getBinding(ACTIONS.INTERACT) || event.code === 'Enter';
-
         const isPlacementAction = isPickUp || (state.isPurchase && isInteract);
 
         if (isPlacementAction) {
@@ -132,67 +130,45 @@ export class ConstructionSystem {
                 const targetCell = this.game.grid.getCell(state.x, state.y);
                 const targetType = targetCell.type.id;
 
-                // Non-responsive items check
                 const nonResponsive = ['WALL', 'TICKET_WHEEL', 'SERVICE', 'PRINTER', 'COMPUTER', 'RENO', 'GARBAGE', 'SHUTTER_DOOR', 'OFFICE_DOOR', 'EXIT_DOOR'];
                 if (nonResponsive.includes(targetType) || targetCell.type.isDoor || targetCell.type.isExit) {
                     console.log("Cannot place here (blocked)");
-                    // Optional: play error sound
                     return;
                 }
 
-                // If placing on something that isn't FLOOR, we check if it's a valid placement (e.g. Soda Fountain on Counter)
                 const heldId = state.heldItem.id || '';
-                const heldType = state.heldItem.tileType || '';
-
-                // Allow both ID and TileType check
-                const isCounterAppliance = ['soda_fountain', 'dispenser'].includes(heldId) || ['SODA_FOUNTAIN', 'DISPENSER'].includes(heldType);
+                const isCounterAppliance = ['soda_fountain', 'dispenser'].includes(heldId);
                 const isPlacementOnCounter = (targetType === 'COUNTER');
 
-                // Debug VISIBLE
-                this.game.addFloatingText(`Try: ${heldId} on ${targetType}`, state.x, state.y, '#ffffff');
-
                 if (isCounterAppliance && isPlacementOnCounter && !targetCell.object) {
-                    // Place as OBJECT
-                    console.log(`Placing ${state.heldItem.tileType} on Counter as object`);
+                    // Place as OBJECT on Counter
+                    let newItem = new ItemInstance(heldId);
 
-                    // 1. Create Object (ItemInstance)
-                    // Note: We assume the ID matches an item definition (added to items.json)
-                    let newItem = new ItemInstance(state.heldItem.id);
-
-                    // 2. Initialize State (Copy saved or Default)
                     if (state.heldItem.savedState) {
                         newItem.state = JSON.parse(JSON.stringify(state.heldItem.savedState));
                     } else {
-                        // Default State Initialization
-                        const placedType = state.heldItem.tileType;
-                        if (placedType === 'DISPENSER') {
+                        if (heldId === 'dispenser') {
                             newItem.state = {
                                 status: 'loaded',
                                 charges: 9999,
                                 sauceId: 'mayo',
-                                bagId: 'mayo_bag', // fallback
+                                bagId: 'mayo_bag',
                                 isInfinite: true
                             };
-                        } else if (placedType === 'SODA_FOUNTAIN') {
+                        } else if (heldId === 'soda_fountain') {
                             newItem.state = {
                                 status: 'full',
                                 charges: 9999,
-                                syrupId: null, // Direct drink
                                 resultId: 'cola',
                                 isInfinite: true
                             };
                         }
                     }
 
-                    // 3. Place
                     targetCell.object = newItem;
-
-                    // 4. Update Game State
                     state.heldItem = null;
                     this.game.updateCapabilities();
-                    // this.game.audioSystem.playSFX(ASSETS.AUDIO.PRINTER); // Clunk sound
 
-                    // 5. Check Purchase Mode
                     if (state.isPurchase) {
                         this.game.inputLocked = true;
                         setTimeout(() => {
@@ -203,9 +179,8 @@ export class ConstructionSystem {
                     return;
                 }
 
-                // If placing on something that isn't FLOOR, we swap (store old one)
+                // Place as TILE (Appliances like Grill, Fryer etc)
                 if (targetType !== 'FLOOR') {
-                    // Find definition for current tile to store it
                     const existingShopItem = this.game.shopItems.find(i => i.tileType === targetType);
                     if (existingShopItem) {
                         this.game.storage[existingShopItem.id] = (this.game.storage[existingShopItem.id] || 0) + 1;
@@ -213,127 +188,74 @@ export class ConstructionSystem {
                     }
                 }
 
-                // Place it!
-                console.log(`[DEBUG] Attempting to set tile type at ${state.x},${state.y}. HeldItem TileType: ${state.heldItem.tileType}`);
+                if (state.heldItem.tileType && TILE_TYPES[state.heldItem.tileType]) {
+                    this.game.grid.setTileType(state.x, state.y, TILE_TYPES[state.heldItem.tileType]);
 
-                if (!state.heldItem.tileType || !TILE_TYPES[state.heldItem.tileType]) {
-                    console.error(`[DEBUG] Invalid TileType! held=${state.heldItem.tileType}, TILE_TYPES entry=${TILE_TYPES[state.heldItem.tileType]}`);
-                }
-
-                this.game.grid.setTileType(state.x, state.y, TILE_TYPES[state.heldItem.tileType]);
-
-                // Restore rotation/state if preserved
-                if (state.heldItem.savedState) {
-                    // Merge saved state
-                    const newCell = this.game.grid.getCell(state.x, state.y);
-                    if (newCell.state) {
-                        Object.assign(newCell.state, state.heldItem.savedState);
+                    if (state.heldItem.savedState) {
+                        const newCell = this.game.grid.getCell(state.x, state.y);
+                        if (newCell.state) Object.assign(newCell.state, state.heldItem.savedState);
+                    } else {
+                        const newCell = this.game.grid.getCell(state.x, state.y);
+                        const placedType = state.heldItem.tileType;
+                        if (placedType === 'SODA_FOUNTAIN') {
+                            newCell.state = { status: 'full', charges: 9999, resultId: 'cola', isInfinite: true };
+                        }
                     }
-                } else {
-                    // Initialize Default State for new machines
-                    const newCell = this.game.grid.getCell(state.x, state.y);
-                    const placedType = state.heldItem.tileType; // Use held item type
 
-                    if (placedType === 'DISPENSER') {
-                        newCell.state = {
-                            status: 'loaded',
-                            charges: 9999,
-                            sauceId: 'mayo',
-                            bagId: 'mayo_bag', // fallback
-                            isInfinite: true
-                        };
-                        // Ensure Object is assigned to cell state properly if needed by renderer
-                    } else if (placedType === 'SODA_FOUNTAIN') {
-                        newCell.state = {
-                            status: 'full',
-                            charges: 9999,
-                            syrupId: null, // Direct drink
-                            resultId: 'cola',
-                            isInfinite: true
-                        };
+                    if (state.heldItem.attachedObject) {
+                        const newCell = this.game.grid.getCell(state.x, state.y);
+                        newCell.object = state.heldItem.attachedObject;
+                    }
+
+                    state.heldItem = null;
+                    this.game.updateCapabilities();
+
+                    if (state.isPurchase) {
+                        this.game.inputLocked = true;
+                        setTimeout(() => {
+                            this.game.inputLocked = false;
+                            this.exitBuildMode();
+                        }, 300);
                     }
                 }
-
-                // Restore object on top if any
-                if (state.heldItem.attachedObject) {
-                    const newCell = this.game.grid.getCell(state.x, state.y);
-                    // Explicitly link the object back to the cell
-                    newCell.object = state.heldItem.attachedObject;
-                }
-
-                state.heldItem = null;
-                this.game.updateCapabilities(); // Live update
-                // this.game.audioSystem.playSFX(ASSETS.AUDIO.PRINTER); // Clunk sound
-
-                // If Purchase Mode, pause then exit
-                if (state.isPurchase) {
-                    this.game.inputLocked = true;
-                    setTimeout(() => {
-                        this.game.inputLocked = false;
-                        this.exitBuildMode();
-                    }, 300);
-                    return;
-                }
-
             } else {
                 // TRY TO PICK UP
-                if ((state.isPurchase && isInteract)) return;
-
                 const targetCell = this.game.grid.getCell(state.x, state.y);
 
                 // 1. Try to Pick Up Object (Appliance on Top)
                 if (targetCell.object) {
                     const obj = targetCell.object;
-                    // Check if object is an appliance (Dispenser, Soda Fountain)
                     const shopItem = this.game.shopItems.find(i => i.id === obj.definitionId && i.type === 'appliance');
-
                     if (shopItem) {
-                        console.log(`[DEBUG] Picked up Object: ${shopItem.id} (TileType: ${shopItem.tileType})`);
-                        // Pick it up!
                         const savedState = obj.state ? JSON.parse(JSON.stringify(obj.state)) : null;
-
                         state.heldItem = {
                             id: shopItem.id,
                             tileType: shopItem.tileType,
                             savedState: savedState,
                             attachedObject: null
                         };
-
                         targetCell.object = null;
                         this.game.updateCapabilities();
-                        // this.game.audioSystem.playSFX(ASSETS.AUDIO.PRINTER);
                         return;
-                    } else {
-                        console.log(`[DEBUG] Object ${obj.definitionId} is not an appliance.`);
                     }
                 }
 
+                // 2. Try to Pick Up Tile (Appliance)
                 const isAppliance = targetCell.type.id !== 'FLOOR' && targetCell.type.id !== 'WALL' && !targetCell.type.isDoor && !targetCell.type.isExit;
-
                 if (isAppliance) {
-                    // Pick it up!
                     const tileTypeId = targetCell.type.id;
-                    const savedState = targetCell.state ? JSON.parse(JSON.stringify(targetCell.state)) : null; // Deep copy state
-
                     const shopItem = this.game.shopItems.find(i => i.tileType === tileTypeId);
-
                     if (shopItem) {
+                        const savedState = targetCell.state ? JSON.parse(JSON.stringify(targetCell.state)) : null;
                         state.heldItem = {
                             id: shopItem.id,
                             tileType: tileTypeId,
                             savedState: savedState,
-                            attachedObject: targetCell.object // Save item on top
+                            attachedObject: targetCell.object
                         };
-
                         this.game.grid.setTileType(state.x, state.y, TILE_TYPES.FLOOR);
-
-                        // IMPORTANT: Clear the object from the grid so it moves with the cursor
-                        if (targetCell.object) {
-                            targetCell.object = null;
-                        }
-
+                        if (targetCell.object) targetCell.object = null;
                         this.game.updateCapabilities();
-                        // this.game.audioSystem.playSFX(ASSETS.AUDIO.PRINTER); // Swoosh sound
                     }
                 }
             }
@@ -341,25 +263,21 @@ export class ConstructionSystem {
 
         // Special: Expand Kitchen at Top Right Corner
         if (state.x === this.game.grid.width - 1 && state.y === 0) {
-            const isInteract = event.code === this.game.settings.getBinding(ACTIONS.INTERACT) || event.code === 'Enter';
             if (isInteract) {
-                // Trigger Expansion Logic (Reuse from 'X' key logic)
                 const expandItem = this.game.shopItems.find(i => i.id === 'expansion');
                 if (this.game.money >= expandItem.price) {
                     this.game.money -= expandItem.price;
                     this.game.expandKitchen();
-                    expandItem.price *= 2; // Increase price
+                    expandItem.price *= 2;
                 }
                 return;
             }
         }
 
-        // 4. Context Menu (Interact/E)
-        if (!isPlacementAction && (event.code === this.game.settings.getBinding(ACTIONS.INTERACT) || event.code === 'Enter')) {
+        // 4. Context Menu (Interact/Enter)
+        if (!isPlacementAction && isInteract) {
             this.openContextMenu();
         }
-
-
 
         if (event.code === 'Escape') {
             this.exitBuildMode();
