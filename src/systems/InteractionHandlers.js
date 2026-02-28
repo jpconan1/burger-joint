@@ -706,26 +706,27 @@ export const InteractionHandlers = {
         const count = target.state.count || 1;
         const held = player.heldItem;
 
-        // 0. Hand Combine: Plating a burger or side onto a plate stack
+        // 0. Plating: burger or side onto a plate
         if (target.definitionId === 'plate' && held) {
             const heldDef = held.definition || {};
             const isUnwrappedBurger = (heldDef.category === 'burger' || held.definitionId.includes('burger')) && !held.state.isWrapped;
             const isCookedSide = heldDef.category === 'side' || (heldDef.category === 'side_prep' && held.state.cook_level === 'cooked');
 
             if (isUnwrappedBurger || isCookedSide) {
-                // Dispense one plate from the stack
-                let plate;
                 if (count > 1) {
-                    plate = new ItemInstance('plate');
+                    // Stack: hand combine — dispense one plate, player holds the filled plate
+                    const plate = new ItemInstance('plate');
                     target.state.count--;
                     if (target.state.count <= 0) cell.object = null;
+                    if (!plate.state.contents) plate.state.contents = [];
+                    plate.state.contents.push(held);
+                    player.heldItem = plate;
                 } else {
-                    plate = target;
-                    cell.object = null;
+                    // Single plate on counter: counter combine — food lands on the plate in-world
+                    if (!target.state.contents) target.state.contents = [];
+                    target.state.contents.push(held);
+                    player.heldItem = null;
                 }
-                if (!plate.state.contents) plate.state.contents = [];
-                plate.state.contents.push(held);
-                player.heldItem = plate;
                 return true;
             }
         }
@@ -793,25 +794,27 @@ export const InteractionHandlers = {
         if (held) {
             const count = container.state.count || 1;
 
-            // 0. Hand Combine: Plating a burger or side onto a plate stack
+            // 0. Plating: burger or side onto a plate
             if (container.definitionId === 'plate') {
                 const heldDef = held.definition || {};
                 const isUnwrappedBurger = (heldDef.category === 'burger' || held.definitionId.includes('burger')) && !held.state.isWrapped;
                 const isCookedSide = heldDef.category === 'side' || (heldDef.category === 'side_prep' && held.state.cook_level === 'cooked');
 
                 if (isUnwrappedBurger || isCookedSide) {
-                    let plate;
                     if (count > 1) {
-                        plate = new ItemInstance('plate');
+                        // Stack: hand combine — dispense one plate, player holds the filled plate
+                        const plate = new ItemInstance('plate');
                         container.state.count--;
                         if (container.state.count <= 0) cell.object = null;
+                        if (!plate.state.contents) plate.state.contents = [];
+                        plate.state.contents.push(held);
+                        player.heldItem = plate;
                     } else {
-                        plate = container;
-                        cell.object = null;
+                        // Single plate on counter: counter combine — food lands on the plate in-world
+                        if (!container.state.contents) container.state.contents = [];
+                        container.state.contents.push(held);
+                        player.heldItem = null;
                     }
-                    if (!plate.state.contents) plate.state.contents = [];
-                    plate.state.contents.push(held);
-                    player.heldItem = plate;
                     return true;
                 }
             }
