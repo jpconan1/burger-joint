@@ -101,7 +101,7 @@ export const ALERTS = {
     'container_tutorial_1': {
         frames: [
             {
-                text: "While empty handed:<br><br>Press {PICK_UP} to pick up containers.<br><br>Press {INTERACT} to take one thing from containers.",
+                text: "PRIMARY BUTTON: {PICK_UP}<br><br>Press this to pick things up and put them down.",
                 position: 'center',
                 size: { width: '700px', height: '400px' },
                 next: 'container_tutorial_2'
@@ -111,9 +111,18 @@ export const ALERTS = {
     'container_tutorial_2': {
         frames: [
             {
-                text: "While holding a container:<br><br> Press {PICK_UP} to put down the container.<br><br> Press {INTERACT} to deal one thing from the container.",
+                text: "SECONDARY BUTTON: {INTERACT}<br><br>Press this to take one thing <br>from a container or stack.",
                 position: 'center',
                 size: { width: '700px', height: '400px' }
+            }
+        ]
+    },
+    'tickets_reminder': {
+        frames: [
+            {
+                text: "Press SHIFT to check your pending tickets!",
+                position: 'center',
+                size: { width: '500px', height: '150px' }
             }
         ]
     }

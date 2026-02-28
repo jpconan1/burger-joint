@@ -46,128 +46,45 @@ export class OrderSystem {
         // Difficulty settings or state can go here
     }
 
-    generateDailyOrders(dayNumber, menuConfig) {
-        const orders = [];
+    generateTutorialTicket(step) {
+        let ticket = new Ticket(step);
+        let group;
 
-        // 1. Calculate Day Parameters & Customer Count
-
-        // Difficulty scales indefinitely: Every 3 days, difficulty "tier" increases.
-        const difficultyTier = Math.floor((dayNumber - 1) / 3);
-
-        // Base customers: Starts at 4-6, increases by 2 per tier.
-        const baseMin = 4 + (difficultyTier * 2);
-        const baseMax = 6 + (difficultyTier * 2);
-
-        let customerCount = Math.floor(Math.random() * (baseMax - baseMin + 1)) + baseMin;
-
-        // Cap to prevent extreme lag on very high days, but allow it to get crazy.
-        if (customerCount > 50) customerCount = 50;
-
-        console.log(`Generating Day ${dayNumber} (Tier: ${difficultyTier}): ${customerCount} Customers.`);
-
-        // 2. Generate Base Customers
-        const customers = [];
-        for (let i = 0; i < customerCount; i++) {
-            // First customer always orders 2 plain burgers for tutorial consistency if Day 1
-            if (dayNumber === 1 && i === 0) {
-                customers.push({
-                    burger: { base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] }, // Will be duplicated or pushed twice logically? 
-                    // No, customer profile is one person's order. We want a GROUP order.
-                    // The loop below groups them.
-                    items: []
-                });
-                // Push a second identical customer to ensure they get grouped (due to high merge chance or forced grouping?)
-                // Actually, let's just make the FIRST PROFILE match the desired complexity, or force the group logic.
-                // Better: Force the first TICKET (later in step 3) to strictly be what we want.
-                // let's just push randoms here and overwrite later.
-                // customers.push(this.generateCustomerProfile(menuConfig));
-            }
-            customers.push(this.generateCustomerProfile(menuConfig));
+        switch (step) {
+            case 1:
+            case 2:
+                // Order 1 & 2: Dine-in, 1 plain burger
+                group = new OrderGroup('plate');
+                group.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
+                break;
+            case 3:
+                // Order 3: Take-out, 1 plain burger (+ bag & wrapper box drop)
+                group = new OrderGroup('bag');
+                group.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
+                ticket.chuteDrop = ['bag_box', 'wrapper_box'];
+                break;
+            case 4:
+                // Order 4: Dine-in, 1 burger + 1 fries (+ fry box drop)
+                group = new OrderGroup('plate');
+                group.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
+                group.addItem('fries');
+                ticket.chuteDrop = ['fry_box'];
+                break;
+            case 5:
+                // Order 5: Take-out, 1 burger + 1 fries (+ side cup box drop)
+                group = new OrderGroup('bag');
+                group.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
+                group.addItem('fries');
+                ticket.chuteDrop = ['side_cup_box'];
+                break;
+            default:
+                return null;
         }
 
-        // 3. Grouping (The Merge)
-        const tickets = [];
-        let i = 0;
-        while (i < customers.length) {
-            // 66% Dine-In vs 33% Takeout
-            const isDineIn = Math.random() < 0.66;
-            const ticketCustomers = [customers[i]];
-            i++;
-
-            // Only Takeout supports grouping multiple customers into one bag
-            if (!isDineIn) {
-                // 40% chance to merge next customer if exists (slightly higher for more groups)
-                while (i < customers.length && Math.random() < 0.40) {
-                    ticketCustomers.push(customers[i]);
-                    i++;
-                }
-            }
-
-            // Create a Ticket
-            tickets.push(this.createTicketFromCustomers(ticketCustomers, tickets.length + 1, isDineIn));
-        }
-
-        // Force First Ticket on Day 1 to be 2 Basic Burgers
-        if (dayNumber === 1 && tickets.length > 0) {
-            const tutTicket = new Ticket(1);
-            const tutGroup = new OrderGroup('bag');
-            tutGroup.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
-            // tutGroup.addBurger({ base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] });
-            tutGroup.addItem('fries');
-            tutGroup.addItem('cola');
-            tutGroup.payout = this.calculateGroupPayout(tutGroup);
-            tutTicket.addGroup(tutGroup);
-
-            tickets[0] = tutTicket;
-        }
-
-        // 4. Shuffle Ticket Queue
-        for (let j = tickets.length - 1; j > 0; j--) {
-            // Day 1: Don't shuffle the first ticket (index 0) so our tutorial order stays first
-            if (dayNumber === 1 && j === 0) continue;
-
-            const k = Math.floor(Math.random() * (j + 1));
-            // Day 1: Lock index 0
-            if (dayNumber === 1 && k === 0) continue;
-
-            [tickets[j], tickets[k]] = [tickets[k], tickets[j]]; // Swap
-        }
-
-        // Re-assign IDs after shuffle for clean UI ordering? 
-        // Or keep internal IDs random? Let's re-assign for neatness if IDs are just labels.
-        tickets.forEach((t, idx) => t.id = idx + 1);
-
-        // 5. Calculate Par Times and Day Arc
-        let totalParTime = 0;
-        tickets.forEach(ticket => {
-            ticket.calculateParTime();
-            totalParTime += ticket.parTime;
-        });
-
-        const prepTime = 30; // 30s prep
-        const dayLength = totalParTime; // The "Day Arc"
-
-        console.log(`Day Arc: ${dayLength}s, Total Tickets: ${tickets.length}`);
-
-        // 6. Sequential Arrival with Buffer
-        // "Orders come in too fast. After every ticket prints, check it's par time.
-        // Wait an additional 50% of the tickets par time before printing the next ticket."
-
-        // Update: As days progress, this buffer shrinks.
-        // Starts at 1.5 (50% buffer). Reduces by 0.05 per tier.
-        // Min cap at 0.8 (Tickets arrive 20% FASTER than their par time -> Overlap/Overwhelm).
-        let bufferModifier = 1.5 - (difficultyTier * 0.05);
-        if (bufferModifier < 0.8) bufferModifier = 0.8;
-
-        let currentArrivalTime = prepTime;
-
-        tickets.forEach((ticket) => {
-            ticket.arrivalTime = currentArrivalTime;
-            // Spacing = Par Time * Modifier
-            currentArrivalTime += (ticket.parTime * bufferModifier);
-        });
-
-        return tickets;
+        group.payout = this.calculateGroupPayout(group);
+        ticket.addGroup(group);
+        ticket.calculateParTime();
+        return ticket;
     }
 
     generateCustomerProfile(menuConfig) {
@@ -266,8 +183,14 @@ export class OrderSystem {
                 if (cust.burger) {
                     group.addBurger(cust.burger);
                 }
-                // Add Items
-                cust.items.forEach(itm => group.addItem(itm));
+                // Add Items (Remove drinks for take-out orders)
+                cust.items.forEach(itm => {
+                    const def = DEFINITIONS[itm];
+                    const isDrink = def && (def.orderConfig?.type === 'drink' || def.category === 'syrup');
+                    if (!isDrink) {
+                        group.addItem(itm);
+                    }
+                });
             });
             group.payout = this.calculateGroupPayout(group);
             ticket.addGroup(group);
@@ -335,6 +258,7 @@ export class Ticket {
         this.groups = []; // Formerly bags
         this.parTime = 0;
         this.elapsedTime = 0;
+        this.chuteDrop = []; // Optional list of item IDs to drop when ticket prints
     }
 
     calculateParTime() {
@@ -502,7 +426,11 @@ export class OrderGroup {
                 if (defId === reqId) return true;
 
                 // 2. Side Aliases (Fries/Soda)
-                if (reqId === 'fries' && (defId === 'fry_bag' || defId === 'fries')) return true;
+                if (reqId === 'fries') {
+                    if (defId === 'fry_bag' || defId === 'fries') return true;
+                    // Check if it's a side cup containing fries
+                    if (defId === 'side_cup' && i.state.contents && i.state.contents.some(c => c.definitionId === 'fries')) return true;
+                }
                 if (reqId === 'soda' && (defId === 'drink_cup' || defId === 'soda' || defId === 'cola')) return true;
 
                 // 3. "Naked" Cooked Sides (e.g. raw_fries that is cooked)

@@ -1,6 +1,7 @@
 import { ACTIONS } from './Settings.js';
 import { DEFINITIONS } from '../data/definitions.js';
 import { ASSETS, TILE_SIZE } from '../constants.js';
+import { ItemInstance } from '../entities/Item.js';
 
 export class UnlockMiniGame {
     constructor(alertSystem, data) {
@@ -84,7 +85,8 @@ export class UnlockMiniGame {
             this.unlockState.rewards.forEach(r => {
                 const card = this.rewardCardsMap.get(r);
                 if (card && card.offsetParent !== null) {
-                    oldPos.set(r, card.getBoundingClientRect().left);
+                    const rect = card.getBoundingClientRect();
+                    oldPos.set(r, { left: rect.left, top: rect.top });
                 }
             });
         }
@@ -138,7 +140,11 @@ export class UnlockMiniGame {
                 card.style.cursor = 'pointer';
                 this.rewardCardsMap.set(reward, card);
             }
-            this.rewardsContainer.appendChild(card);
+
+            // Pool Logic: Only show if NOT assigned and NOT grabbed (grabbed is handled by burger preview)
+            if (!isAssigned && !isGrabbed) {
+                this.rewardsContainer.appendChild(card);
+            }
 
             // Clear old icons/labels before refreshing
             card.innerHTML = '';
@@ -146,6 +152,20 @@ export class UnlockMiniGame {
             card.style.opacity = isAssigned ? '0.4' : '1';
             card.style.transform = (isSelected || isGrabbed) ? 'scale(1.1)' : 'scale(1)';
             card.style.border = (isSelected || isGrabbed) ? '4px solid #fff' : '4px solid transparent';
+
+            // Hide assigned items in pool but keep them available for the burger display
+            if (isAssigned && this.unlockState.selectionMode === 'piece' && !isGrabbed) {
+                card.style.display = 'none';
+            } else {
+                card.style.display = 'flex';
+            }
+
+            // Reset positioning styles (might have been moved to a burger)
+            card.style.position = 'relative';
+            card.style.left = 'auto';
+            card.style.top = 'auto';
+            card.style.marginLeft = '0';
+            card.style.zIndex = 'auto';
 
             if (isGrabbed) {
                 card.classList.add('boiling-horizontal');
@@ -190,20 +210,21 @@ export class UnlockMiniGame {
                 const card = this.rewardCardsMap.get(r);
                 if (!card || !oldPos.has(r)) return;
 
-                const newX = card.getBoundingClientRect().left;
-                const oldX = oldPos.get(r);
-                const deltaX = oldX - newX;
+                const newRect = card.getBoundingClientRect();
+                const oldP = oldPos.get(r);
+                const deltaX = oldP.left - newRect.left;
+                const deltaY = oldP.top - newRect.top;
 
-                if (deltaX !== 0) {
+                if (deltaX !== 0 || deltaY !== 0) {
                     const isSelected = this.unlockState.selectionMode === 'piece' && this.unlockState.selectedIndex === i;
                     const isGrabbed = this.unlockState.grabbedIndex === i;
                     const baseScale = (isSelected || isGrabbed) ? 1.1 : 1.0;
 
                     card.style.transition = 'none';
-                    card.style.transform = `translateX(${deltaX}px) scale(${baseScale})`;
+                    card.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${baseScale})`;
                     void card.offsetWidth; // force reflow
                     card.style.transition = 'transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1.1), opacity 0.1s, border 0.1s';
-                    card.style.transform = `translateX(0px) scale(${baseScale})`;
+                    card.style.transform = `translate(0px, 0px) scale(${baseScale})`;
                 }
             });
         });
@@ -245,8 +266,8 @@ export class UnlockMiniGame {
             const isConflict = duplicateCountSet.has(count);
 
             const bCard = document.createElement('div');
-            bCard.style.minWidth = '120px';
-            bCard.style.padding = '10px';
+            bCard.style.minWidth = '220px';
+            bCard.style.padding = '20px';
             bCard.style.backgroundSize = '100% 100%';
             bCard.style.backgroundRepeat = 'no-repeat';
             bCard.style.borderRadius = '8px';
@@ -282,58 +303,80 @@ export class UnlockMiniGame {
             bName.style.zIndex = '1';
             bCard.appendChild(bName);
 
-            // Spacer to push addonList and countLabel to the bottom
-            const spacer = document.createElement('div');
-            spacer.style.flex = '1';
-            spacer.style.pointerEvents = 'none';
-            bCard.appendChild(spacer);
+            // Resolve Bun Assets
+            let bottomTexName = ASSETS.OBJECTS.BUN_BOTTOM;
+            let topTexName = ASSETS.OBJECTS.BUN_TOP;
 
-            // Preview Canvas (positioned absolute, covers background)
-            const canvas = document.createElement('canvas');
-            canvas.width = 120;
-            canvas.height = 160;
-            canvas.style.position = 'absolute';
-            canvas.style.top = '0';
-            canvas.style.left = '0';
-            canvas.style.width = '100%';
-            canvas.style.height = '100%';
-            canvas.style.pointerEvents = 'none';
-            canvas.style.zIndex = '0';
-            canvas.style.boxShadow = 'none'; // Remove inherited shadow from style.css
+            if (burger.state.bun) {
+                const bunDef = DEFINITIONS[burger.state.bun.definitionId];
+                if (bunDef) {
+                    if (bunDef.bottomTexture) bottomTexName = bunDef.bottomTexture;
+                    if (bunDef.topTexture) topTexName = bunDef.topTexture;
+                }
+            }
 
-            const ctx = canvas.getContext('2d');
-            ctx.imageSmoothingEnabled = false;
+            const topBun = document.createElement('img');
+            topBun.src = this.getAssetUrl(topTexName);
+            topBun.style.width = `${TILE_SIZE}px`;
+            topBun.style.height = `${TILE_SIZE}px`;
+            topBun.style.imageRendering = 'pixelated';
+            topBun.style.zIndex = '1';
+            bCard.appendChild(topBun);
 
-            const isExploded = this.unlockState.selectionMode === 'burger' &&
+            const grid = document.createElement('div');
+            grid.style.display = 'grid';
+            grid.style.gridTemplateColumns = 'repeat(2, 80px)';
+            grid.style.gap = '10px';
+            grid.style.justifyContent = 'center';
+            grid.style.marginTop = '10px';
+            grid.style.marginBottom = '10px';
+            grid.style.minHeight = '0px';
+            grid.style.zIndex = '1';
+            bCard.appendChild(grid);
+
+            // Populate Grid with Assigned Items
+            this.unlockState.assignments.forEach((assignIdx, rewardIdx) => {
+                if (assignIdx === i) {
+                    const card = this.rewardCardsMap.get(this.unlockState.rewards[rewardIdx]);
+                    if (card) {
+                        card.style.position = 'relative';
+                        card.style.left = 'auto';
+                        card.style.top = 'auto';
+                        card.style.marginLeft = '0';
+                        card.style.zIndex = 'auto';
+                        card.style.display = 'flex';
+                        card.style.opacity = '1';
+                        grid.appendChild(card);
+                    }
+                }
+            });
+
+            const isHoveredWithGrabbed = this.unlockState.selectionMode === 'burger' &&
                 this.unlockState.targetBurgerIndex === i &&
                 this.unlockState.grabbedIndex !== null;
 
-            const extraItem = isExploded ? this.unlockState.rewards[this.unlockState.grabbedIndex] : null;
-
-            this.drawBurgerPreview(ctx, burger, canvas.width, canvas.height, isExploded, extraItem);
-            bCard.appendChild(canvas);
-
-            // Assigned newly-unlocked items
-            const addonList = document.createElement('div');
-            addonList.style.display = 'flex';
-            addonList.style.gap = '4px';
-            addonList.style.marginTop = '5px';
-            addonList.style.zIndex = '1';
-            this.unlockState.assignments.forEach((assignIdx, rewardIdx) => {
-                if (assignIdx === i) {
-                    const r = this.unlockState.rewards[rewardIdx];
-                    const tId = this.getToppingId(r);
-                    const tDef = DEFINITIONS[tId] || r;
-
-                    const icon = document.createElement('img');
-                    icon.src = this.getAssetUrl(tDef.texture || tDef.textures?.base);
-                    icon.style.width = '24px';
-                    icon.style.height = '24px';
-                    icon.style.imageRendering = 'pixelated';
-                    addonList.appendChild(icon);
+            if (isHoveredWithGrabbed) {
+                const extraItem = this.unlockState.rewards[this.unlockState.grabbedIndex];
+                const card = this.rewardCardsMap.get(extraItem);
+                if (card) {
+                    card.style.position = 'relative';
+                    card.style.left = 'auto';
+                    card.style.top = 'auto';
+                    card.style.marginLeft = '0';
+                    card.style.zIndex = 'auto';
+                    card.style.display = 'flex';
+                    card.style.opacity = '0.7'; // Semi-transparent preview
+                    grid.appendChild(card);
                 }
-            });
-            bCard.appendChild(addonList);
+            }
+
+            const bottomBun = document.createElement('img');
+            bottomBun.src = this.getAssetUrl(bottomTexName);
+            bottomBun.style.width = `${TILE_SIZE}px`;
+            bottomBun.style.height = `${TILE_SIZE}px`;
+            bottomBun.style.imageRendering = 'pixelated';
+            bottomBun.style.zIndex = '1';
+            bCard.appendChild(bottomBun);
 
             // Ingredient Count
             const countLabel = document.createElement('div');
@@ -342,7 +385,7 @@ export class UnlockMiniGame {
             countLabel.style.marginTop = '10px';
             countLabel.style.color = isConflict ? '#ff4444' : '#00ff00';
             countLabel.style.webkitTextStroke = '4px black';
-            countLabel.style.zIndex = '1';
+            countLabel.style.zIndex = '20'; // Above the cards
             bCard.appendChild(countLabel);
 
             burgersContainer.appendChild(bCard);
@@ -355,8 +398,8 @@ export class UnlockMiniGame {
             const isSelected = this.unlockState.selectionMode === 'burger' && this.unlockState.targetBurgerIndex === nextIdx;
 
             const addCard = document.createElement('div');
-            addCard.style.minWidth = '120px';
-            addCard.style.height = '160px';
+            addCard.style.minWidth = '220px';
+            addCard.style.height = '240px';
             addCard.style.backgroundSize = '100% 100%';
             addCard.style.backgroundRepeat = 'no-repeat';
             addCard.style.opacity = '0.6';
@@ -445,110 +488,7 @@ export class UnlockMiniGame {
         this.alertSystem.contentText.appendChild(footer);
     }
 
-    drawBurgerPreview(ctx, burger, width, height, isExploded, extraItem = null) {
-        ctx.clearRect(0, 0, width, height);
 
-        // Resolve Bun Assets
-        let bottomTexName = ASSETS.OBJECTS.BUN_BOTTOM;
-        let topTexName = ASSETS.OBJECTS.BUN_TOP;
-
-        if (burger.state.bun) {
-            const bunDef = DEFINITIONS[burger.state.bun.definitionId];
-            if (bunDef) {
-                if (bunDef.bottomTexture) bottomTexName = bunDef.bottomTexture;
-                if (bunDef.topTexture) topTexName = bunDef.topTexture;
-            }
-        }
-
-        const bunBottomImg = this.game.renderer.assetLoader.get(bottomTexName);
-        const bunTopImg = this.game.renderer.assetLoader.get(topTexName);
-
-        const px = (width - TILE_SIZE) / 2;
-
-        // Current assigned newly-unlocked items for THIS burger
-        const burgerIdx = this.unlockState.tempBurgers.indexOf(burger);
-        const assignedItems = [];
-        this.unlockState.assignments.forEach((assignIdx, rewardIdx) => {
-            if (assignIdx === burgerIdx) {
-                assignedItems.push(this.unlockState.rewards[rewardIdx]);
-            }
-        });
-
-        if (isExploded) {
-            // Exploded view
-            const topY = 10;
-            const bottomY = height - TILE_SIZE - 10;
-            const centerY = (height - TILE_SIZE) / 2;
-
-            if (bunBottomImg) ctx.drawImage(bunBottomImg, px, bottomY, TILE_SIZE, TILE_SIZE);
-            if (bunTopImg) ctx.drawImage(bunTopImg, px, topY, TILE_SIZE, TILE_SIZE);
-
-            if (extraItem) {
-                const toppingId = this.getToppingId(extraItem);
-                const toppingDef = DEFINITIONS[toppingId] || extraItem;
-                const tex = toppingDef.partTexture || toppingDef.texture || (toppingDef.textures && (toppingDef.textures.base || toppingDef.textures.idle));
-                const img = this.game.renderer.assetLoader.get(tex);
-                if (img) {
-                    ctx.drawImage(img, px, centerY, TILE_SIZE, TILE_SIZE);
-
-                    // Label for the item in the middle
-                    ctx.fillStyle = "white";
-                    ctx.font = "bold 10px Arial";
-                    ctx.textAlign = "center";
-                    ctx.strokeStyle = "black";
-                    ctx.lineWidth = 3;
-                    const labelText = (toppingDef.name || extraItem.name || toppingId || "TOPPING").toUpperCase();
-                    ctx.strokeText(labelText, width / 2, centerY + TILE_SIZE + 2);
-                    ctx.fillText(labelText, width / 2, centerY + TILE_SIZE + 2);
-                }
-            }
-        } else {
-            // Centered normal view
-            let totalHeight = 0;
-            const existingToppings = burger.state.toppings || [];
-
-            // Combine existing toppings with newly assigned ones for preview
-            const allPreviewToppings = [
-                ...existingToppings.map(t => ({ id: t.definitionId || t, def: DEFINITIONS[t.definitionId || t] })),
-                ...assignedItems.map(r => {
-                    const id = this.getToppingId(r);
-                    return { id, def: DEFINITIONS[id] || r };
-                })
-            ];
-
-            allPreviewToppings.forEach(t => {
-                const def = t.def;
-                let nudge = 2;
-                if (def && def.nudge !== undefined) nudge = def.nudge;
-                else if (t.id === 'beef_patty') nudge = 5;
-                totalHeight += nudge;
-            });
-
-            // Calculate starting Y to center the whole stack
-            const py = (height + totalHeight - TILE_SIZE) / 2 + 10;
-
-            if (bunBottomImg) ctx.drawImage(bunBottomImg, px, py, TILE_SIZE, TILE_SIZE);
-
-            let currentY = 0;
-            allPreviewToppings.forEach(t => {
-                const def = t.def;
-                const tex = (def && (def.partTexture || def.texture)) || t.texture;
-                let nudge = 2;
-                if (def && def.nudge !== undefined) nudge = def.nudge;
-                else if (t.id === 'beef_patty') nudge = 5;
-
-                if (tex) {
-                    const img = this.game.renderer.assetLoader.get(tex);
-                    if (img) {
-                        ctx.drawImage(img, px, py - currentY, TILE_SIZE, TILE_SIZE);
-                    }
-                }
-                currentY += nudge;
-            });
-
-            if (bunTopImg) ctx.drawImage(bunTopImg, px, py - currentY, TILE_SIZE, TILE_SIZE);
-        }
-    }
 
     getIngredientCount(burger, burgerIdx) {
         let count = 0;
@@ -574,8 +514,12 @@ export class UnlockMiniGame {
             definitionId: 'burger',
             name: `Burger ${this.unlockState.tempBurgers.length + 1}`,
             state: {
-                bun: { definitionId: 'plain_bun' },
-                toppings: [{ definitionId: 'beef_patty', state: { cook_level: 'cooked' } }]
+                bun: new ItemInstance('plain_bun'),
+                toppings: [(() => {
+                    const patty = new ItemInstance('beef_patty');
+                    patty.state.cook_level = 'cooked';
+                    return patty;
+                })()]
             }
         });
 
@@ -639,14 +583,23 @@ export class UnlockMiniGame {
 
         if (this.unlockState.selectionMode === 'piece') {
             const oldIdx = this.unlockState.selectedIndex;
+
+            const getNextUnassigned = (start, step) => {
+                let idx = (start + step + this.unlockState.rewards.length) % this.unlockState.rewards.length;
+                while (this.unlockState.assignments[idx] !== null && idx !== start) {
+                    idx = (idx + step + this.unlockState.rewards.length) % this.unlockState.rewards.length;
+                }
+                return idx;
+            };
+
             if (isRight) {
-                this.unlockState.selectedIndex = (this.unlockState.selectedIndex + 1) % this.unlockState.rewards.length;
+                this.unlockState.selectedIndex = getNextUnassigned(oldIdx, 1);
                 if (this.unlockState.grabbedIndex !== null) {
                     this.swapRewards(oldIdx, this.unlockState.selectedIndex);
                     this.unlockState.grabbedIndex = this.unlockState.selectedIndex;
                 }
             } else if (isLeft) {
-                this.unlockState.selectedIndex = (this.unlockState.selectedIndex - 1 + this.unlockState.rewards.length) % this.unlockState.rewards.length;
+                this.unlockState.selectedIndex = getNextUnassigned(oldIdx, -1);
                 if (this.unlockState.grabbedIndex !== null) {
                     this.swapRewards(oldIdx, this.unlockState.selectedIndex);
                     this.unlockState.grabbedIndex = this.unlockState.selectedIndex;
@@ -686,10 +639,14 @@ export class UnlockMiniGame {
                 if (this.unlockState.grabbedIndex !== null) {
                     this.unlockState.grabbedIndex = null;
                 } else {
-                    // If nothing grabbed, maybe unassign everything from this burger? 
-                    // Or follow previous logic which was unassigning the "selected" piece
-                    const pieceIdx = this.unlockState.selectedIndex;
-                    this.unlockState.assignments[pieceIdx] = null;
+                    // Unassign the last item from THIS burger
+                    const burgerIdx = this.unlockState.targetBurgerIndex;
+                    const lastRewardIdx = this.unlockState.assignments.lastIndexOf(burgerIdx);
+                    if (lastRewardIdx !== -1) {
+                        this.unlockState.assignments[lastRewardIdx] = null;
+                        this.unlockState.selectedIndex = lastRewardIdx; // Switch selection to this item
+                        this.unlockState.selectionMode = 'piece'; // Go back to pool mode
+                    }
                 }
             }
         } else if (this.unlockState.selectionMode === 'finish') {
@@ -732,7 +689,7 @@ export class UnlockMiniGame {
             const reward = this.unlockState.rewards[rewardIdx];
             const burger = this.unlockState.tempBurgers[burgerIdx];
             const toppingId = this.getToppingId(reward);
-            burger.state.toppings.push({ definitionId: toppingId });
+            burger.state.toppings.push(new ItemInstance(toppingId));
         });
 
         this.game.menuSystem.menuSlots = Array(64).fill(null);

@@ -59,6 +59,7 @@ export class Game {
         });
 
         this.keys = {};
+        this.currentSongIndex = -1;
         window.addEventListener('keydown', (e) => {
             // Shift + P: Print/Export Layout
             if (e.shiftKey && e.code === 'KeyP') {
@@ -105,6 +106,7 @@ export class Game {
         // High Score System
         this.highScore = parseInt(localStorage.getItem('burger_joint_highscore')) || 0;
         this.sessionTickets = 0;
+        this.ticketsGeneratedToday = 0;
         this.dailyBagsSold = 0;
         this.timeFreezeTimer = 0;
 
@@ -118,6 +120,7 @@ export class Game {
         this.currentShift = 'DAY'; // 'DAY' or 'NIGHT'
         this.shiftCount = 0;
         this.pattyBoxTutorialShown = false;
+        this.unlockMiniGameShown = false;
         this.pendingDirtyPlates = [];
 
 
@@ -600,6 +603,7 @@ export class Game {
     startNewGame() {
         console.log('Starting new game with default layout.');
         this.pattyBoxTutorialShown = false;
+        this.unlockMiniGameShown = false;
 
         // Continue Title Theme (Muffled) for Day 0 Setup
         this.audioSystem.setMuffled(true);
@@ -719,14 +723,14 @@ export class Game {
         this.pendingOrders = [];
         let kStartCost = 0;
 
-        this.shopItems.forEach(item => {
-            if (item.id === 'patty_box' || item.id === 'bun_box') {
+        // Initial supplies: Patties land first (bottom), Buns land second (on top)
+        ['patty_box', 'bun_box'].forEach(id => {
+            const item = this.shopItems.find(i => i.id === id);
+            if (item) {
                 this.pendingOrders.push({ id: item.id, qty: 1 });
                 kStartCost += item.price;
             }
         });
-
-        // Deduct cost
         this.money -= kStartCost;
 
         // Save this clean state immediately so if they refresh they get this
@@ -1330,6 +1334,7 @@ export class Game {
         // User Request: Clear tiles, use sorted list, stop if full.
 
         this.dayNumber++;
+        this.ticketsGeneratedToday = 0;
         console.log(`Starting Day ${this.dayNumber}...`);
 
         this.currentDayPerfect = true;
@@ -1442,31 +1447,7 @@ export class Game {
         // Clear unlocking notifications
         this.shopItems.forEach(i => i.justUnlocked = false);
 
-        // 5. Audio Updates
-        // Play Day Music (Alternate)
-        // Play Day Music (Random)
-        const songIndex = Math.floor(Math.random() * 5);
-
-        let songIntro, songLoop;
-        if (songIndex === 0) {
-            songIntro = ASSETS.AUDIO.SONG1_INTRO;
-            songLoop = ASSETS.AUDIO.SONG1_LOOP;
-        } else if (songIndex === 1) {
-            songIntro = ASSETS.AUDIO.SONG2_INTRO;
-            songLoop = ASSETS.AUDIO.SONG2_LOOP;
-        } else if (songIndex === 2) {
-            songIntro = ASSETS.AUDIO.SONG3_INTRO;
-            songLoop = ASSETS.AUDIO.SONG3_LOOP;
-        } else if (songIndex === 3) {
-            songIntro = ASSETS.AUDIO.SONG4_INTRO;
-            songLoop = ASSETS.AUDIO.SONG4_LOOP;
-        } else {
-            songIntro = ASSETS.AUDIO.SONG5_INTRO;
-            songLoop = ASSETS.AUDIO.SONG5_LOOP;
-        }
-
-        this.audioSystem.playMusic(songIntro, songLoop);
-        this.audioSystem.setMuffled(false);
+        this.playRandomSong();
 
         // --- PREP TIME REMOVED ---
         const complexity = this.menuSystem.calculateComplexity();
@@ -1494,7 +1475,6 @@ export class Game {
         }
 
         // Initialize Loop Timers
-        // Initialize Loop Timers
         this.dayTimer = 0; // Starts at 0 (Morning)
         this.currentShift = 'DAY';
         this.shiftCount = 0;
@@ -1502,6 +1482,27 @@ export class Game {
         this.lightingIntensity = 0;
 
         console.log(`Starting Continuous Service Loop. Complexity: ${complexity})`);
+    }
+
+    playRandomSong() {
+        const songs = [
+            { intro: ASSETS.AUDIO.SONG1_INTRO, loop: ASSETS.AUDIO.SONG1_LOOP },
+            { intro: ASSETS.AUDIO.SONG2_INTRO, loop: ASSETS.AUDIO.SONG2_LOOP },
+            { intro: ASSETS.AUDIO.SONG3_INTRO, loop: ASSETS.AUDIO.SONG3_LOOP },
+            { intro: ASSETS.AUDIO.SONG4_INTRO, loop: ASSETS.AUDIO.SONG4_LOOP },
+            { intro: ASSETS.AUDIO.SONG5_INTRO, loop: ASSETS.AUDIO.SONG5_LOOP },
+            { intro: ASSETS.AUDIO.SONG6_INTRO, loop: ASSETS.AUDIO.SONG6_LOOP }
+        ];
+
+        let newIndex;
+        do {
+            newIndex = Math.floor(Math.random() * songs.length);
+        } while (songs.length > 1 && newIndex === this.currentSongIndex);
+
+        this.currentSongIndex = newIndex;
+        const song = songs[newIndex];
+        this.audioSystem.playMusic(song.intro, song.loop);
+        this.audioSystem.setMuffled(false);
     }
 
     onClosingTime() {
@@ -1618,6 +1619,18 @@ export class Game {
                     DEFINITIONS['bacon_box'],
                     DEFINITIONS['cheddar_box'],
                     DEFINITIONS['tomato_box']
+                ]
+            });
+        }
+
+        if (event.code === 'KeyU' && event.shiftKey) {
+            this.alertSystem.trigger('unlock_alert', () => { }, {
+                rewards: [
+                    DEFINITIONS['bacon_box'],
+                    DEFINITIONS['cheddar_box'],
+                    DEFINITIONS['tomato_box'],
+                    DEFINITIONS['onion_box'],
+                    DEFINITIONS['pickle_box']
                 ]
             });
         }
@@ -2160,11 +2173,17 @@ export class Game {
                     this.ticketSpawnTimer = 0;
 
                     // Generate Single Ticket
-                    const newTicket = this.orderSystem.createTicketFromCustomers(
-                        [this.orderSystem.generateCustomerProfile(this.menuSystem.getMenu())],
-                        1 // Single order? Or variable size?
-                    );
-                    newTicket.calculateParTime();
+                    let newTicket;
+                    if (this.dayNumber === 1 && this.ticketsGeneratedToday < 5) {
+                        newTicket = this.orderSystem.generateTutorialTicket(this.ticketsGeneratedToday + 1);
+                    } else {
+                        newTicket = this.orderSystem.createTicketFromCustomers(
+                            [this.orderSystem.generateCustomerProfile(this.menuSystem.getMenu())],
+                            1 // Single order? Or variable size?
+                        );
+                        newTicket.calculateParTime();
+                    }
+                    this.ticketsGeneratedToday++;
                     // Instant arrival logic? Or leverage queue?
                     // We push to queue and let the print logic handle it
                     this.ticketQueue.push(newTicket);
@@ -2192,6 +2211,14 @@ export class Game {
                 this.ticketTimer = 0;
                 this.incomingTicket = this.ticketQueue.shift();
                 this.printingTimer = 0;
+
+                // Trigger Chute Drops if defined on the ticket
+                if (this.incomingTicket.chuteDrop && this.incomingTicket.chuteDrop.length > 0) {
+                    this.incomingTicket.chuteDrop.forEach(itemId => {
+                        const instance = new ItemInstance(itemId);
+                        this.dropInChute(instance);
+                    });
+                }
 
                 // Trigger Printer Animation
                 // Find printer (Always in main kitchen)
@@ -2509,10 +2536,14 @@ export class Game {
 
         const gravity = 0.00001;
         const groundY = 7;
-        const stackOffset = 0.7; // How much of a tile each box takes up in the stack
+        const stackOffset = 0.37; // Adjusted for tight overlap
 
-        const landingCell = this.grid.getCell(0, 7);
-        const isLandingOccupied = !!landingCell.object;
+        // Chute is always in 'main' kitchen
+        const kitchen = this.rooms['main'];
+        if (!kitchen) return;
+
+        const landingCell = kitchen.getCell(0, 7);
+        const isLandingOccupied = landingCell ? !!landingCell.object : false;
 
         for (let i = 0; i < this.fallingBoxes.length; i++) {
             const box = this.fallingBoxes[i];
@@ -2545,8 +2576,10 @@ export class Game {
             const firstBox = this.fallingBoxes[0];
             // Allow a small epsilon for float comparison
             if (firstBox.y >= groundY - 0.01 && !isLandingOccupied) {
-                landingCell.object = firstBox.item;
-                this.fallingBoxes.shift();
+                if (landingCell) {
+                    landingCell.object = firstBox.item;
+                    this.fallingBoxes.shift();
+                }
             }
         }
     }
@@ -2571,14 +2604,18 @@ export class Game {
             for (let i = 0; i < (order.qty || 1); i++) {
                 const instance = new ItemInstance(order.id);
                 if (order.id === 'insert') instance.state.count = 3;
-
-                this.fallingBoxes.push({
-                    x: 0,
-                    y: -1 - this.fallingBoxes.length,
-                    vy: 0,
-                    item: instance
-                });
+                this.dropInChute(instance);
             }
+        });
+    }
+
+    dropInChute(itemInstance) {
+        if (!this.fallingBoxes) this.fallingBoxes = [];
+        this.fallingBoxes.push({
+            x: 0,
+            y: -1 - this.fallingBoxes.length,
+            vy: 0,
+            item: itemInstance
         });
     }
 
@@ -2802,36 +2839,64 @@ export class Game {
     spawnDirtyPlate(x, y) {
         const grid = this.rooms['main'];
         if (!grid) return;
-        const cell = grid.getCell(x, y);
-        if (!cell || !cell.type.holdsItems) return;
 
-        // Dirty parts to choose from
+        // Define the spots to try if this is the dirty plate return area (index 12 is column 13)
+        const spots = (x === 12 && y === 0) ? [
+            { x: 12, y: 0 },
+            { x: 13, y: 0 },
+            { x: 14, y: 0 }
+        ] : [{ x, y }];
+
+        // Dirty parts to choose from (shared across all attempts)
         const partPool = [
             'plates/plate-dirty-part1.png',
             'plates/plate-dirty-part2.png',
             'plates/plate-dirty-part3.png'
         ];
-
-        // Pick 2 of 3
         const shuffled = [...partPool].sort(() => 0.5 - Math.random());
         const chosen = shuffled.slice(0, 2);
-
         const layers = chosen.map(texture => ({
             texture: texture,
             rotation: Math.random() * Math.PI * 2
         }));
 
-        if (cell.object && cell.object.definitionId === 'dirty_plate') {
-            // Stack it
-            cell.object.state.count = (cell.object.state.count || 1) + 1;
-            // Update top looks to the newest plate
-            cell.object.state.dirtyLayers = layers;
-        } else if (!cell.object) {
-            // New dirty plate
-            const item = new ItemInstance('dirty_plate');
-            item.state.count = 1;
-            item.state.dirtyLayers = layers;
-            cell.object = item;
+        for (const spot of spots) {
+            const cell = grid.getCell(spot.x, spot.y);
+            if (!cell || !cell.type.holdsItems) continue;
+
+            // 1. Check if it's a dish rack
+            if (cell.object && cell.object.definitionId === 'dish_rack') {
+                const rack = cell.object;
+                if (!rack.state.contents) rack.state.contents = [];
+                // Block mixing: Cannot put dirty plates in a clean rack
+                const isClean = rack.state.contents.length > 0 && rack.state.contents[0].definitionId !== 'dirty_plate';
+                if (!isClean && rack.state.contents.length < 6) {
+                    const item = new ItemInstance('dirty_plate');
+                    item.state.count = 1;
+                    item.state.dirtyLayers = layers;
+                    rack.state.contents.push(item);
+                    console.log(`Auto-added dirty plate to rack at (${spot.x}, ${spot.y})`);
+                    return;
+                }
+            }
+
+            // 2. Check if a dirty plate stack already exists at this spot
+            if (cell.object && cell.object.definitionId === 'dirty_plate') {
+                cell.object.state.count = (cell.object.state.count || 1) + 1;
+                cell.object.state.dirtyLayers = layers; // Update top look
+                console.log(`Stacked dirty plate onto existing stack at (${spot.x}, ${spot.y})`);
+                return;
+            }
+
+            // 3. Check if it's free
+            if (!cell.object) {
+                const item = new ItemInstance('dirty_plate');
+                item.state.count = 1;
+                item.state.dirtyLayers = layers;
+                cell.object = item;
+                console.log(`Spawned new dirty plate at (${spot.x}, ${spot.y})`);
+                return;
+            }
         }
     }
 
@@ -2858,6 +2923,7 @@ export class Game {
                 autoUpgradedAppliances: Array.from(this.autoUpgradedAppliances),
                 pendingOrders: this.pendingOrders,
                 pattyBoxTutorialShown: this.pattyBoxTutorialShown,
+                unlockMiniGameShown: this.unlockMiniGameShown,
                 rooms: {}
             };
 
@@ -2956,6 +3022,9 @@ export class Game {
             }
             if (typeof data.pattyBoxTutorialShown === 'boolean') {
                 this.pattyBoxTutorialShown = data.pattyBoxTutorialShown;
+            }
+            if (typeof data.unlockMiniGameShown === 'boolean') {
+                this.unlockMiniGameShown = data.unlockMiniGameShown;
             }
 
             // Re-sort shop items

@@ -646,6 +646,30 @@ export const InteractionHandlers = {
         return false;
     },
 
+    // --- SERVICE COUNTER ---
+    service_counter_interact: (player, cell, grid, game) => {
+        // Fall back to dealing from container (deals one plate)
+        return InteractionHandlers.handle_container_deal(player, cell);
+    },
+
+    service_counter_pickup: (player, cell, grid, game) => {
+        const held = player.heldItem;
+        if (!held) return false;
+
+        // If holding a stack of plates, fall back to interact behavior (deal one plate)
+        if (held.definitionId === 'plate' && (held.state.count || 1) > 1) {
+            InteractionHandlers.service_counter_interact(player, cell, grid, game);
+            return true; // Intercept stack placement
+        }
+
+        // If holding a single plate, and the counter already has a plate, block combining them into a stack
+        if (held.definitionId === 'plate' && cell.object && cell.object.definitionId === 'plate') {
+            return true; // Intercept stacking
+        }
+
+        return false; // Otherwise allow standard pickup/place (for single plates, burgers, etc)
+    },
+
     // --- GARBAGE ---
     garbage_action: (player, cell) => {
         // 1. Throw Away

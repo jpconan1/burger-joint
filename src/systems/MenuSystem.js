@@ -1,5 +1,6 @@
 import { DEFINITIONS } from '../data/definitions.js';
 import itemsData from '../data/items.json' with { type: 'json' };
+import { ItemInstance } from '../entities/Item.js';
 
 export class MenuSystem {
     constructor(game) {
@@ -12,8 +13,12 @@ export class MenuSystem {
             definitionId: 'burger',
             name: 'Plain',
             state: {
-                bun: { definitionId: 'plain_bun' },
-                toppings: [{ definitionId: 'beef_patty', state: { cook_level: 'cooked' } }]
+                bun: new ItemInstance('plain_bun'),
+                toppings: [(() => {
+                    const p = new ItemInstance('beef_patty');
+                    p.state.cook_level = 'cooked';
+                    return p;
+                })()]
             }
         };
 
@@ -104,8 +109,10 @@ export class MenuSystem {
             const list = slot.state.toppings || [];
             const toppingsConfig = {};
             list.forEach(t => {
-                // Optional toppings feature removed: all are standard
-                toppingsConfig[t.definitionId] = 'standard';
+                const id = typeof t === 'string' ? t : (t.definitionId || (t.definition && t.definition.id));
+                if (id) {
+                    toppingsConfig[id] = 'standard';
+                }
             });
 
             return {

@@ -235,6 +235,8 @@ export const ASSETS = {
         PRINTER: 'audio/printer.wav',
         SONG5_INTRO: 'audio/song5-intro.wav',
         SONG5_LOOP: 'audio/song5.wav',
+        SONG6_INTRO: 'audio/song6-intro.wav',
+        SONG6_LOOP: 'audio/song6.wav',
     },
     TUTORIAL: {
         BUBBLE: 'tutorial/bubble.png', // Placeholder for the sprite sheet

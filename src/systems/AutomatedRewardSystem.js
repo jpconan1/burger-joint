@@ -78,6 +78,13 @@ export class AutomatedRewardSystem {
         // 4. Trigger Alert System
         this.game.alertSystem.trigger('unlock_alert', () => {
             console.log("[RewardSystem] Unlock Alert finished.");
+            if (!this.game.unlockMiniGameShown) {
+                this.game.unlockMiniGameShown = true;
+                this.game.saveLevel();
+                setTimeout(() => {
+                    this.game.alertSystem.trigger('tickets_reminder');
+                }, 500);
+            }
         }, {
             rewards: selectedIds.map(id => DEFINITIONS[id])
         });
@@ -205,56 +212,7 @@ export class AutomatedRewardSystem {
     }
 
     spawnRewardItem(itemInstance) {
-        // Rooms to check in order of priority
-        const roomPriority = ['store_room', 'office', 'main'];
-        let targetCell = null;
-
-        // 1. Try to find an empty DELIVERY_TILE in any room
-        for (const roomId of roomPriority) {
-            const room = this.game.rooms[roomId];
-            if (!room) continue;
-
-            for (let y = 0; y < room.height; y++) {
-                for (let x = 0; x < room.width; x++) {
-                    const cell = room.getCell(x, y);
-                    if (cell && cell.type.id === 'DELIVERY_TILE' && !cell.object) {
-                        targetCell = cell;
-                        break;
-                    }
-                }
-                if (targetCell) break;
-            }
-            if (targetCell) break;
-        }
-
-        // 2. Fallback to any empty FLOOR in the store room or main room
-        if (!targetCell) {
-            const fallbackRooms = ['store_room', 'main'];
-            for (const roomId of fallbackRooms) {
-                const room = this.game.rooms[roomId];
-                if (!room) continue;
-
-                for (let y = 0; y < room.height; y++) {
-                    for (let x = 0; x < room.width; x++) {
-                        const cell = room.getCell(x, y);
-                        // Floor tiles are also used as fallback if delivery tiles are full
-                        if (cell && (cell.type.id === 'FLOOR' || cell.type.id === 'DELIVERY_TILE') && !cell.object) {
-                            targetCell = cell;
-                            break;
-                        }
-                    }
-                    if (targetCell) break;
-                }
-                if (targetCell) break;
-            }
-        }
-
-        if (targetCell) {
-            targetCell.object = itemInstance;
-            console.log(`[RewardSystem] Spawned ${itemInstance.definitionId} at ${targetCell.x},${targetCell.y}`);
-        } else {
-            console.log(`[RewardSystem] No space in Store Room for ${itemInstance.definitionId}!`);
-            this.game.addFloatingText("Store Room Full!", this.game.player.x, this.game.player.y, '#ff0000');
-        }
+        console.log(`[RewardSystem] Dropping ${itemInstance.definitionId} into chute.`);
+        this.game.dropInChute(itemInstance);
     }
 }

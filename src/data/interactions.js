@@ -23,6 +23,10 @@ export const INTERACTION_MAPPING = {
         'DISHWASHER': {
             interact: 'dishwasher_interact',
             pickup: 'dishwasher_pickup'
+        },
+        'SERVICE': {
+            interact: 'service_counter_interact',
+            pickup: 'service_counter_pickup'
         }
     },
     ITEMS: {

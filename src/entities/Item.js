@@ -78,7 +78,7 @@ export class ItemInstance {
                         }
 
                         if (this.definitionId.includes('mayo')) {
-                            this.state.toppings.push('mayo');
+                            this.state.toppings.push(new ItemInstance('mayo'));
                         }
                     }
                 }

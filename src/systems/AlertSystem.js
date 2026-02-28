@@ -155,6 +155,7 @@ export class AlertSystem {
         if (this.backdrop) this.backdrop.style.display = 'block';
 
         if (config.type === 'unlock_minigame') {
+            this.game.audioSystem.setMuffled(true);
             this.activeMiniGame = new UnlockMiniGame(this, data);
             this.activeMiniGame.start();
         } else {
@@ -332,6 +333,7 @@ export class AlertSystem {
     }
 
     close() {
+        const wasMiniGame = !!this.activeMiniGame;
         this.isVisible = false;
         this.container.style.display = 'none';
         if (this.backdrop) this.backdrop.style.display = 'none';
@@ -340,6 +342,10 @@ export class AlertSystem {
         this.onComplete = null;
         this.activeAlert = null;
         this.activeMiniGame = null;
+
+        if (wasMiniGame) {
+            this.game.playRandomSong();
+        }
 
         if (cb) {
             cb();

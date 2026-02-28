@@ -444,21 +444,6 @@ export class Renderer {
 
                 if (cell.type.id === 'CHUTE') {
                     this.drawChuteSegment(ASSETS.TILES.CHUTE_BACK, x, y);
-
-                    // Render falling boxes that overlap this vertical segment
-                    if (gameState.fallingBoxes && x === 0) {
-                        gameState.fallingBoxes.forEach(box => {
-                            if (y >= box.y - 1 && y <= box.y + 1) {
-                                this.ctx.save();
-                                this.ctx.beginPath();
-                                this.ctx.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                                this.ctx.clip();
-                                this.drawObject(box.item, x, box.y);
-                                this.ctx.restore();
-                            }
-                        });
-                    }
-
                     tileTexture = null;
                 }
 
@@ -641,6 +626,20 @@ export class Renderer {
                 }
 
                 if (cell.type.id === 'CHUTE') {
+                    // Render falling boxes that overlap this vertical segment
+                    // We draw them here (after cell.object) so they stack correctly on landed items
+                    if (gameState.fallingBoxes && x === 0) {
+                        gameState.fallingBoxes.forEach(box => {
+                            if (y >= box.y - 1 && y <= box.y + 1) {
+                                this.ctx.save();
+                                this.ctx.beginPath();
+                                this.ctx.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                                this.ctx.clip();
+                                this.drawObject(box.item, x, box.y);
+                                this.ctx.restore();
+                            }
+                        });
+                    }
                     this.drawChuteSegment(ASSETS.TILES.CHUTE_FRONT, x, y);
                 }
             }
@@ -1332,7 +1331,7 @@ export class Renderer {
                 this.drawBox(itemOrTexture, x, y);
             } else if (itemOrTexture.definitionId === 'dish_rack') {
                 this.drawDishRack(itemOrTexture, x, y, 0);
-            } else if (itemOrTexture.definitionId === 'insert' || itemOrTexture.definition.useStackRender) {
+            } else if (itemOrTexture.definitionId === 'insert' || (itemOrTexture.definition && itemOrTexture.definition.useStackRender)) {
                 this.drawStackedItem(itemOrTexture, x, y, scale);
             } else {
                 // Fallback to texture property

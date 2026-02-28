@@ -601,7 +601,7 @@ export const DEFAULT_LEVEL = {
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
             {
-                "typeId": "COUNTER",
+                "typeId": "FLOOR",
                 "state": {},
                 "object": null
             },
@@ -736,7 +736,12 @@ export const DEFAULT_LEVEL = {
             {
                 "typeId": "COUNTER",
                 "state": {},
-                "object": null
+                "object": {
+                    "definitionId": "plate",
+                    "state": {
+                        "count": 9
+                    }
+                }
             },
             {
                 "typeId": "COUNTER",
@@ -753,12 +758,7 @@ export const DEFAULT_LEVEL = {
             {
                 "typeId": "COUNTER",
                 "state": {},
-                "object": {
-                    "definitionId": "plate",
-                    "state": {
-                        "count": 9
-                    }
-                }
+                "object": null
             }
         ]
     ]
