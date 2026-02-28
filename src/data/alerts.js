@@ -71,15 +71,13 @@ export const ALERTS = {
         ]
     },
     'unlock_alert': {
-        type: 'unlock_minigame',
         frames: [
             {
-                text: "{itemName} added to menu! Check your store room!",
+                text: "Unlocked {itemName}!",
                 position: 'center',
-                size: { width: '400px', height: '200px' },
+                size: { width: '600px', height: '400px' },
                 buttons: [
                     {
-                        text: 'Awesome!',
                         action: 'dismiss'
                     }
                 ]

@@ -2,7 +2,6 @@
 import { ALERTS } from '../data/alerts.js';
 import { ACTIONS } from './Settings.js';
 import { DEFINITIONS } from '../data/definitions.js';
-import { UnlockMiniGame } from './UnlockMiniGame.js';
 
 export class AlertSystem {
     constructor(game) {
@@ -155,9 +154,9 @@ export class AlertSystem {
         if (this.backdrop) this.backdrop.style.display = 'block';
 
         if (config.type === 'unlock_minigame') {
-            this.game.audioSystem.setMuffled(true);
-            this.activeMiniGame = new UnlockMiniGame(this, data);
-            this.activeMiniGame.start();
+            // DISABLED: Minigame replaced by automatic unlock
+            this.activeMiniGame = null;
+            this.showCurrentStep();
         } else {
             this.activeMiniGame = null;
             this.showCurrentStep();

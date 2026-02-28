@@ -345,6 +345,9 @@ export const TUTORIAL_STEPS = [
         text: "Plate here!",
         targetType: 'SERVICE',
         completionPredicate: (gameState) => isPlateOnServiceCounter(gameState),
+        onComplete: (gameState) => {
+            gameState.powerupSystem.spawnPowerup({ id: 'keroscene', interval: 60000, timer: 0 });
+        },
         predicate: (gameState, entity) => {
             if (gameState.dayNumber !== 1) return false;
             if (!isHoldingPlate(gameState)) return false;
@@ -356,6 +359,20 @@ export const TUTORIAL_STEPS = [
                 return entity === targetCell;
             }
             return false;
+        }
+    },
+    {
+        id: 'try_powerup',
+        text: "POWERUP! Try it!",
+        targetType: 'keroscene',
+        completionPredicate: (gameState) => {
+            // Only complete if the powerup was actually spawned and then used/collected
+            return gameState.powerupSystem.tutorialPowerupSpawned &&
+                !gameState.powerupSystem.isPowerupPresent('keroscene');
+        },
+        predicate: (gameState, entity) => {
+            if (gameState.dayNumber !== 1) return false;
+            return gameState.powerupSystem.isPowerupPresent('keroscene');
         }
     },
     {

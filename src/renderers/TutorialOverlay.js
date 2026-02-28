@@ -40,6 +40,9 @@ export class TutorialOverlay {
             // Check specific completion condition
             if (step.completionPredicate && step.completionPredicate(gameState)) {
                 this.completedSteps.add(step.id);
+                if (step.onComplete) {
+                    step.onComplete(gameState);
+                }
                 continue;
             }
 
@@ -404,7 +407,7 @@ export class TutorialOverlay {
                     let match = false;
                     if (cell.type.id === typeId) {
                         match = true;
-                    } else if (cell.object && cell.object.definitionId === typeId) {
+                    } else if (cell.object && (cell.object.definitionId === typeId || cell.object.category === typeId)) {
                         match = true;
                     }
 
@@ -421,12 +424,13 @@ export class TutorialOverlay {
         // 2. Player Held Item Search
         // Allow targeting items held by the player so the bubble "follows" them
         if (gameState.player && gameState.player.heldItem) {
-            if (gameState.player.heldItem.definitionId === typeId) {
+            const item = gameState.player.heldItem;
+            if (item.definitionId === typeId || item.category === typeId) {
                 results.push({
                     x: gameState.player.x,
                     y: gameState.player.y,
                     // Mock a cell-like entity wrapper so predicates using entity.object still work
-                    entity: { object: gameState.player.heldItem },
+                    entity: { object: item },
                     type: 'player'
                 });
             }
@@ -434,8 +438,6 @@ export class TutorialOverlay {
 
         return results;
     }
-
-
 
     parseAndWrapLine(text, maxChars) {
         // Split by spaces to find words

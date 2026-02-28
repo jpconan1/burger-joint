@@ -8,6 +8,7 @@ export class AutomatedRewardSystem {
 
         // Tier definitions based on user request
         // Items must map to valid shop item IDs (e.g. boxes/bags that unlock the content)
+        // NOTE: whole_wheat_bun_box, chicken_patty_box, and all drinks are DISABLED from unlocking.
         this.tiers = {
             1: [
                 'bacon_box',
@@ -19,24 +20,13 @@ export class AutomatedRewardSystem {
                 'lettuce_box',
                 'pickle_box',
                 'onion_box',
-                // 'fried_onion', // Covered by onion_box
                 'mayo_bag',
-                // 'onion_ring_box', // ID not found in items.json
                 'ketchup_bag'
             ],
             3: [
-                'chicken_patty_box',
-                'whole_wheat_bun_box',
                 'swiss_box',
                 'bbq_bag',
-                'sweet_potato_fry_box',
-                'grape_box',
-                'orange_box'
-            ],
-            4: [
-                'hetap_box',
-                'dr_matt_box',
-                'gingie_box'
+                'sweet_potato_fry_box'
             ]
         };
     }
@@ -44,10 +34,8 @@ export class AutomatedRewardSystem {
     processShiftChange(shiftCount) {
         console.log(`[RewardSystem] Processing Shift Change. Count: ${shiftCount}`);
 
-        // 1. Build Pool of Candidate Items
+        // 1. Build Pool of Candidate Items from available tiers
         const candidates = [];
-
-        // Progression: Tier 1 at Shift 1, Tier 2 at Shift 2, etc. (One tier per shift)
         const maxTier = shiftCount;
 
         for (let t = 1; t <= maxTier; t++) {
@@ -67,17 +55,24 @@ export class AutomatedRewardSystem {
             return;
         }
 
-        // 2. Determine quantity
-        const count = 3;
-
-        // 3. Pick up to 3 Random Rewards
+        // 2. Auto-pick ONE random reward from the pool
         const shuffled = candidates.sort(() => 0.5 - Math.random());
-        const selectedIds = shuffled.slice(0, Math.min(count, candidates.length));
-        console.log(`[RewardSystem] Selected Rewards: ${selectedIds.join(', ')}`);
+        const selectedId = shuffled[0];
+        console.log(`[RewardSystem] Auto-unlocking: ${selectedId}`);
 
-        // 4. Trigger Alert System
+        // 3. Grant the reward immediately (silent = true to suppress the per-item alert)
+        this.grantReward(selectedId, true);
+
+        // 4. Determine the display name for the alert
+        const itemDef = DEFINITIONS[selectedId];
+        const displayName = itemDef ? (itemDef.name || selectedId) : selectedId;
+
+        // 5. Muffle music, show unlock alert, then unmute + new song on dismiss
+        this.game.audioSystem.setMuffled(true);
         this.game.alertSystem.trigger('unlock_alert', () => {
             console.log("[RewardSystem] Unlock Alert finished.");
+            this.game.audioSystem.setMuffled(false);
+            this.game.playRandomSong();
             if (!this.game.unlockMiniGameShown) {
                 this.game.unlockMiniGameShown = true;
                 this.game.saveLevel();
@@ -86,7 +81,7 @@ export class AutomatedRewardSystem {
                 }, 500);
             }
         }, {
-            rewards: selectedIds.map(id => DEFINITIONS[id])
+            itemName: displayName
         });
     }
 

@@ -11,10 +11,30 @@ export class PowerupSystem {
             { id: 'magic_bag', interval: 90000, timer: 0 },
             { id: 'freeze_clock', interval: 150000, timer: 0 }
         ];
+        this.tutorialPowerupSpawned = false;
+
+        // Freeze-clock tracking
+        this.freezeClockItem = null;       // reference to the active freeze_clock item
+        this.autoResumeTimer = 0;          // counts up while time is frozen
+        this.AUTO_RESUME_DURATION = 45000; // 45 seconds
     }
 
     update(dt) {
+        const timeFrozen = this.game.timeFreezeManual;
+
+        // Auto-resume after 45 seconds of frozen time
+        if (timeFrozen) {
+            this.autoResumeTimer += dt;
+            if (this.autoResumeTimer >= this.AUTO_RESUME_DURATION) {
+                this.resumeTime();
+                return;
+            }
+        }
+
         this.powerupConfigs.forEach(config => {
+            // Pause powerup spawn timers while time is frozen
+            if (timeFrozen) return;
+
             if (this.isPowerupPresent(config.id)) {
                 config.timer = 0; // Reset and wait while present
             } else {
@@ -87,6 +107,7 @@ export class PowerupSystem {
             const powerup = new ItemInstance(config.id);
             randomCell.object = powerup;
             config.timer = 0; // Reset timer after successful spawn
+            if (config.id === 'keroscene') this.tutorialPowerupSpawned = true;
             this.game.addFloatingText("Powerup Spawned!", randomCell.x, randomCell.y, '#ff00ff');
             console.log(`Spawned ${config.id} at ${randomCell.x},${randomCell.y}`);
         }
@@ -117,6 +138,34 @@ export class PowerupSystem {
         return true;
     }
 
+    /** Publicly callable — ends the freeze from any trigger (ticket complete, timeout, re-interaction). */
+    resumeTime() {
+        if (!this.game.timeFreezeManual) return; // Nothing to resume
+        console.log('Resuming Time (auto/external)!');
+        this.game.addFloatingText('TIME RESUMED', this.game.player.x, this.game.player.y, '#ffff00');
+        this.game.timeFreezeTimer = 0;
+        this.game.timeFreezeManual = false;
+        this.autoResumeTimer = 0;
+        this.freezeClockItem = null;
+
+        // Remove the freeze_clock item from the grid (it was left in place while active)
+        const grid = this.game.grid;
+        if (grid) {
+            for (let y = 0; y < grid.height; y++) {
+                for (let x = 0; x < grid.width; x++) {
+                    const cell = grid.getCell(x, y);
+                    if (cell.object &&
+                        cell.object.definitionId === 'freeze_clock' &&
+                        cell.object.state.isActivated) {
+                        cell.object = null;
+                        console.log(`freeze_clock removed from grid at ${x},${y}`);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     _activateKeroscene() {
         console.log("Activating Keroscene Powerup!");
         // Finish every cooking bar
@@ -134,6 +183,22 @@ export class PowerupSystem {
                         count++;
                         effectLocations.push({ x, y });
                     }
+                }
+
+                // Check Fryer Tile (fill bar completely)
+                if (cell.type.id === 'FRYER' && cell.state && cell.state.status === 'down') {
+                    const max = cell.state.cookingSpeed || 2000;
+                    cell.state.timer = max; // Force "done" threshold on next frame
+                    cell.state.status = 'done';
+                    count++;
+                    effectLocations.push({ x, y });
+                }
+
+                // Check Dishwasher Tile
+                if (cell.type.id === 'DISHWASHER' && cell.state && cell.state.status === 'washing') {
+                    cell.state.timer = 0;
+                    count++;
+                    effectLocations.push({ x, y });
                 }
             }
         }
@@ -168,17 +233,17 @@ export class PowerupSystem {
 
     _activateFreezeClock(item) {
         if (!item.state.isActivated) {
-            console.log("Freezing Time (Manual Mode)!");
-            this.game.addFloatingText("TIME FROZEN!", this.game.player.x, this.game.player.y, '#00ffff');
+            console.log('Freezing Time (Manual Mode)!');
+            this.game.addFloatingText('TIME FROZEN!', this.game.player.x, this.game.player.y, '#00ffff');
             this.game.timeFreezeTimer = 1; // Any value > 0
             this.game.timeFreezeManual = true;
             item.state.isActivated = true;
+            this.freezeClockItem = item;
+            this.autoResumeTimer = 0;
             return false; // Don't remove yet
         } else {
-            console.log("Resuming Time!");
-            this.game.addFloatingText("TIME RESUMED", this.game.player.x, this.game.player.y, '#ffff00');
-            this.game.timeFreezeTimer = 0;
-            this.game.timeFreezeManual = false;
+            // Player re-interacted — resume immediately
+            this.resumeTime();
             return true; // Remove now
         }
     }
@@ -193,9 +258,12 @@ export class PowerupSystem {
             const currentStage = item.state.cook_level || 'raw';
             if (def.cooking && def.cooking.stages && def.cooking.stages[currentStage]) {
                 const stageDef = def.cooking.stages[currentStage];
-                if (stageDef.duration) {
-                    // Set progress to duration to force completion next frame
-                    item.state.cookingProgress = stageDef.duration + 1;
+                if (stageDef.next) {
+                    // Directly advance cook_level so it works even while time is frozen.
+                    // (Only bumping cookingProgress would get ignored by the grill/fryer loops
+                    // which are gated by timeFreezeTimer <= 0.)
+                    item.state.cook_level = stageDef.next;
+                    item.state.cookingProgress = 0;
                     modified = true;
                 }
             }

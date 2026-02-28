@@ -2460,6 +2460,9 @@ export class Game {
                                 if (ticket.isComplete()) {
                                     console.log("Ticket Completed!");
 
+                                    // Trigger #1: completing a ticket auto-resumes frozen time
+                                    this.powerupSystem.resumeTime();
+
                                     // Spawn dirty plate for dine-in orders after 3 seconds
                                     const isDineIn = ticket.groups.some(g => g.containerType === 'plate');
                                     if (isDineIn) {

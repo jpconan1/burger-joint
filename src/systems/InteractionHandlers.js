@@ -706,6 +706,30 @@ export const InteractionHandlers = {
         const count = target.state.count || 1;
         const held = player.heldItem;
 
+        // 0. Hand Combine: Plating a burger or side onto a plate stack
+        if (target.definitionId === 'plate' && held) {
+            const heldDef = held.definition || {};
+            const isUnwrappedBurger = (heldDef.category === 'burger' || held.definitionId.includes('burger')) && !held.state.isWrapped;
+            const isCookedSide = heldDef.category === 'side' || (heldDef.category === 'side_prep' && held.state.cook_level === 'cooked');
+
+            if (isUnwrappedBurger || isCookedSide) {
+                // Dispense one plate from the stack
+                let plate;
+                if (count > 1) {
+                    plate = new ItemInstance('plate');
+                    target.state.count--;
+                    if (target.state.count <= 0) cell.object = null;
+                } else {
+                    plate = target;
+                    cell.object = null;
+                }
+                if (!plate.state.contents) plate.state.contents = [];
+                plate.state.contents.push(held);
+                player.heldItem = plate;
+                return true;
+            }
+        }
+
         // 1. Stuff in them
         if (contents.length > 0) {
             // Dispense to Burger/Bun (Existing Feature for Inserts)
@@ -768,6 +792,30 @@ export const InteractionHandlers = {
 
         if (held) {
             const count = container.state.count || 1;
+
+            // 0. Hand Combine: Plating a burger or side onto a plate stack
+            if (container.definitionId === 'plate') {
+                const heldDef = held.definition || {};
+                const isUnwrappedBurger = (heldDef.category === 'burger' || held.definitionId.includes('burger')) && !held.state.isWrapped;
+                const isCookedSide = heldDef.category === 'side' || (heldDef.category === 'side_prep' && held.state.cook_level === 'cooked');
+
+                if (isUnwrappedBurger || isCookedSide) {
+                    let plate;
+                    if (count > 1) {
+                        plate = new ItemInstance('plate');
+                        container.state.count--;
+                        if (container.state.count <= 0) cell.object = null;
+                    } else {
+                        plate = container;
+                        cell.object = null;
+                    }
+                    if (!plate.state.contents) plate.state.contents = [];
+                    plate.state.contents.push(held);
+                    player.heldItem = plate;
+                    return true;
+                }
+            }
+
             if (count > 1) return false; // Can't place into stack
 
             const contents = container.state.contents || [];

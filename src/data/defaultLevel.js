@@ -437,8 +437,10 @@ export const DEFAULT_LEVEL = {
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
             {
-                "typeId": "COUNTER",
-                "state": {},
+                "typeId": "CUTTING_BOARD",
+                "state": {
+                    "status": "empty"
+                },
                 "object": null
             },
             {
