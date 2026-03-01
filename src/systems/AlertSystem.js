@@ -26,6 +26,9 @@ export class AlertSystem {
         this.buttons = [];
         this.selectedButtonIndex = 0;
 
+        // Input lock — prevents accidental dismissal right after an alert opens
+        this.inputLockTimer = 0; // ms remaining
+
         // Mini-Game State
         this.activeMiniGame = null;
     }
@@ -152,6 +155,9 @@ export class AlertSystem {
         this.isVisible = true;
         this.container.style.display = 'flex';
         if (this.backdrop) this.backdrop.style.display = 'block';
+
+        // Lock input for 1.5 s so players can't accidentally dismiss immediately
+        this.inputLockTimer = 500;
 
         if (config.type === 'unlock_minigame') {
             // DISABLED: Minigame replaced by automatic unlock
@@ -353,7 +359,12 @@ export class AlertSystem {
 
     update(dt) {
         if (!this.isVisible) return;
-        // if (this.activeMiniGame) return; // Skip line boil for mini-game? Or keep? -> KEEP!
+
+        // Tick down the input lock
+        if (this.inputLockTimer > 0) {
+            this.inputLockTimer = Math.max(0, this.inputLockTimer - dt);
+        }
+
         if (this.activeMiniGame && this.activeMiniGame.update) {
             this.activeMiniGame.update(dt);
         }
@@ -377,6 +388,9 @@ export class AlertSystem {
     // Input handling
     handleInput(code) {
         if (!this.isVisible) return false;
+
+        // Still within the grace period — swallow the input but don't act on it
+        if (this.inputLockTimer > 0) return true;
 
         if (this.activeMiniGame) {
             return this.activeMiniGame.handleInput(code);

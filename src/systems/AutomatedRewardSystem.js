@@ -185,6 +185,9 @@ export class AutomatedRewardSystem {
             if (shopItem) {
                 shopItem.unlocked = true;
             }
+
+            // Add topping to a burger menu slot so it appears on tickets
+            this.addToppingToMenu(itemId);
         }
 
         // --- Helper Logic (Cups/Inserts) ---
@@ -204,6 +207,90 @@ export class AutomatedRewardSystem {
             this.game.alertSystem.trigger('unlock_alert', () => { }, { itemName: itemDef.name || itemId });
         }
         this.game.addFloatingText(`Unlocked: ${itemDef.name || itemId}!`, this.game.player.x, this.game.player.y, '#ffd700');
+    }
+
+    /**
+     * Resolves a box/bag item ID to the topping ID that would appear on a burger.
+     * Mirrors the logic from UnlockMiniGame.getToppingId.
+     */
+    resolveToppingId(itemId) {
+        const def = DEFINITIONS[itemId];
+        if (!def) return null;
+
+        // Already a topping
+        if (def.category === 'topping' || def.isTopping) return def.id;
+
+        // Follows a 'produces' chain
+        if (def.produces) {
+            const prod = DEFINITIONS[def.produces];
+            if (prod) {
+                if (prod.category === 'topping' || prod.isTopping) return prod.id;
+                const mappings = {
+                    'tomato': 'tomato_slice',
+                    'lettuce_head': 'lettuce_leaf',
+                    'onion': 'onion_slice',
+                    'cheddar_block': 'cheddar_cheese',
+                    'swiss_block': 'swiss_cheese',
+                    'pickle': 'pickle_slice'
+                };
+                if (mappings[prod.id]) return mappings[prod.id];
+                return prod.id;
+            }
+        }
+
+        // Strip common suffixes as a last-resort guess
+        let id = itemId;
+        if (id.endsWith('_box')) id = id.replace('_box', '');
+        if (id.endsWith('_bag')) id = id.replace('_bag', '');
+        return id;
+    }
+
+    /**
+     * Adds the unlocked topping to the best available burger menu slot
+     * (fewest toppings, not already containing that topping),
+     * so it shows up on generated tickets.
+     */
+    addToppingToMenu(itemId) {
+        const toppingId = this.resolveToppingId(itemId);
+        if (!toppingId) return;
+
+        const menuSystem = this.game.menuSystem;
+        if (!menuSystem) return;
+
+        const activeSlots = menuSystem.menuSlots.filter(s => s !== null);
+        if (activeSlots.length === 0) return;
+
+        // Skip sauces/condiments — they are applied via dispenser, not pre-assigned to burger slots
+        const toppingDef = DEFINITIONS[toppingId];
+        if (toppingDef) {
+            if (toppingDef.category === 'sauce_refill' || toppingDef.type === 'SauceContainer') {
+                console.log(`[RewardSystem] Skipping menu slot add for sauce: ${toppingId}`);
+                return;
+            }
+        }
+
+        // Find the slot that doesn't already have this topping and has the fewest toppings
+        const eligibleSlots = activeSlots.filter(slot => {
+            const toppings = slot.state.toppings || [];
+            return !toppings.some(t => {
+                const tid = typeof t === 'string' ? t : (t.definitionId || '');
+                return tid === toppingId;
+            });
+        });
+
+        if (eligibleSlots.length === 0) {
+            console.log(`[RewardSystem] All burger slots already have topping: ${toppingId}`);
+            return;
+        }
+
+        // Pick the slot with the fewest existing toppings
+        eligibleSlots.sort((a, b) => (a.state.toppings?.length || 0) - (b.state.toppings?.length || 0));
+        const targetSlot = eligibleSlots[0];
+
+        const newTopping = new ItemInstance(toppingId);
+        targetSlot.state.toppings = targetSlot.state.toppings || [];
+        targetSlot.state.toppings.push(newTopping);
+        console.log(`[RewardSystem] Added topping '${toppingId}' to burger slot '${targetSlot.name}'`);
     }
 
     spawnRewardItem(itemInstance) {
