@@ -3,7 +3,6 @@ export const EXPANSIONS = [
         "id": "expansion_1",
         "name": "First Growth",
         "unlockCondition": {
-            "stars": 1
         },
         "//comment": "Paste the exported layout JSON into the 'layout' field below",
         "layout": {
@@ -294,7 +293,6 @@ export const EXPANSIONS = [
         "id": "expansion_2",
         "name": "Second Wind",
         "unlockCondition": {
-            "stars": 2
         },
         "layout": {
             "width": 10,
@@ -671,7 +669,6 @@ export const EXPANSIONS = [
         "id": "expansion_3",
         "name": "Serious Kitchen",
         "unlockCondition": {
-            "stars": 3
         },
         "layout": {
             "width": 12,
@@ -1243,7 +1240,6 @@ export const EXPANSIONS = [
         "id": "expansion_4",
         "name": "Major Expansion",
         "unlockCondition": {
-            "stars": 4
         },
         "layout": {
             "width": 13,
@@ -1934,7 +1930,6 @@ export const EXPANSIONS = [
         "id": "expansion_5",
         "name": "Empire Size",
         "unlockCondition": {
-            "stars": 5
         },
         "layout": {
             "width": 14,

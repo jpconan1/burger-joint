@@ -8,6 +8,7 @@ export class ConstructionSystem {
         this.game = game;
 
         // Placement State
+        this.selectedRenoIndex = 0;
         this.state = {
             active: false,
             item: null, // item definition from shopItems
@@ -414,7 +415,7 @@ export class ConstructionSystem {
                 };
 
                 // Check First Time Bonus
-                const isFirstTime = !this.game.shopSystem.hasAppliance(option.itemId, option.tileType);
+                const isFirstTime = !this.game.hasAppliance(option.itemId, option.tileType);
 
                 if (isFirstTime) {
                     if (option.itemId === 'fryer') {
@@ -431,6 +432,79 @@ export class ConstructionSystem {
                 this.game.updateCapabilities();
                 console.log(`Bought ${option.itemId}`);
             }
+        }
+    }
+    handleRenoInput(event) {
+        // Filter for Appliances and Actions
+        const renoItems = this.game.shopItems.filter(i => i.type === 'appliance' || i.type === 'action');
+        if (renoItems.length === 0) return;
+
+        if (this.selectedRenoIndex === undefined || this.selectedRenoIndex === null) {
+            this.selectedRenoIndex = 0;
+        }
+
+        const count = renoItems.length;
+        const dx = (event.code === 'ArrowLeft' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_LEFT)) ? -1 :
+            (event.code === 'ArrowRight' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_RIGHT)) ? 1 : 0;
+        const dy = (event.code === 'ArrowUp' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_UP)) ? -1 :
+            (event.code === 'ArrowDown' || event.code === this.game.settings.getBinding(ACTIONS.MOVE_DOWN)) ? 1 : 0;
+
+        if (this.selectedRenoIndex < 2) {
+            if (dx === 1 && this.selectedRenoIndex === 0) this.selectedRenoIndex = 1;
+            else if (dx === -1 && this.selectedRenoIndex === 1) this.selectedRenoIndex = 0;
+            else if (dy === 1) {
+                if (this.selectedRenoIndex === 0) this.selectedRenoIndex = 2;
+                else if (this.selectedRenoIndex === 1) this.selectedRenoIndex = Math.min(4, count - 1);
+            }
+        } else {
+            const gridIdx = this.selectedRenoIndex - 2;
+            const cols = 3;
+            const gridCol = gridIdx % cols;
+
+            if (dx === 1 && gridCol < cols - 1 && this.selectedRenoIndex < count - 1) this.selectedRenoIndex++;
+            else if (dx === -1 && gridCol > 0) this.selectedRenoIndex--;
+            else if (dy === 1) {
+                const next = this.selectedRenoIndex + cols;
+                if (next < count) this.selectedRenoIndex = next;
+            } else if (dy === -1) {
+                const prev = this.selectedRenoIndex - cols;
+                if (prev >= 2) this.selectedRenoIndex = prev;
+                else this.selectedRenoIndex = (gridCol < 2) ? 0 : 1;
+            }
+        }
+
+        const currentItem = renoItems[this.selectedRenoIndex];
+        const isSelect = event.code === 'Enter' || event.code === this.game.settings.getBinding(ACTIONS.INTERACT) || event.code === 'Space';
+
+        if (isSelect && !event.repeat) {
+            if (currentItem.unlocked) {
+                if (currentItem.type === 'action') {
+                    if (currentItem.id === 'expansion') {
+                        if (this.game.money >= currentItem.price) {
+                            this.game.money -= currentItem.price;
+                            this.game.expandKitchen();
+                            currentItem.price *= 2;
+                        }
+                    } else if (currentItem.id === 'build_mode') {
+                        this.enterBuildMode();
+                    }
+                } else if (currentItem.type === 'appliance' && this.game.money >= currentItem.price) {
+                    const isFirstTime = !this.game.hasAppliance(currentItem.id, currentItem.tileType);
+                    this.game.money -= currentItem.price;
+                    this.startPlacement({ id: currentItem.id, tileType: currentItem.tileType });
+
+                    if (isFirstTime) {
+                        const gifts = { 'fryer': 'side_cup_box', 'soda_fountain': 'drink_cup_box' };
+                        const giftId = gifts[currentItem.id];
+                        if (giftId) {
+                            this.game.pendingOrders.push({ id: giftId, qty: 1 });
+                            setTimeout(() => this.game.addFloatingText("Free starter supplies added!", this.game.player.x, this.game.player.y, '#00ff00'), 500);
+                        }
+                    }
+                }
+            }
+        } else if (event.code === 'Escape') {
+            this.game.gameState = 'PLAYING';
         }
     }
 }

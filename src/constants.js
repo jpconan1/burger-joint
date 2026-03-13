@@ -60,6 +60,15 @@ export const ASSETS = {
         DISH_RACK_LAYER2: 'dish_rack-layer2.png',
         CHUTE_BACK: 'chute/chute_back.png',
         CHUTE_FRONT: 'chute/chute_front.png',
+        SERVICE_WINDOW_TOP_LEFT: 'service_counter/service_window_top_left.png',
+        SERVICE_WINDOW_TOP_CENTRE: 'service_counter/service_window_top_centre.png',
+        SERVICE_WINDOW_TOP_RIGHT: 'service_counter/service_window_top_right.png',
+        SERVICE_WINDOW_BOTTOM_LEFT: 'service_counter/service_window_bottom_left.png',
+        SERVICE_WINDOW_BOTTOM_CENTRE: 'service_counter/service_window_bottom_centre.png',
+        SERVICE_WINDOW_BOTTOM_RIGHT: 'service_counter/service_window_bottom_right.png',
+        SERVICE_COUNTER_LEFT: 'service_counter/service_counter_left_edge.png',
+        SERVICE_COUNTER_CENTRE: 'service_counter/service_counter_centre.png',
+        SERVICE_COUNTER_RIGHT: 'service_counter/service_counter_right_edge.png',
     },
     EFFECTS: {
         DUST_SHEET: 'sheets/dust_sheet.png',
@@ -203,8 +212,6 @@ export const ASSETS = {
         NEW_SIDE_LOCKED_SELECTED: 'postday_ui/new_side-locked-selected.png',
         NEW_DRINK_LOCKED_IDLE: 'postday_ui/new_drink-locked-idle.png',
         NEW_DRINK_LOCKED_SELECTED: 'postday_ui/new_drink-locked-selected.png',
-        STAR_FILLED: 'star.png',
-        STAR_EMPTY: 'star_outline_w.png',
         GREEN_ARROW: 'ui/green_arrow.png',
         MENU_BUTTON_IDLE: 'ui/menu_button-idle.png',
         MENU_BUTTON_SELECTED: 'ui/menu_button-selected.png',
@@ -391,11 +398,17 @@ export const TILE_TYPES = {
         texture: ASSETS.TILES.CHUTE_BACK,
         walkable: false,
         holdsItems: false,
+    },
+    SERVICE_WINDOW: {
+        id: 'SERVICE_WINDOW',
+        texture: null,
+        walkable: false,
+        holdsItems: false,
     }
 };
 
 export const GRID_WIDTH = 15;
-export const GRID_HEIGHT = 10;
+export const GRID_HEIGHT = 11;
 
 export const TAG_LAYOUTS = {
     // top: The Y coordinate where the drawing starts (from top)

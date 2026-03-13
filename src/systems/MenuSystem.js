@@ -82,19 +82,117 @@ export class MenuSystem {
                 currentId = parentId;
                 depth++;
             }
-            return true;
+            return false;
         };
 
-        // Auto-add Fries and Cola to menu if available
-        const friesAvailable = this.rawSides.some(s => s.id === 'fries' && checkUnlocked('fries'));
-        if (friesAvailable && !this.sides.some(s => s.definitionId === 'fries')) {
-            this.sides.push({ definitionId: 'fries' });
+        // Auto-add unlocked sides to menu
+        this.rawSides.forEach(s => {
+            if (checkUnlocked(s.id) && !this.sides.some(side => side.definitionId === s.id)) {
+                this.sides.push({ definitionId: s.id });
+                console.log(`[MenuSystem] Auto-added side to menu: ${s.id}`);
+            }
+        });
+
+        // Auto-add unlocked drinks to menu
+        this.rawDrinks.forEach(d => {
+            if (checkUnlocked(d.id) && !this.drinks.some(drink => drink.definitionId === d.id)) {
+                this.drinks.push({ definitionId: d.id });
+                console.log(`[MenuSystem] Auto-added drink to menu: ${d.id}`);
+            }
+        });
+
+        // Auto-add unlocked sauces to burgers if missing
+        const sauces = ['mayo', 'ketchup', 'bbq', 'burger_sauce'];
+        sauces.forEach(sauceId => {
+            if (checkUnlocked(sauceId)) {
+                const onAnyBurger = this.menuSlots.some(slot =>
+                    slot && slot.state.toppings && slot.state.toppings.some(t => {
+                        const tid = typeof t === 'string' ? t : (t.definitionId || (t.definition && t.definition.id));
+                        return tid === sauceId;
+                    })
+                );
+
+                if (!onAnyBurger) {
+                    this.addToppingToMenu(sauceId);
+                }
+            }
+        });
+    }
+
+    /**
+     * Resolves a box/bag item ID to the topping ID that would appear on a burger.
+     */
+    resolveToppingId(itemId) {
+        const def = DEFINITIONS[itemId];
+        if (!def) return null;
+
+        // Already a topping
+        if (def.category === 'topping' || def.isTopping) return def.id;
+
+        // If it's a box/bag, find what it produces
+        let producesId = def.produces;
+        if (def.fryContent && !producesId) producesId = def.fryContent;
+
+        if (producesId) {
+            const prod = DEFINITIONS[producesId];
+            if (prod) {
+                if (prod.category === 'topping' || prod.isTopping) return prod.id;
+
+                // Common mapping for produce
+                const mappings = {
+                    'tomato': 'tomato_slice',
+                    'lettuce_head': 'lettuce_leaf',
+                    'onion': 'onion_slice',
+                    'cheddar_block': 'cheddar_cheese',
+                    'swiss_block': 'swiss_cheese',
+                    'pickle': 'pickle_slice'
+                };
+                if (mappings[prod.id]) return mappings[prod.id];
+
+                // If the product is sliceable, check its slice result
+                if (prod.slicing && prod.slicing.result) {
+                    const slice = DEFINITIONS[prod.slicing.result];
+                    if (slice && (slice.category === 'topping' || slice.isTopping)) return slice.id;
+                }
+            }
         }
 
-        const colaAvailable = this.rawDrinks.some(d => d.id === 'cola' && checkUnlocked('cola'));
-        if (colaAvailable && !this.drinks.some(d => d.definitionId === 'cola')) {
-            this.drinks.push({ definitionId: 'cola' });
+        return null;
+    }
+
+    /**
+     * Adds the unlocked topping to the best available burger menu slot
+     */
+    addToppingToMenu(itemId) {
+        const toppingId = this.resolveToppingId(itemId) || itemId;
+        const toppingDef = DEFINITIONS[toppingId];
+        if (!toppingDef || !(toppingDef.category === 'topping' || toppingDef.isTopping)) {
+            console.log(`[MenuSystem] Skipping menu slot add for non-topping: ${toppingId}`);
+            return;
         }
+
+        const activeSlots = this.menuSlots.filter(s => s !== null);
+        if (activeSlots.length === 0) return;
+
+        // Find the slot that doesn't already have this topping and has the fewest toppings
+        const eligibleSlots = activeSlots.filter(slot => {
+            const toppings = slot.state.toppings || [];
+            return !toppings.some(t => {
+                const tid = typeof t === 'string' ? t : (t.definitionId || (t.definition && t.definition.id));
+                return tid === toppingId;
+            });
+        });
+
+        if (eligibleSlots.length === 0) return;
+
+        // Pick the slot with the fewest existing toppings
+        eligibleSlots.sort((a, b) => (a.state.toppings?.length || 0) - (b.state.toppings?.length || 0));
+        const targetSlot = eligibleSlots[0];
+
+        const newTopping = new ItemInstance(toppingId);
+        targetSlot.state.toppings = targetSlot.state.toppings || [];
+        targetSlot.state.toppings.push(newTopping);
+        console.log(`[MenuSystem] Added topping '${toppingId}' to burger slot '${targetSlot.name}'`);
     }
 
     /**

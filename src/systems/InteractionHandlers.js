@@ -65,6 +65,26 @@ export const InteractionHandlers = {
                 };
             }
         }
+        // 5. Dispenser (Apply Sauce)
+        else if (held.definitionId === 'dispenser') {
+            const dispState = held.state || {};
+            const isLoaded = dispState.status === 'loaded' || dispState.status === 'has_mayo';
+            if (isLoaded) {
+                const sauceId = dispState.sauceId || 'mayo';
+                itemToDispense = new ItemInstance(sauceId);
+                consumeAction = () => {
+                    if (!dispState.isInfinite) {
+                        dispState.charges = (dispState.charges || 0) - 1;
+                        if (dispState.charges <= 0) {
+                            dispState.status = 'empty';
+                            dispState.charges = 0;
+                            dispState.sauceId = null;
+                            dispState.bagId = null;
+                        }
+                    }
+                };
+            }
+        }
 
         if (!itemToDispense) return false;
 
@@ -239,6 +259,11 @@ export const InteractionHandlers = {
             // First try container logic (e.g. dealing from box)
             if (InteractionHandlers.handle_container_deal(player, cell)) return true;
 
+            // Then try collecting into container (e.g. Insert taking finished patty/bacon)
+            if (cell.object.state?.cook_level === 'cooked') {
+                if (InteractionHandlers.handle_container_collect(player, cell)) return true;
+            }
+
             // Then try single item combine
             const result = InteractionHandlers._tryCombine(player.heldItem, cell.object);
             if (result) {
@@ -292,6 +317,11 @@ export const InteractionHandlers = {
 
             // Occupied: Combine (Result to Hand)
             if (cell.object) {
+                // Try collecting into container if it's finished food
+                if (cell.object.state?.cook_level === 'cooked') {
+                    if (InteractionHandlers.handle_container_collect(player, cell)) return true;
+                }
+
                 const result = InteractionHandlers._tryCombine(player.heldItem, cell.object);
                 if (result) {
                     player.heldItem = result;
@@ -355,6 +385,12 @@ export const InteractionHandlers = {
     fryer_pickup_cooked: (player, cell) => {
         const friedItem = cell.object;
         if (!friedItem) return false;
+
+        // Try generic container collect (e.g. Plate or Bag)
+        if (InteractionHandlers.handle_container_collect(player, cell)) {
+            cell.state.status = 'empty';
+            return true;
+        }
 
         // ONION RINGS
         if (friedItem.definitionId === 'onion_slice' && friedItem.state.cook_level === 'cooked') {

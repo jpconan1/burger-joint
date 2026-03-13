@@ -1,72 +1,56 @@
+import { ASSETS } from '../constants.js';
+
 export const DEFAULT_LEVEL = {
     "width": 15,
-    "height": 9,
+    "height": 11,
     "cells": [
         [
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_LEFT }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_RIGHT }, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null }
+        ],
+        [
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_LEFT }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_RIGHT }, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null }
+        ],
+        [
             { "typeId": "CHUTE", "state": {}, "object": null },
-            {
-                "typeId": "PRINTER",
-                "state": {
-                    "printing": true,
-                    "printStartTime": 1770785712625
-                },
-                "object": null
-            },
-            {
-                "typeId": "SHUTTER_DOOR",
-                "state": {
-                    "id": "kitchen_shutter",
-                    "targetRoom": "store_room",
-                    "targetDoorId": "store_exit",
-                    "isOpen": true
-                },
-                "object": null
-            },
-            {
-                "typeId": "TICKET_WHEEL",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "SERVICE",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "SERVICE",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "SERVICE",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "SERVICE",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "SERVICE",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "SERVICE",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "SERVICE",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "SERVICE",
-                "state": {},
-                "object": null
-            },
+            { "typeId": "COUNTER", "state": {}, "object": null },
+            { "typeId": "COUNTER", "state": {}, "object": null },
+            { "typeId": "COUNTER", "state": {}, "object": null },
+            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_LEFT }, "object": null },
+            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
+            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
+            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
+            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
+            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
+            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
+            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_RIGHT }, "object": null },
             {
                 "typeId": "COUNTER",
                 "state": {
@@ -98,72 +82,24 @@ export const DEFAULT_LEVEL = {
                 },
                 "object": null
             },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "FLOOR", "state": {}, "object": null },
             {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "OFFICE_DOOR",
+                "typeId": "SHUTTER_DOOR",
                 "state": {
-                    "id": "kitchen_office_door",
-                    "targetRoom": "office",
-                    "targetDoorId": "office_exit",
+                    "id": "kitchen_shutter",
+                    "targetRoom": "store_room",
+                    "targetDoorId": "store_exit",
                     "isOpen": true
                 },
                 "object": null

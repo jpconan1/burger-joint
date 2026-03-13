@@ -121,6 +121,12 @@ export class AlertSystem {
         this.buttonsContainer.style.paddingTop = '20px'; // Space from text
         this.container.appendChild(this.buttonsContainer);
 
+        this.backdrop.onclick = () => {
+            if (this.isVisible && this.inputLockTimer <= 0 && this.buttons.length === 0) {
+                this.advance();
+            }
+        };
+
         // Append to UI Layer
         const uiLayer = document.getElementById('ui-layer');
         if (uiLayer) {
@@ -232,12 +238,21 @@ export class AlertSystem {
                     <span style="position:relative; z-index:1;">${labelText}</span>
                 `;
 
+                btn.onclick = () => {
+                    if (this.inputLockTimer > 0) return;
+                    this.executeAction(btnConfig.action);
+                };
+
                 this.buttonsContainer.appendChild(btn);
                 this.buttons.push({ element: btn, config: btnConfig });
             });
             this.updateButtonSelection();
         } else {
             this.nextBtn.style.display = 'block';
+            this.nextBtn.onclick = () => {
+                if (this.inputLockTimer > 0) return;
+                this.advance();
+            };
         }
 
         // Update Size and Position

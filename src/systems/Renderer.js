@@ -228,7 +228,7 @@ export class Renderer {
                 // Layer 0: Floor drawn in Pass 1
 
                 // Auto-tiling Logic for COUNTER and SERVICE base
-                if (cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE') {
+                if ((cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE') && !(cell.state && cell.state.texture)) {
                     // Calculate Bitmask
                     // N=1, E=2, S=4, W=8
                     let mask = 0;
@@ -259,10 +259,10 @@ export class Renderer {
                     this.drawAutoTile(ASSETS.TILES.GRILL_SHEET, x, y, mask, ASSETS.TILES.STOVE_OFF);
                 }
 
-                let tileTexture = cell.type.texture;
-
+                let tileTexture = (cell.state && cell.state.texture) || cell.type.texture;
+                
                 // Prevent double-drawing COUNTER (handled by auto-tile above)
-                if (cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE' || cell.type.id === 'GRILL') {
+                if ((cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE' || cell.type.id === 'GRILL') && !(cell.state && cell.state.texture)) {
                     tileTexture = null;
                 }
 
@@ -625,21 +625,20 @@ export class Renderer {
                     serviceCounterIndex++;
                 }
 
+                if (gameState.fallingBoxes && x === 0) {
+                    gameState.fallingBoxes.forEach(box => {
+                        if (y >= box.y - 1 && y <= box.y + 1) {
+                            this.ctx.save();
+                            this.ctx.beginPath();
+                            this.ctx.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                            this.ctx.clip();
+                            this.drawObject(box.item, x, box.y);
+                            this.ctx.restore();
+                        }
+                    });
+                }
+
                 if (cell.type.id === 'CHUTE') {
-                    // Render falling boxes that overlap this vertical segment
-                    // We draw them here (after cell.object) so they stack correctly on landed items
-                    if (gameState.fallingBoxes && x === 0) {
-                        gameState.fallingBoxes.forEach(box => {
-                            if (y >= box.y - 1 && y <= box.y + 1) {
-                                this.ctx.save();
-                                this.ctx.beginPath();
-                                this.ctx.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                                this.ctx.clip();
-                                this.drawObject(box.item, x, box.y);
-                                this.ctx.restore();
-                            }
-                        });
-                    }
                     this.drawChuteSegment(ASSETS.TILES.CHUTE_FRONT, x, y);
                 }
             }
@@ -675,10 +674,6 @@ export class Renderer {
             }
         }
 
-        // Draw End Day Stars (Overlay) via RatingPopup
-        if (gameState.ratingPopup) {
-            gameState.ratingPopup.render(this.ctx, this.assetLoader);
-        }
 
         // Draw Defered Progress Bars (So they are on top of borders/lighting)
         progressBars.forEach(pb => {
@@ -879,9 +874,10 @@ export class Renderer {
         const img = this.assetLoader.get(textureName);
         if (!img) return;
 
-        // The chute is 9 tiles high. We map y to the segment.
+        // The chute starts at row 2 in the 11-high layout. 
+        // We map y relative to the start of the kitchen rows.
         const segmentHeight = TILE_SIZE;
-        const sourceY = y * segmentHeight;
+        const sourceY = (y - 2) * segmentHeight;
 
         // Safety check in case image is shorter than expected or y is out of range
         if (sourceY >= img.height) return;
