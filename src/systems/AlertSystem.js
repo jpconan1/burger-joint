@@ -59,6 +59,39 @@ export class AlertSystem {
     }
 
     initDOM() {
+        // Add SVG Filter for thick, spike-free outlines if it doesn't exist
+        if (!document.getElementById('alert-stroke-svg')) {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.id = 'alert-stroke-svg';
+            svg.setAttribute('width', '0');
+            svg.setAttribute('height', '0');
+            svg.style.position = 'absolute';
+            svg.style.pointerEvents = 'none';
+            svg.innerHTML = `
+                <defs>
+                    <filter id="cleanOutline" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+                        <!-- Expand the shape -->
+                        <feMorphology operator="dilate" radius="9" in="SourceAlpha" result="dilated" />
+                        <!-- Soften edges to round corners (prevents spikes) -->
+                        <feGaussianBlur stdDeviation="2.2" in="dilated" result="blurred" />
+                        <!-- Threshold the alpha to create a sharp, rounded stroke -->
+                        <feComponentTransfer in="blurred" result="rounded">
+                            <feFuncA type="linear" slope="20" intercept="-10" />
+                        </feComponentTransfer>
+                        <!-- Color the stroke black -->
+                        <feFlood flood-color="black" result="black" />
+                        <feComposite in="black" in2="rounded" operator="in" result="outline" />
+                        <!-- Merge outline with original text -->
+                        <feMerge>
+                            <feMergeNode in="outline" />
+                            <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                    </filter>
+                </defs>
+            `;
+            document.body.appendChild(svg);
+        }
+
         // Create backdrop
         this.backdrop = document.createElement('div');
         this.backdrop.classList.add('alert-backdrop');
@@ -92,9 +125,8 @@ export class AlertSystem {
         this.contentText.style.fontFamily = "'Inter', sans-serif";
         this.contentText.style.fontWeight = '900';
         this.contentText.style.color = '#fff';
-        this.contentText.style.webkitTextStroke = '7px black';
-        this.contentText.style.paintOrder = 'stroke fill';
-        this.contentText.style.textShadow = 'none'; // Override CSS shadow
+        this.contentText.style.filter = 'url(#cleanOutline)';
+        this.contentText.style.textShadow = 'none'; // Replaced by filter outline
         this.container.appendChild(this.contentText);
 
         // Portrait Image
@@ -221,8 +253,7 @@ export class AlertSystem {
                 btn.style.fontFamily = "'Inter', sans-serif";
                 btn.style.fontWeight = '900';
                 btn.style.color = '#fff';
-                btn.style.webkitTextStroke = '7px black';
-                btn.style.paintOrder = 'stroke fill';
+                btn.style.filter = 'url(#cleanOutline)';
                 btn.style.cursor = 'pointer';
                 btn.style.transition = 'transform 0.1s';
 

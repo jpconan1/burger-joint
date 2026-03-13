@@ -125,10 +125,14 @@ export class Renderer {
         // 1. Draw Floor/Walls (Base Layer)
         const progressBars = [];
 
-        // Pass 1: Draw ALL Floors first to avoid occlusion issues with 2.5D sorting
+        // Pass 1: Draw ALL Floors/Walls first to avoid occlusion issues with 2.5D sorting
         for (let y = 0; y < gameState.grid.height; y++) {
             for (let x = 0; x < gameState.grid.width; x++) {
-                this.drawTile(ASSETS.TILES.FLOOR, x, y);
+                const cell = gameState.grid.getCell(x, y);
+                // Rows 0 and 1 are the "wall rows", unless it's a transparent window
+                const isWindow = cell.type.id === 'SERVICE_WINDOW';
+                const baseTexture = (y < 2 && !isWindow) ? ASSETS.TILES.WALL : ASSETS.TILES.FLOOR;
+                this.drawTile(baseTexture, x, y);
             }
         }
         // 1.5 Draw Game Border (Moved here to be behind objects)
@@ -272,30 +276,7 @@ export class Renderer {
                 }
 
                 if (cell.type.id === 'TICKET_WHEEL') {
-                    // Prep Time Overlay
-                    if (gameState.isPrepTime) {
-                        this.drawTile(ASSETS.TILES.TICKET_WHEEL, x, y); // Draw base wheel
-                        tileTexture = ASSETS.TILES.PREP; // Draw Prep overlay on top
-                    } else if (gameState.ticketWheelAnimStartTime) {
-                        const elapsed = Date.now() - gameState.ticketWheelAnimStartTime;
-                        // 10ms Frame 1, 10ms Frame 2. Total 20ms.
-                        // Using slightly larger windows for visibility 50ms/50ms = 100ms total
-                        // Prompt said "10 ms". I will use 50ms as a usable interpretation that isn't instantaneous but still fast.
-                        // Actually, I will respect the prompt's speed req strictly if I can, but 10ms is 1 frame or less.
-                        // Let's use 50ms threshold.
-                        const duration = 50;
-                        if (elapsed < duration) tileTexture = ASSETS.TILES.TICKET_WHEEL_FRAME1;
-                        else if (elapsed < duration * 2) tileTexture = ASSETS.TILES.TICKET_WHEEL_FRAME2;
-                        else {
-                            if (gameState.activeTickets && gameState.activeTickets.length > 0) {
-                                tileTexture = ASSETS.TILES.TICKET_WHEEL_ORDER;
-                            }
-                        }
-                    } else {
-                        if (gameState.activeTickets && gameState.activeTickets.length > 0) {
-                            tileTexture = ASSETS.TILES.TICKET_WHEEL_ORDER;
-                        }
-                    }
+                    // Removed: Logic to show order on wheel (now handled by hanging tickets)
                 }
                 if (cell.type.id === 'GARBAGE') {
                     this.drawTile(ASSETS.TILES.GARBAGE, x, y);
@@ -412,19 +393,7 @@ export class Renderer {
                 }
 
                 if (cell.type.id === 'PRINTER') {
-                    if (cell.state && cell.state.printing) {
-                        const elapsed = Date.now() - cell.state.printStartTime;
-                        const duration = 2250; // Print for 2.25 seconds per ticket (3 frames * 750ms)
-                        if (elapsed < duration) {
-                            const frame = Math.floor(elapsed / 750) % 3;
-                            if (frame === 0) tileTexture = ASSETS.TILES.PRINTER_PRINT1;
-                            else if (frame === 1) tileTexture = ASSETS.TILES.PRINTER_PRINT2;
-                            else tileTexture = ASSETS.TILES.PRINTER_PRINT3;
-                        } else {
-                            // Animation finished
-                            // Optional: cell.state.printing = false; // Clean up state if desired, but not strictly necessary for visual only
-                        }
-                    }
+                    // Removed: Printer logic (now handled by hanging tickets)
                 }
                 if (cell.type.id === 'DISHWASHER') {
                     if (cell.state && cell.state.isOpen) {
@@ -681,6 +650,7 @@ export class Renderer {
         });
 
         this.drawEffects(gameState);
+        this.drawHangingTickets(gameState);
 
         // --- END WORLD RENDERING ---
 
@@ -874,10 +844,9 @@ export class Renderer {
         const img = this.assetLoader.get(textureName);
         if (!img) return;
 
-        // The chute starts at row 2 in the 11-high layout. 
-        // We map y relative to the start of the kitchen rows.
+        // The chute now starts at row 0 (extended)
         const segmentHeight = TILE_SIZE;
-        const sourceY = (y - 2) * segmentHeight;
+        const sourceY = y * segmentHeight;
 
         // Safety check in case image is shorter than expected or y is out of range
         if (sourceY >= img.height) return;
@@ -1855,6 +1824,8 @@ export class Renderer {
         this.ctx.fillStyle = '#ffffff';
         this.ctx.strokeStyle = 'black';
         this.ctx.lineWidth = 3;
+        this.ctx.lineJoin = 'round';
+        this.ctx.miterLimit = 2;
 
         // Stroke
         this.ctx.strokeText(scoreText, this.canvas.width - 20, 10);
@@ -2596,6 +2567,114 @@ export class Renderer {
         }
     }
 
+
+    drawHangingTickets(gameState) {
+        const ticketImg = this.assetLoader.get(ASSETS.UI.NEW_TICKET);
+        const patchImg = this.assetLoader.get(ASSETS.UI.TICKET_PATCH);
+        if (!ticketImg) return;
+
+        // Draw Active Tickets from Game State (starting at column 2)
+        if (gameState.activeTickets && gameState.activeTickets.length > 0) {
+            gameState.activeTickets.forEach((ticket, i) => {
+                const x = (2 + i) * TILE_SIZE;
+                const y = 0;
+
+                // Draw Base Ticket
+                this.ctx.drawImage(ticketImg, x, y);
+
+                // Recipe Content
+                const firstGroup = ticket.groups[0];
+                if (firstGroup) {
+                    // 1. Patty Logic
+                    let pattyAsset = ASSETS.OBJECTS.PATTY_COOKED;
+                    const burger = firstGroup.burgers[0];
+                    if (burger && burger.modifications && burger.modifications.includes('chicken_patty')) {
+                        pattyAsset = ASSETS.OBJECTS.CHICKEN_PATTY_COOKED;
+                    }
+                    
+                    const pattyImg = this.assetLoader.get(pattyAsset);
+                    if (pattyImg) {
+                        const size = 48; // 75% scale
+                        const ox = x + (TILE_SIZE - size) / 2;
+                        const oy = y + 17;
+                        this.ctx.drawImage(pattyImg, ox, oy, size, size);
+                    }
+
+                    // 2. Side Logic
+                    let sideAsset = null;
+                    if (firstGroup.items.includes('sweet_potato_fries')) {
+                        sideAsset = ASSETS.OBJECTS.SWEET_POTATO_FRIES_DONE;
+                    } else if (firstGroup.items.includes('fries')) {
+                        sideAsset = ASSETS.OBJECTS.FRIES_DONE;
+                    }
+
+                    if (sideAsset) {
+                        const sideImg = this.assetLoader.get(sideAsset);
+                        if (sideImg) {
+                            const size = 48; // 75% scale
+                            const ox = x + (TILE_SIZE - size) / 2;
+                            const oy = y + 57;
+                            this.ctx.drawImage(sideImg, ox, oy, size, size);
+                        }
+                    }
+                }
+
+                // Recipe Transition Patch (Linear Growth)
+                // Draw this AFTER the current ticket base to ensure it overlays the seam if needed,
+                // but we check the transition with the PREVIOUS ticket.
+                if (i > 0 && patchImg) {
+                    const prevTicket = gameState.activeTickets[i - 1];
+                    const newToppingId = this.findNewTopping(prevTicket, ticket);
+                    
+                    if (newToppingId) {
+                        // Center patch on the seam between (x - TILE_SIZE) and (x)
+                        const px = x - (TILE_SIZE / 2);
+                        this.ctx.drawImage(patchImg, px, 30); // nudged lower another 20px
+
+                        // Map sliced/processed toppings back to their raw forms for the patch icon
+                        const RAW_MAPPING = {
+                            'tomato_slice': 'tomato',
+                            'lettuce_leaf': 'lettuce_head',
+                            'onion_slice': 'onion',
+                            'cheddar_cheese': 'cheddar_block',
+                            'swiss_cheese': 'swiss_block',
+                            'pickle_slice': 'pickle'
+                        };
+                        const rawId = RAW_MAPPING[newToppingId] || newToppingId;
+
+                        // Icon on patch
+                        const def = DEFINITIONS[rawId];
+                        const textureId = def?.texture || def?.partTexture;
+                        if (textureId) {
+                            const toppingImg = this.assetLoader.get(textureId);
+                            if (toppingImg) {
+                                const size = Math.round(TILE_SIZE * 0.50); // 50% scale
+                                const ox = px + (TILE_SIZE - size) / 2;
+                                const oy = 51; // 61 - 10px nudge up
+                                this.ctx.drawImage(toppingImg, ox, oy, size, size);
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    findNewTopping(prevTicket, currTicket) {
+        const prevBurger = prevTicket.groups?.[0]?.burgers?.[0];
+        const currBurger = currTicket.groups?.[0]?.burgers?.[0];
+        if (!prevBurger || !currBurger) return null;
+
+        const prevMods = prevBurger.modifications || [];
+        const currMods = currBurger.modifications || [];
+
+        // Return the first mod in curr that isn't in prev AND is a topping
+        return currMods.find(m => {
+            const def = DEFINITIONS[m];
+            const isTopping = def && (def.category === 'topping' || def.isTopping);
+            return isTopping && !prevMods.includes(m);
+        });
+    }
 
     drawEffects(gameState) {
         if (!gameState.effects) return;

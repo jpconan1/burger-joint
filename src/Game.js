@@ -695,7 +695,7 @@ export class Game {
 
                 if (targetCell) {
                     // Identify preserve-worthy tiles (Appliances/User placed)
-                    const preservedTiles = ['COUNTER', 'SERVICE', 'GRILL', 'CUTTING_BOARD', 'DISPENSER', 'FRYER', 'SODA_FOUNTAIN', 'TICKET_WHEEL', 'PRINTER', 'COMPUTER'];
+                    const preservedTiles = ['COUNTER', 'SERVICE', 'GRILL', 'CUTTING_BOARD', 'DISPENSER', 'FRYER', 'SODA_FOUNTAIN', 'COMPUTER'];
                     // Identify structural tiles that should NOT be overwritten
                     // Note: FLOOR is overwritable, so not included here.
                     const structuralTiles = ['WALL', 'SHUTTER_DOOR', 'OFFICE_DOOR', 'OFFICE_DOOR_CLOSED', 'EXIT_DOOR', 'GARBAGE'];
@@ -1298,9 +1298,10 @@ export class Game {
                 if (this.isEndgameUnlocked) {
                     this.gameState = 'MENU_CUSTOM';
                 } else this.addFloatingText("Locked!", this.player.x, this.player.y, '#ff0000');
-            } else if (facingCell?.type.id === 'TICKET_WHEEL') {
+            } else if (facingCell?.type.id === 'SERVICE_WINDOW') {
                 if (this.isPrepTime) {
-                    this.isPrepTime = false; this.ticketTimer = 10000;
+                    this.isPrepTime = false; 
+                    this.ticketTimer = 10000;
                     this.addFloatingText("Service Started!", this.player.x, this.player.y, '#00ff00');
                 }
             } else this.player.actionInteract(this.grid, this);
@@ -1662,20 +1663,8 @@ export class Game {
                 });
             }
 
-            const kitchen = this.rooms['main'];
-            if (kitchen) {
-                for (let y = 0; y < kitchen.height; y++) {
-                    for (let x = 0; x < kitchen.width; x++) {
-                        const c = kitchen.getCell(x, y);
-                        if (c.type.id === 'PRINTER') {
-                            if (!c.state) c.state = {};
-                            c.state.printing = true;
-                            c.state.printStartTime = Date.now();
-                            this.audioSystem.playSFX(ASSETS.AUDIO.PRINTER);
-                        }
-                    }
-                }
-            }
+            // Printer logic removed, handled by new hanging tickets in Renderer.
+            this.audioSystem.playSFX(ASSETS.AUDIO.PRINTER);
 
             if (!this.testAlertShown) {
                 this.alertSystem.trigger('test_alert');

@@ -32,14 +32,8 @@ export const ASSETS = {
         HETAP_SIGN: 'hetap-sign.png',
         SHUTTER_TILE_OPEN: 'shutter_tile-open.png',
         SHUTTER_TILE_CLOSED: 'shutter_tile-closed.png',
-        TICKET_WHEEL: 'ticket_wheel.png',
-        PRINTER: 'printer_tile.png',
-        PRINTER_PRINT1: 'printer_tile-print1.png',
-        PRINTER_PRINT2: 'printer_tile-print2.png',
-        PRINTER_PRINT3: 'printer_tile-print3.png',
-        TICKET_WHEEL_ORDER: 'ticket_wheel-order.png',
-        TICKET_WHEEL_FRAME1: 'ticket_wheel-frame1.png',
-        TICKET_WHEEL_FRAME2: 'ticket_wheel-frame2.png',
+        SHUTTER_TILE_OPEN: 'shutter_tile-open.png',
+        SHUTTER_TILE_CLOSED: 'shutter_tile-closed.png',
         GARBAGE: 'garbage-tile.png',
         GARBAGE_FRONT: 'garbage-tile-front.png',
         OFFICE_DOOR: 'office_door.png',
@@ -134,6 +128,9 @@ export const ASSETS = {
         COLA_SYRUP: 'cola_syrup.png',
         SODA: 'soda.png',
         DRINK_CUP_BOX_CLOSED: 'drink_cup_box-closed.png',
+        CHICKEN_PATTY_COOKED: 'chicken_patty-cooked.png',
+        FRIES_DONE: 'fries-done.png',
+        SWEET_POTATO_FRIES_DONE: 'sweet_potato_fries-done.png',
 
         // Bags
         BAG_BOX_CLOSED: 'bag_box-closed.png',
@@ -227,6 +224,8 @@ export const ASSETS = {
         GAME_BORDER_LEFT: 'ui/game_border-left-column.png',
         GAME_BORDER_RIGHT: 'ui/game_border-right-column.png',
         CRUMPLED_PAPER_BACKGROUND: 'ui/crumpled_paper_background.png',
+        NEW_TICKET: 'ui/new_ticket.png',
+        TICKET_PATCH: 'ui/ticket-patch.png',
         STABILITY_METER: 'sheets/stability-meter-sheet.png',
     },
     AUDIO: {
@@ -317,18 +316,6 @@ export const TILE_TYPES = {
         holdsItems: false,
         isDoor: true,
     },
-    TICKET_WHEEL: {
-        id: 'TICKET_WHEEL',
-        texture: ASSETS.TILES.TICKET_WHEEL,
-        walkable: false,
-        holdsItems: false,
-    },
-    PRINTER: {
-        id: 'PRINTER',
-        texture: ASSETS.TILES.PRINTER,
-        walkable: false,
-        holdsItems: false,
-    },
     GARBAGE: {
         id: 'GARBAGE',
         texture: ASSETS.TILES.GARBAGE,
@@ -407,7 +394,7 @@ export const TILE_TYPES = {
     }
 };
 
-export const GRID_WIDTH = 15;
+export const GRID_WIDTH = 16;
 export const GRID_HEIGHT = 11;
 
 export const TAG_LAYOUTS = {

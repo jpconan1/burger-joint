@@ -1,14 +1,12 @@
 import { ASSETS } from '../constants.js';
 
 export const DEFAULT_LEVEL = {
-    "width": 15,
+    "width": 16,
     "height": 11,
     "cells": [
         [
-            { "typeId": "FLOOR", "state": {}, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "CHUTE", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_LEFT }, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
@@ -16,16 +14,17 @@ export const DEFAULT_LEVEL = {
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_CENTRE }, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_TOP_RIGHT }, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null }
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
         ],
         [
-            { "typeId": "FLOOR", "state": {}, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null },
+            { "typeId": "CHUTE", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_LEFT }, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
@@ -33,15 +32,16 @@ export const DEFAULT_LEVEL = {
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
+            { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_CENTRE }, "object": null },
             { "typeId": "SERVICE_WINDOW", "state": { "texture": ASSETS.TILES.SERVICE_WINDOW_BOTTOM_RIGHT }, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null },
-            { "typeId": "FLOOR", "state": {}, "object": null }
+            { "typeId": "WALL", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
         ],
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
-            { "typeId": "COUNTER", "state": {}, "object": null },
-            { "typeId": "COUNTER", "state": {}, "object": null },
             { "typeId": "COUNTER", "state": {}, "object": null },
             { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_LEFT }, "object": null },
             { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
@@ -50,28 +50,19 @@ export const DEFAULT_LEVEL = {
             { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
             { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
             { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
-            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_RIGHT }, "object": null },
+            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
+            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
+            { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
             {
                 "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
+                "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE },
                 "object": {
                     "definitionId": "dish_rack"
                 }
             },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {},
-                "object": null
-            }
+            { "typeId": "COUNTER", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_RIGHT }, "object": null },
+            { "typeId": "GARBAGE", "state": {}, "object": null },
+            { "typeId": "WALL", "state": {}, "object": null }
         ],
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
@@ -82,6 +73,7 @@ export const DEFAULT_LEVEL = {
                 },
                 "object": null
             },
+            { "typeId": "FLOOR", "state": {}, "object": null },
             { "typeId": "FLOOR", "state": {}, "object": null },
             { "typeId": "FLOOR", "state": {}, "object": null },
             { "typeId": "FLOOR", "state": {}, "object": null },
@@ -203,10 +195,13 @@ export const DEFAULT_LEVEL = {
                 "object": null
             },
             {
-                "typeId": "GARBAGE",
-                "state": {},
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
                 "object": null
-            }
+            },
+            { "typeId": "WALL", "state": {}, "object": null }
         ],
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
@@ -279,7 +274,8 @@ export const DEFAULT_LEVEL = {
                 "typeId": "COUNTER",
                 "state": {},
                 "object": null
-            }
+            },
+            { "typeId": "WALL", "state": {}, "object": null }
         ],
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
@@ -368,7 +364,8 @@ export const DEFAULT_LEVEL = {
                 "typeId": "COUNTER",
                 "state": {},
                 "object": null
-            }
+            },
+            { "typeId": "WALL", "state": {}, "object": null }
         ],
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
@@ -445,7 +442,8 @@ export const DEFAULT_LEVEL = {
                     "facing": 0
                 },
                 "object": null
-            }
+            },
+            { "typeId": "WALL", "state": {}, "object": null }
         ],
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
@@ -534,7 +532,8 @@ export const DEFAULT_LEVEL = {
                 "typeId": "COUNTER",
                 "state": {},
                 "object": null
-            }
+            },
+            { "typeId": "WALL", "state": {}, "object": null }
         ],
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
@@ -609,7 +608,8 @@ export const DEFAULT_LEVEL = {
                     "facing": 0
                 },
                 "object": null
-            }
+            },
+            { "typeId": "WALL", "state": {}, "object": null }
         ],
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
@@ -697,7 +697,8 @@ export const DEFAULT_LEVEL = {
                 "typeId": "COUNTER",
                 "state": {},
                 "object": null
-            }
+            },
+            { "typeId": "WALL", "state": {}, "object": null }
         ]
     ]
 };
