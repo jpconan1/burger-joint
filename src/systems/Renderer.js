@@ -1844,7 +1844,90 @@ export class Renderer {
             this.ctx.strokeText(nextTicketText, this.canvas.width - 20, 70);
             this.ctx.fillStyle = '#00ff00';
             this.ctx.fillText(nextTicketText, this.canvas.width - 20, 70);
+
+            // XP Display
+            const xpText = `LEVEL ${gameState.level} (${gameState.xp}/${gameState.xpToNextLevel} XP)`;
+            this.ctx.strokeText(xpText, this.canvas.width - 20, 100);
+            this.ctx.fillStyle = '#ffd700';
+            this.ctx.fillText(xpText, this.canvas.width - 20, 100);
         }
+
+        this.ctx.restore();
+        this.drawPauseButton(gameState);
+    }
+
+    drawPauseButton(gameState) {
+        this.ctx.save();
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset for screen space
+        
+        const x = 20;
+        const y = 20;
+        const size = 40;
+        
+        // Button Background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        if (this.ctx.roundRect) {
+            this.ctx.roundRect(x, y, size, size, 5);
+        } else {
+            this.ctx.rect(x, y, size, size);
+        }
+        this.ctx.fill();
+        this.ctx.stroke();
+        
+        // Pause/Play Icon
+        this.ctx.fillStyle = '#ffffff';
+        if (gameState.gameState === 'PAUSED') {
+            // Play Icon (Triangle)
+            this.ctx.beginPath();
+            this.ctx.moveTo(x + 15, y + 10);
+            this.ctx.lineTo(x + 30, y + 20);
+            this.ctx.lineTo(x + 15, y + 30);
+            this.ctx.closePath();
+            this.ctx.fill();
+        } else {
+            // Pause Icon (Bars)
+            this.ctx.fillRect(x + 13, y + 12, 5, 16);
+            this.ctx.fillRect(x + 22, y + 12, 5, 16);
+        }
+        
+        this.ctx.restore();
+
+        // Store button hit box for mouse handling
+        this.pauseButtonRect = { x: x, y: y, width: size, height: size };
+    }
+
+    renderPauseScreen(gameState) {
+        this.ctx.save();
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0); // Screen space
+
+        // Overlay
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Text
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        
+        // PAUSED Text
+        this.ctx.font = 'bold 72px Arial';
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 8;
+        this.ctx.lineJoin = 'round';
+        this.ctx.strokeText('PAUSED', this.canvas.width / 2, this.canvas.height / 2 - 40);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText('PAUSED', this.canvas.width / 2, this.canvas.height / 2 - 40);
+
+        // Subtext
+        this.ctx.font = '24px Arial';
+        const resumeText = `Press ESC or Click anywhere to Resume`;
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 4;
+        this.ctx.strokeText(resumeText, this.canvas.width / 2, this.canvas.height / 2 + 40);
+        this.ctx.fillStyle = '#ffcc00';
+        this.ctx.fillText(resumeText, this.canvas.width / 2, this.canvas.height / 2 + 40);
 
         this.ctx.restore();
     }
@@ -2188,159 +2271,30 @@ export class Renderer {
 
     drawServiceHint(x, y, gameState, cellObject, yOffset = 0, ticketIndex = 0) {
         if (!gameState.activeTickets || gameState.activeTickets.length === 0) return;
-
         const ticket = gameState.activeTickets[ticketIndex];
+        if (!ticket || !ticket.groups[0]) return;
 
-        if (!ticket) return;
+        const group = ticket.groups[0];
+        const containerType = group.containerType || 'bag';
 
-        // 1. Determine Requirements & Container Type
-        // Using "First Group" logic (usually only 1 group per ticket right now)
-        const orderGroup = ticket.groups && ticket.groups[0];
-        if (!orderGroup) return;
-
-        const containerType = orderGroup.containerType || 'bag';
-
-        // 2. Draw Container Outline (Always if active ticket exists)
+        // 1. Draw Container Outline
         const outlineTex = containerType === 'plate' ? 'plates/plate-outline.png' : 'bag-trans.png';
         this.drawTile(outlineTex, x, y, yOffset);
 
-        let reqBurgers = orderGroup.burgers ? [...orderGroup.burgers] : []; // Copy for matching
-        let reqSides = [];
-        let reqDrinks = [];
-
-        if (orderGroup.items) {
-            orderGroup.items.forEach(itemId => {
-                const def = DEFINITIONS[itemId];
-                if (def && def.orderConfig) {
-                    if (def.orderConfig.type === 'side') reqSides.push(itemId);
-                    if (def.orderConfig.type === 'drink') reqDrinks.push(itemId);
-                } else {
-                    if (def && def.category === 'side') reqSides.push(itemId);
-                    if (def && (def.category === 'drink' || def.category === 'hetap')) reqDrinks.push(itemId);
-                }
-            });
+        // 2. Validate Contents (if container exists on counter)
+        let validation = { 
+            containerMatch: false, 
+            burgers: group.burgers.map(b => ({ req: b, matched: false })), 
+            items: group.items.map(i => ({ req: i, matched: false })),
+            extras: []
+        };
+        
+        if (cellObject) {
+            validation = ticket.getValidationDetails(cellObject);
         }
 
-        const totalReqBurgers = reqBurgers.length;
-        const totalReqSides = reqSides.length;
-        const totalReqDrinks = reqDrinks.length;
-
-        // 3. Determine Present Items & Validate
-        let validBurgers = 0;
-        let validSides = 0;
-        let validDrinks = 0;
-        let errorBurgers = false;
-        let errorSides = false;
-        let errorDrinks = false;
-
-        if (cellObject && cellObject.definitionId === containerType && cellObject.state && cellObject.state.contents) {
-
-            // Helper function to check topping arrays
-            const checkBurgerMatch = (reqModifications, actualItem) => {
-                const actualToppings = (actualItem.state.toppings || []).map(t => {
-                    if (typeof t === 'string') return t === 'mayo' ? 'mayo' : t;
-                    return t.definitionId;
-                });
-
-                // 1. Check all requested mods present
-                const missingMod = reqModifications.find(req => {
-                    if (actualToppings.includes(req)) return false;
-                    const def = DEFINITIONS[req];
-                    if (def && def.slicing && def.slicing.result) {
-                        if (actualToppings.includes(def.slicing.result)) return false;
-                    }
-                    return true;
-                });
-                if (missingMod) return false;
-
-                // 2. Check for extra toppings (Strict)
-                const validToppings = new Set(reqModifications);
-                reqModifications.forEach(req => {
-                    const def = DEFINITIONS[req];
-                    if (def && def.slicing && def.slicing.result) {
-                        validToppings.add(def.slicing.result);
-                    }
-                });
-
-                // Ignore basic bun/patty in 'toppings' array if they somehow got in there, 
-                // but usually they are distinct properties. 
-                // Our logic focuses on the 'toppings' list.
-                const extraTop = actualToppings.find(act => !validToppings.has(act));
-                if (extraTop) return false;
-
-                return true;
-            };
-
-            cellObject.state.contents.forEach(contentItem => {
-                const def = DEFINITIONS[contentItem.definitionId];
-
-                // --- Burger Validation ---
-                if (contentItem.definitionId.includes('burger')) {
-                    // Try to match against ANY remaining requirement
-                    const matchIndex = reqBurgers.findIndex(req => checkBurgerMatch(req.modifications, contentItem));
-
-                    if (matchIndex !== -1) {
-                        validBurgers++;
-                        reqBurgers.splice(matchIndex, 1); // Consume requirement
-                    } else {
-                        errorBurgers = true; // Provides a burger, but it's wrong (or extra)
-                        validBurgers++; // Still counts for "Fill" purposes? Or maybe not? User said "fills up as if right".
-                    }
-                }
-
-                // --- Side/Drink Validation ---
-                if (def) {
-                    let isSide = false;
-                    let isDrink = false;
-
-                    if (def.orderConfig) {
-                        if (def.orderConfig.type === 'side') isSide = true;
-                        if (def.orderConfig.type === 'drink') isDrink = true;
-                    } else {
-                        if (def.category === 'side') isSide = true;
-                        if (def.category === 'drink' || def.category === 'hetap') isDrink = true;
-                    }
-
-                    if (isSide) {
-                        // Simple ID match
-                        // Note: aliases like fries/fry_bag handled? 
-                        const matchIndex = reqSides.findIndex(reqId => {
-                            if (reqId === contentItem.definitionId) return true;
-                            if (reqId === 'fries' && (contentItem.definitionId === 'fry_bag')) return true;
-                            return false;
-                        });
-
-                        if (matchIndex !== -1) {
-                            validSides++;
-                            reqSides.splice(matchIndex, 1);
-                        } else {
-                            errorSides = true;
-                            validSides++;
-                        }
-                    }
-
-                    if (isDrink) {
-                        const matchIndex = reqDrinks.findIndex(reqId => {
-                            if (reqId === contentItem.definitionId) return true;
-                            if (reqId === 'soda' && (contentItem.definitionId === 'drink_cup')) return true;
-                            return false;
-                        });
-
-                        if (matchIndex !== -1) {
-                            validDrinks++;
-                            reqDrinks.splice(matchIndex, 1);
-                        } else {
-                            errorDrinks = true;
-                            validDrinks++;
-                        }
-                    }
-                }
-            });
-        }
-
-        // 4. Render Hooks (Dynamic Fill or Error)
+        // 3. Render Hooks
         if (containerType === 'plate') {
-            // Plate Specific Rendering: Ghost outlines on the plate itself
             this.ctx.save();
             const cx = x * TILE_SIZE + TILE_SIZE / 2;
             const cy = y * TILE_SIZE + TILE_SIZE / 2 + yOffset;
@@ -2353,62 +2307,44 @@ export class Renderer {
             const contentNudge = 8;
             const contentY = baseY - contentNudge;
 
-            // Burger Ghost
-            if (totalReqBurgers > 0 && validBurgers < totalReqBurgers) {
-                const bOutline = this.assetLoader.get('plates/burger-plate-outline.png');
-                if (bOutline) {
-                    this.ctx.drawImage(bOutline, -innerSize + 4, contentY + 15, innerSize, innerSize);
-                }
-            }
-
-            // Side Ghost
-            if (totalReqSides > 0 && validSides < totalReqSides) {
-                const sOutline = this.assetLoader.get('plates/fries-plate-outline.png');
-                if (sOutline) {
-                    // Positioned to match the side slot
-                    this.ctx.drawImage(sOutline, baseX, baseY, TILE_SIZE, TILE_SIZE);
-                }
-            }
-
-            // 5. Indicators (Correct/Wrong)
-            if (cellObject) {
-                const correctImg = this.assetLoader.get('plates/correct.png');
-                const wrongImg = this.assetLoader.get('plates/wrong.png');
-
-                // Burger Indicator
-                if (validBurgers > 0) {
-                    const img = (errorBurgers || (totalReqBurgers === 0)) ? wrongImg : correctImg;
-                    if (img) {
-                        // Center over burger slot (-innerSize + 4, contentY + 15)
-                        const ix = -innerSize + 4 + (innerSize - 24) / 2;
-                        const iy = contentY + 15 + (innerSize - 24) / 2;
-                        this.ctx.drawImage(img, ix, iy, 24, 24);
+            // Burger Ghosts
+            validation.burgers.forEach((b, idx) => {
+                if (!b.matched) {
+                    const bOutline = this.assetLoader.get('plates/burger-plate-outline.png');
+                    if (bOutline) {
+                        this.ctx.drawImage(bOutline, -innerSize + 4, contentY + 15, innerSize, innerSize);
                     }
                 }
+            });
 
-                // Side Indicator
-                if (validSides > 0) {
-                    const img = (errorSides || (totalReqSides === 0)) ? wrongImg : correctImg;
-                    if (img) {
-                        // Center over side slot (0, contentY + 10)
-                        const ix = 0 + (innerSize - 24) / 2;
-                        const iy = contentY + 10 + (innerSize - 24) / 2;
-                        this.ctx.drawImage(img, ix, iy, 24, 24);
+            // Side Ghosts
+            validation.items.forEach((s, idx) => {
+                if (!s.matched) {
+                    const def = DEFINITIONS[s.req];
+                    const isSide = def && (def.category === 'side' || (def.orderConfig && def.orderConfig.type === 'side'));
+                    if (isSide) {
+                        const sOutline = this.assetLoader.get('plates/fries-plate-outline.png');
+                        if (sOutline) {
+                            this.ctx.drawImage(sOutline, 4, contentY + 15, innerSize, innerSize);
+                        }
                     }
                 }
-            }
+            });
 
             this.ctx.restore();
         } else {
             // Bag/Standard Rendering: Uses progress tags
-            if (totalReqBurgers > 0) {
-                this.drawProgressTag('burger', x, y, validBurgers, totalReqBurgers, errorBurgers, yOffset);
+            const bMatched = validation.burgers.filter(b => b.matched).length;
+            const bTotal = validation.burgers.length;
+            const sMatched = validation.items.filter(i => i.matched).length;
+            const sTotal = validation.items.length;
+            const hasExtra = validation.extras.length > 0;
+
+            if (bTotal > 0) {
+                this.drawProgressTag('burger', x, y, bMatched, bTotal, hasExtra, yOffset);
             }
-            if (totalReqSides > 0) {
-                this.drawProgressTag('side', x, y, validSides, totalReqSides, errorSides, yOffset);
-            }
-            if (totalReqDrinks > 0) {
-                this.drawProgressTag('drink', x, y, validDrinks, totalReqDrinks, errorDrinks, yOffset);
+            if (sTotal > 0) {
+                this.drawProgressTag('side', x, y, sMatched, sTotal, hasExtra, yOffset);
             }
         }
     }
@@ -2570,7 +2506,6 @@ export class Renderer {
 
     drawHangingTickets(gameState) {
         const ticketImg = this.assetLoader.get(ASSETS.UI.NEW_TICKET);
-        const patchImg = this.assetLoader.get(ASSETS.UI.TICKET_PATCH);
         if (!ticketImg) return;
 
         // Draw Active Tickets from Game State (starting at column 2)
@@ -2583,98 +2518,31 @@ export class Renderer {
                 this.ctx.drawImage(ticketImg, x, y);
 
                 // Recipe Content
-                const firstGroup = ticket.groups[0];
-                if (firstGroup) {
-                    // 1. Patty Logic
-                    let pattyAsset = ASSETS.OBJECTS.PATTY_COOKED;
-                    const burger = firstGroup.burgers[0];
-                    if (burger && burger.modifications && burger.modifications.includes('chicken_patty')) {
-                        pattyAsset = ASSETS.OBJECTS.CHICKEN_PATTY_COOKED;
-                    }
-                    
-                    const pattyImg = this.assetLoader.get(pattyAsset);
-                    if (pattyImg) {
-                        const size = 48; // 75% scale
-                        const ox = x + (TILE_SIZE - size) / 2;
-                        const oy = y + 17;
-                        this.ctx.drawImage(pattyImg, ox, oy, size, size);
-                    }
+                const icons = ticket.getDisplayIcons();
+                const size = TILE_SIZE;
+                const ox = x;
+                const oy = y + 17;
 
-                    // 2. Side Logic
-                    let sideAsset = null;
-                    if (firstGroup.items.includes('sweet_potato_fries')) {
-                        sideAsset = ASSETS.OBJECTS.SWEET_POTATO_FRIES_DONE;
-                    } else if (firstGroup.items.includes('fries')) {
-                        sideAsset = ASSETS.OBJECTS.FRIES_DONE;
+                icons.forEach(icon => {
+                    const img = this.assetLoader.get(icon.texture);
+                    if (!img) return;
+
+                    if (icon.type === 'patty' || icon.type === 'topping') {
+                        // Stacked on patty
+                        this.ctx.drawImage(img, ox, oy, size, size);
+                    } else if (icon.type === 'side' || icon.type === 'drink') {
+                        // Offset below patty
+                        const sideSize = 48;
+                        const sox = x + (TILE_SIZE - sideSize) / 2;
+                        const soy = y + 57;
+                        this.ctx.drawImage(img, sox, soy, sideSize, sideSize);
                     }
-
-                    if (sideAsset) {
-                        const sideImg = this.assetLoader.get(sideAsset);
-                        if (sideImg) {
-                            const size = 48; // 75% scale
-                            const ox = x + (TILE_SIZE - size) / 2;
-                            const oy = y + 57;
-                            this.ctx.drawImage(sideImg, ox, oy, size, size);
-                        }
-                    }
-                }
-
-                // Recipe Transition Patch (Linear Growth)
-                // Draw this AFTER the current ticket base to ensure it overlays the seam if needed,
-                // but we check the transition with the PREVIOUS ticket.
-                if (i > 0 && patchImg) {
-                    const prevTicket = gameState.activeTickets[i - 1];
-                    const newToppingId = this.findNewTopping(prevTicket, ticket);
-                    
-                    if (newToppingId) {
-                        // Center patch on the seam between (x - TILE_SIZE) and (x)
-                        const px = x - (TILE_SIZE / 2);
-                        this.ctx.drawImage(patchImg, px, 30); // nudged lower another 20px
-
-                        // Map sliced/processed toppings back to their raw forms for the patch icon
-                        const RAW_MAPPING = {
-                            'tomato_slice': 'tomato',
-                            'lettuce_leaf': 'lettuce_head',
-                            'onion_slice': 'onion',
-                            'cheddar_cheese': 'cheddar_block',
-                            'swiss_cheese': 'swiss_block',
-                            'pickle_slice': 'pickle'
-                        };
-                        const rawId = RAW_MAPPING[newToppingId] || newToppingId;
-
-                        // Icon on patch
-                        const def = DEFINITIONS[rawId];
-                        const textureId = def?.texture || def?.partTexture;
-                        if (textureId) {
-                            const toppingImg = this.assetLoader.get(textureId);
-                            if (toppingImg) {
-                                const size = Math.round(TILE_SIZE * 0.50); // 50% scale
-                                const ox = px + (TILE_SIZE - size) / 2;
-                                const oy = 51; // 61 - 10px nudge up
-                                this.ctx.drawImage(toppingImg, ox, oy, size, size);
-                            }
-                        }
-                    }
-                }
+                });
             });
         }
     }
 
-    findNewTopping(prevTicket, currTicket) {
-        const prevBurger = prevTicket.groups?.[0]?.burgers?.[0];
-        const currBurger = currTicket.groups?.[0]?.burgers?.[0];
-        if (!prevBurger || !currBurger) return null;
 
-        const prevMods = prevBurger.modifications || [];
-        const currMods = currBurger.modifications || [];
-
-        // Return the first mod in curr that isn't in prev AND is a topping
-        return currMods.find(m => {
-            const def = DEFINITIONS[m];
-            const isTopping = def && (def.category === 'topping' || def.isTopping);
-            return isTopping && !prevMods.includes(m);
-        });
-    }
 
     drawEffects(gameState) {
         if (!gameState.effects) return;

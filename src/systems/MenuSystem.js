@@ -63,7 +63,6 @@ export class MenuSystem {
 
     /**
      * Updates availability of sides/drinks based on unlocks.
-     * Burgers are managed by UnlockMiniGame.
      */
     updateAvailableItems() {
         if (!this.game || !this.game.shopItems) return;
@@ -72,10 +71,11 @@ export class MenuSystem {
             const shopItem = this.game.shopItems.find(i => i.id === itemId);
             if (shopItem) return shopItem.unlocked;
 
+            // Follow dependency map up to find the box/supply that unlocks this
             let currentId = itemId;
             let depth = 0;
             while (depth < 5) {
-                const parentId = this.game.itemDependencyMap[currentId];
+                const parentId = (this.game.itemDependencyMap && this.game.itemDependencyMap[currentId]);
                 if (!parentId) break;
                 const pShopItem = this.game.shopItems.find(i => i.id === parentId);
                 if (pShopItem) return pShopItem.unlocked;
@@ -87,34 +87,29 @@ export class MenuSystem {
 
         // Auto-add unlocked sides to menu
         this.rawSides.forEach(s => {
-            if (checkUnlocked(s.id) && !this.sides.some(side => side.definitionId === s.id)) {
-                this.sides.push({ definitionId: s.id });
-                console.log(`[MenuSystem] Auto-added side to menu: ${s.id}`);
+            if (checkUnlocked(s.id)) {
+                if (!this.sides.some(side => side.definitionId === s.id)) {
+                    this.sides.push({ definitionId: s.id });
+                    console.log(`[MenuSystem] Auto-added side: ${s.id}`);
+                }
             }
         });
 
         // Auto-add unlocked drinks to menu
         this.rawDrinks.forEach(d => {
-            if (checkUnlocked(d.id) && !this.drinks.some(drink => drink.definitionId === d.id)) {
-                this.drinks.push({ definitionId: d.id });
-                console.log(`[MenuSystem] Auto-added drink to menu: ${d.id}`);
+            if (checkUnlocked(d.id)) {
+                if (!this.drinks.some(drink => drink.definitionId === d.id)) {
+                    this.drinks.push({ definitionId: d.id });
+                    console.log(`[MenuSystem] Auto-added drink: ${d.id}`);
+                }
             }
         });
 
-        // Auto-add unlocked sauces to burgers if missing
+        // Auto-add unlocked sauces to burgers as standard toppings
         const sauces = ['mayo', 'ketchup', 'bbq', 'burger_sauce'];
         sauces.forEach(sauceId => {
             if (checkUnlocked(sauceId)) {
-                const onAnyBurger = this.menuSlots.some(slot =>
-                    slot && slot.state.toppings && slot.state.toppings.some(t => {
-                        const tid = typeof t === 'string' ? t : (t.definitionId || (t.definition && t.definition.id));
-                        return tid === sauceId;
-                    })
-                );
-
-                if (!onAnyBurger) {
-                    this.addToppingToMenu(sauceId);
-                }
+                this.addToppingToMenu(sauceId);
             }
         });
     }
@@ -174,25 +169,20 @@ export class MenuSystem {
         const activeSlots = this.menuSlots.filter(s => s !== null);
         if (activeSlots.length === 0) return;
 
-        // Find the slot that doesn't already have this topping and has the fewest toppings
-        const eligibleSlots = activeSlots.filter(slot => {
+        activeSlots.forEach(slot => {
             const toppings = slot.state.toppings || [];
-            return !toppings.some(t => {
+            const hasTopping = toppings.some(t => {
                 const tid = typeof t === 'string' ? t : (t.definitionId || (t.definition && t.definition.id));
                 return tid === toppingId;
             });
+
+            if (!hasTopping) {
+                const newTopping = new ItemInstance(toppingId);
+                slot.state.toppings = slot.state.toppings || [];
+                slot.state.toppings.push(newTopping);
+                console.log(`[MenuSystem] Added topping '${toppingId}' to burger slot '${slot.name}'`);
+            }
         });
-
-        if (eligibleSlots.length === 0) return;
-
-        // Pick the slot with the fewest existing toppings
-        eligibleSlots.sort((a, b) => (a.state.toppings?.length || 0) - (b.state.toppings?.length || 0));
-        const targetSlot = eligibleSlots[0];
-
-        const newTopping = new ItemInstance(toppingId);
-        targetSlot.state.toppings = targetSlot.state.toppings || [];
-        targetSlot.state.toppings.push(newTopping);
-        console.log(`[MenuSystem] Added topping '${toppingId}' to burger slot '${targetSlot.name}'`);
     }
 
     /**

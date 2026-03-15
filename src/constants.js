@@ -225,7 +225,6 @@ export const ASSETS = {
         GAME_BORDER_RIGHT: 'ui/game_border-right-column.png',
         CRUMPLED_PAPER_BACKGROUND: 'ui/crumpled_paper_background.png',
         NEW_TICKET: 'ui/new_ticket.png',
-        TICKET_PATCH: 'ui/ticket-patch.png',
         STABILITY_METER: 'sheets/stability-meter-sheet.png',
     },
     AUDIO: {

@@ -87,7 +87,7 @@ export class OrderSystem {
         return ticket;
     }
 
-    generateCustomerProfile(menuConfig) {
+    generateCustomerProfile(menuConfig, unlockedIds = []) {
         const order = {
             burger: null,
             items: []
@@ -95,33 +95,43 @@ export class OrderSystem {
 
         if (!menuConfig || !menuConfig.burgers || menuConfig.burgers.length === 0) {
             console.error("Invalid Menu Config!");
-            // Fallback
             order.burger = { base: 'Burger', bun: 'plain_bun', modifications: ['beef_patty'] };
             return order;
         }
 
         // 1. Pick a Burger from Menu
-        const burgerDef = menuConfig.burgers[Math.floor(Math.random() * menuConfig.burgers.length)];
-
-        // 2. Build Mods (Standard vs Optional)
-        const mods = [];
+        const burgerDef = { ...menuConfig.burgers[Math.floor(Math.random() * menuConfig.burgers.length)] };
+        
+        // 2. Build Toppings (Standard Only - User: "every burger gets that topping from here out")
+        let mods = [];
         if (burgerDef.toppings) {
-            Object.keys(burgerDef.toppings).forEach(toppingId => {
-                const type = burgerDef.toppings[toppingId];
-
-                if (type === 'standard') {
-                    // Always KEEP standard toppings (exactly from menu)
-                    mods.push(toppingId);
-                } else if (type === 'optional') {
-                    // 50% chance to include optional toppings
-                    if (Math.random() < 0.5) {
-                        mods.push(toppingId);
-                    }
-                }
-            });
+            // All toppings on the menu are now required
+            mods = Object.keys(burgerDef.toppings);
         }
 
-
+        // 3. Handle Alternate Patties (50% chance for "Newest" Patty)
+        const allPatties = unlockedIds.filter(id => id.includes('patty') && !id.includes('box'));
+        const altPatties = allPatties.filter(id => id !== 'beef_patty');
+        
+        if (altPatties.length > 0 && Math.random() < 0.5) {
+            const newestPatty = altPatties[altPatties.length - 1];
+            // Swap beef for the newest patty
+            if (mods.includes('beef_patty') || mods.length === 0) {
+                mods = mods.filter(m => m !== 'beef_patty');
+                if (!mods.includes(newestPatty)) mods.push(newestPatty);
+                
+                // Update display name if it's a generic burger
+                if (burgerDef.name === 'Plain' || burgerDef.name === 'Burger' || !burgerDef.name) {
+                    let pName = newestPatty.replace('_patty', '');
+                    burgerDef.name = pName.charAt(0).toUpperCase() + pName.slice(1);
+                }
+            }
+        } else {
+            // Ensure at least beef is there if no other mods have it
+            if (!mods.some(m => m.includes('patty'))) {
+                mods.push('beef_patty');
+            }
+        }
 
         order.burger = {
             base: burgerDef.name || 'Burger',
@@ -129,17 +139,23 @@ export class OrderSystem {
             modifications: mods
         };
 
-        // 3. Sides
+        // 4. Sides (50% chance for a side)
         if (menuConfig.sides && menuConfig.sides.length > 0) {
             if (Math.random() < 0.50) {
-                const choice = menuConfig.sides[Math.floor(Math.random() * menuConfig.sides.length)];
+                const newestSide = menuConfig.sides[menuConfig.sides.length - 1];
+                let choice;
+                if (Math.random() < 0.5) {
+                    choice = newestSide;
+                } else {
+                    choice = menuConfig.sides[Math.floor(Math.random() * menuConfig.sides.length)];
+                }
                 order.items.push(choice);
             }
         }
 
-        // 4. Drinks
+        // 5. Drinks (33% chance)
         if (menuConfig.drinks && menuConfig.drinks.length > 0) {
-            if (Math.random() < 0.66) {
+            if (Math.random() < 0.33) {
                 const choice = menuConfig.drinks[Math.floor(Math.random() * menuConfig.drinks.length)];
                 order.items.push(choice);
             }
@@ -323,13 +339,26 @@ export class Ticket {
                 const displayName = (burger.base && burger.base !== 'Burger') ? `${burger.base} Burger` : `Burger ${bIdx + 1}`;
                 lines.push(`${prefix}${displayName}`);
                 burger.modifications.forEach(mod => {
-                    lines.push(`${prefix}  + ${mod}`);
+                    let modName = mod.replace(/_slice|_leaf|_cheese/g, '');
+                    modName = modName.charAt(0).toUpperCase() + modName.slice(1).replace(/_/g, ' ');
+                    if (mod === 'mayo') modName = 'Mayo';
+                    if (mod === 'ketchup') modName = 'Ketchup';
+                    if (mod === 'bbq') modName = 'BBQ';
+                    if (mod === 'burger_sauce') modName = 'Secret Sauce';
+                    lines.push(`${prefix}  + ${modName}`);
                 });
             });
 
             // Generic Items
             group.items.forEach(itemId => {
-                const displayName = itemId.charAt(0).toUpperCase() + itemId.slice(1);
+                let displayName = itemId.replace(/_/g, ' ');
+                displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
+                
+                // Clean up specific IDs for the ticket
+                if (itemId === 'sweet_potato_fries') displayName = "Sweet Fries";
+                if (itemId === 'onion_rings') displayName = "Onion Rings";
+                if (itemId === 'fries') displayName = "Potato Fries";
+                
                 lines.push(`${prefix}${displayName}`);
             });
         });
@@ -341,6 +370,78 @@ export class Ticket {
             items: lines,
             arrivalTime: this.arrivalTime // Pass this so Renderer/Game can see it if needed
         };
+    }
+
+    /**
+     * Returns an array of icon objects for rendering on the hanging ticket.
+     * Each object contains { type: 'patty'|'topping'|'side'|'drink', texture: string, scale?: number }
+     */
+    getDisplayIcons() {
+        const icons = [];
+        const firstGroup = this.groups[0];
+        if (!firstGroup) return icons;
+
+        // 1. Patty & Toppings (from first burger)
+        const burger = firstGroup.burgers[0];
+        if (burger) {
+            // Patty
+            let pattyTexture = 'patty-cooked.png';
+            if (burger.modifications && burger.modifications.includes('chicken_patty')) {
+                pattyTexture = 'chicken_patty-cooked.png';
+            }
+            icons.push({ type: 'patty', texture: pattyTexture });
+
+            // Toppings
+            if (burger.modifications) {
+                const SLICE_TEXTURE_MAPPING = {
+                    'bacon': 'bacon-cooked.png',
+                    'cheddar_cheese': 'cheddar_slice.png',
+                    'swiss_cheese': 'swiss_slice.png',
+                    'onion_slice': 'onion-slice.png',
+                    'pickle_slice': 'pickle-slice.png',
+                    'tomato_slice': 'tomato-slice.png',
+                    'lettuce_leaf': 'lettuce-leaf.png',
+                    'mayo': 'mayo-part.png',
+                    'bbq': 'bbq-part.png',
+                    'burger_sauce': 'burger_sauce-part.png',
+                    'ketchup': 'ketchup-part.png'
+                };
+
+                burger.modifications.forEach(modId => {
+                    if (modId.includes('patty')) return;
+                    const def = DEFINITIONS[modId];
+                    if (def) {
+                        const tex = SLICE_TEXTURE_MAPPING[modId] || def.texture;
+                        if (tex) icons.push({ type: 'topping', texture: tex });
+                    }
+                });
+            }
+        }
+
+        // 2. Sides
+        firstGroup.items.forEach(itemId => {
+            const def = DEFINITIONS[itemId];
+            if (!def) return;
+            const isSide = def.category === 'side' || (def.orderConfig && def.orderConfig.type === 'side');
+            if (isSide) {
+                let tex = def.texture;
+                if (itemId === 'fries') tex = 'fries-done.png';
+                if (itemId === 'sweet_potato_fries') tex = 'sweet_potato_fries-done.png';
+                icons.push({ type: 'side', texture: tex });
+            }
+        });
+
+        // 3. Drinks (Optional)
+        firstGroup.items.forEach(itemId => {
+            const def = DEFINITIONS[itemId];
+            if (!def) return;
+            const isDrink = def.category === 'drink' || (def.orderConfig && def.orderConfig.type === 'drink');
+            if (isDrink) {
+                icons.push({ type: 'drink', texture: def.texture });
+            }
+        });
+
+        return icons;
     }
 
     isComplete() {
@@ -376,6 +477,57 @@ export class Ticket {
 
         return { matched: false, payout: 0 };
     }
+
+    /**
+     * Performs a deep comparison and returns details about requirements vs contents.
+     * Used by the renderer to show exactly what is missing or wrong.
+     */
+    getValidationDetails(submittedItem) {
+        const details = {
+            containerMatch: submittedItem.definitionId === this.groups[0]?.containerType,
+            burgers: [], // { req: config, matched: bool, content: item }
+            items: [],   // { req: id, matched: bool, content: item }
+            extras: [],  // items that didn't match anything
+            isComplete: false
+        };
+
+        const group = this.groups[0];
+        if (!group) return details;
+
+        if (submittedItem.definitionId === 'magic_bag') details.containerMatch = true;
+
+        const contents = [...(submittedItem.state.contents || [])];
+        
+        // Match Items
+        group.items.forEach(reqId => {
+            const matchIndex = contents.findIndex(i => group.fulfills(i, reqId));
+            if (matchIndex !== -1) {
+                details.items.push({ req: reqId, matched: true, content: contents[matchIndex] });
+                contents.splice(matchIndex, 1);
+            } else {
+                details.items.push({ req: reqId, matched: false });
+            }
+        });
+
+        // Match Burgers
+        group.burgers.forEach(reqBurger => {
+            const matchIndex = contents.findIndex(i => group.matchBurger(reqBurger, i));
+            if (matchIndex !== -1) {
+                details.burgers.push({ req: reqBurger, matched: true, content: contents[matchIndex] });
+                contents.splice(matchIndex, 1);
+            } else {
+                details.burgers.push({ req: reqBurger, matched: false });
+            }
+        });
+
+        details.extras = contents;
+        details.isComplete = details.containerMatch && 
+                            details.items.every(i => i.matched) && 
+                            details.burgers.every(b => b.matched) &&
+                            details.extras.length === 0;
+
+        return details;
+    }
 }
 
 export class OrderGroup {
@@ -400,11 +552,83 @@ export class OrderGroup {
         this.items.push(itemId);
     }
 
+    fulfills(item, rId) {
+        const dId = item.definitionId;
+        const dDef = item.definition || DEFINITIONS[dId] || {};
+
+        // 1. Exact Match
+        if (dId === rId) return true;
+
+        // 2. Cooked Prep Item Match
+        if (dDef.category === 'side_prep' && item.state.cook_level === 'cooked') {
+            if (dDef.result === rId) return true;
+            // Loose aliases
+            if (rId === 'fries' && (dId === 'raw_fries' || dId === 'fries')) return true;
+            if (rId === 'sweet_potato_fries' && (dId === 'raw_sweet_potato_fries' || dId === 'sweet_potato_fries')) return true;
+            if (rId === 'onion_rings' && (dId === 'onion_slice' || dId === 'onion_rings')) return true;
+        }
+
+        // 3. Specific Aliases (Bags/Cups)
+        if (rId === 'fries' && dId === 'fry_bag') return true;
+        if (rId === 'sweet_potato_fries' && dId === 'sweet_potato_fry_bag') return true;
+        if (rId === 'soda' && (dId === 'drink_cup' || dId === 'soda' || dId === 'cola')) return true;
+
+        // 4. Nested Content check
+        if (item.state.contents && item.state.contents.some(c => this.fulfills(c, rId))) {
+            return true;
+        }
+
+        return false;
+    }
+
+    matchBurger(reqBurger, item) {
+        if (!item.definitionId.includes('burger')) return false;
+
+        // A. Check Bun Type
+        const itemBun = (item.state.bun && item.state.bun.definitionId) || 'plain_bun';
+        const reqBun = reqBurger.bun || 'plain_bun';
+        if (itemBun !== reqBun) return false;
+
+        // B. Compare contents (Toppings + Patty)
+        const requestedMods = reqBurger.modifications || [];
+        const burgerToppings = item.state.toppings || [];
+        const actualToppings = burgerToppings.map(t => {
+            if (typeof t === 'string') return t === 'mayo' ? 'mayo' : t;
+            return t.definitionId;
+        });
+
+        // Check for missing required mods
+        const missingMod = requestedMods.find(req => {
+            if (actualToppings.includes(req)) return false;
+            const def = DEFINITIONS[req];
+            if (def && def.slicing && def.slicing.result) {
+                if (actualToppings.includes(def.slicing.result)) return false;
+            }
+            return true;
+        });
+        if (missingMod) return false;
+
+        // Check for unauthorized extra toppings
+        const validToppings = new Set(requestedMods);
+        requestedMods.forEach(req => {
+            const def = DEFINITIONS[req];
+            if (def && def.slicing && def.slicing.result) validToppings.add(def.slicing.result);
+        });
+
+        const extraTop = actualToppings.find(act => {
+            if (validToppings.has(act)) return false;
+            const def = DEFINITIONS[act];
+            if (!def) return true;
+            if (def.category === 'topping' || def.isTopping) return false;
+            return true;
+        });
+
+        return !extraTop;
+    }
+
     matches(itemInstance) {
         // 0. Verify Container Type
         if (itemInstance.definitionId !== this.containerType) {
-            // Legacy support: 'bag' matches 'magic_bag' too if we want, 
-            // but for now let's be strict or allow it if it's a bag.
             if (this.containerType === 'bag' && itemInstance.definitionId === 'magic_bag') {
                 // Allow
             } else {
@@ -417,119 +641,22 @@ export class OrderGroup {
 
         // 2. Check Generic Requirements (Sides, Drinks)
         for (const reqId of this.items) {
-            // Find match
-            const matchIndex = contents.findIndex(i => {
-                const defId = i.definitionId;
-                const def = i.definition || {};
-
-                // 1. Exact Match
-                if (defId === reqId) return true;
-
-                // 2. Side Aliases (Fries/Soda)
-                if (reqId === 'fries') {
-                    if (defId === 'fry_bag' || defId === 'fries') return true;
-                    // Check if it's a side cup containing fries
-                    if (defId === 'side_cup' && i.state.contents && i.state.contents.some(c => c.definitionId === 'fries')) return true;
-                }
-                if (reqId === 'soda' && (defId === 'drink_cup' || defId === 'soda' || defId === 'cola')) return true;
-
-                // 3. "Naked" Cooked Sides (e.g. raw_fries that is cooked)
-                if (def.category === 'side_prep' && i.state.cook_level === 'cooked') {
-                    // Check if this cooked prep item results in the required side
-                    if (def.result === reqId) return true;
-                    // Fallback for direct reqId match to result (some definitions might be loose)
-                    if (reqId === 'fries' && defId === 'raw_fries') return true;
-                    if (reqId === 'sweet_potato_fries' && defId === 'raw_sweet_potato_fries') return true;
-                }
-
-                return false;
-            });
-
+            const matchIndex = contents.findIndex(i => this.fulfills(i, reqId));
             if (matchIndex === -1) return false;
-
-            // Consume the item match
             contents.splice(matchIndex, 1);
         }
 
         // 3. Check Burger Requirements
-        // We have a list of required burgers. We need to find a match for EACH one in the contents.
         const requiredBurgers = [...this.burgers];
 
         for (const reqBurger of requiredBurgers) {
-            const requestedMods = reqBurger.modifications || [];
-            const burgerIndex = contents.findIndex(item => {
-                if (!item.definitionId.includes('burger')) return false;
-
-                // A. Check Bun Type
-                const itemBun = (item.state.bun && item.state.bun.definitionId) || 'plain_bun';
-                const reqBun = reqBurger.bun || 'plain_bun';
-                if (itemBun !== reqBun) return false;
-
-                // B. (Removed Patty Type Check - it is now in toppings)
-
-                // C. Compare contents (Toppings + Patty)
-                // Use the burger's own state toppings
-                const burgerToppings = item.state.toppings || [];
-
-                const actualToppings = burgerToppings.map(t => {
-                    if (typeof t === 'string') {
-                        if (t === 'mayo') return 'mayo';
-                        return t;
-                    }
-                    return t.definitionId;
-                });
-
-                // Check for missing required mods
-                const missingMod = requestedMods.find(req => {
-                    // Check direct match
-                    if (actualToppings.includes(req)) return false;
-
-                    // Check if req defines a slice result that matches
-                    const def = DEFINITIONS[req];
-                    if (def && def.slicing && def.slicing.result) {
-                        if (actualToppings.includes(def.slicing.result)) return false;
-                    }
-
-                    return true; // Missing
-                });
-                if (missingMod) return false;
-
-                // Check for unauthorized extra toppings
-                // Expand valid toppings to include slices
-                const validToppings = new Set(requestedMods);
-                requestedMods.forEach(req => {
-                    const def = DEFINITIONS[req];
-                    if (def && def.slicing && def.slicing.result) {
-                        validToppings.add(def.slicing.result);
-                    }
-                });
-                // Also Base Ingredients are valid? (Bun/Patty are separate)
-                // What about 'tomato_slice' vs 'tomato'? handled above.
-
-                // Strict check for unauthorized extra toppings
-                // RELAXED: Allow extra toppings for now to prevent player frustration with optional items (e.g. Mayo)
-
-                const extraTop = actualToppings.find(act => !validToppings.has(act));
-                if (extraTop) {
-                    // console.log(`Rejecting due to extra topping: ${extraTop}`);
-                    return false;
-                }
-
-
-
-                return true;
-            });
-
+            const burgerIndex = contents.findIndex(item => this.matchBurger(reqBurger, item));
             if (burgerIndex === -1) return false;
-
-            // Consume matched burger
             contents.splice(burgerIndex, 1);
         }
 
         // 4. Strict check for extra items?
-        if (contents.length > 0) {
-            return false;
-        }
+        if (contents.length > 0) return false;
         return true;
     }
 }

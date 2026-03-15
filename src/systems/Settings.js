@@ -7,6 +7,7 @@ export const ACTIONS = {
     INTERACT: 'INTERACT',
     PICK_UP: 'PICK_UP',
     VIEW_ORDERS: 'VIEW_ORDERS',
+    PAUSE: 'PAUSE',
 };
 
 export const DEFAULT_BINDINGS = {
@@ -17,7 +18,7 @@ export const DEFAULT_BINDINGS = {
     [ACTIONS.INTERACT]: 'Enter',
     [ACTIONS.PICK_UP]: 'Space',
     [ACTIONS.VIEW_ORDERS]: 'ShiftLeft',
-
+    [ACTIONS.PAUSE]: 'Escape',
 };
 
 export const ALT_BINDINGS = {

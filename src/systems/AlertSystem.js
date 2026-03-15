@@ -238,15 +238,16 @@ export class AlertSystem {
         this.selectedButtonIndex = 0;
 
         // Create Buttons if present
-        if (step.buttons && step.buttons.length > 0) {
+        const buttons = (this.activeAlert.data && this.activeAlert.data.buttons) || step.buttons;
+        if (buttons && buttons.length > 0) {
             this.nextBtn.style.display = 'none';
-            step.buttons.forEach((btnConfig, index) => {
+            buttons.forEach((btnConfig, index) => {
                 const btn = document.createElement('div');
                 btn.className = 'alert-button';
                 // Inline styles for button visual
                 btn.style.position = 'relative';
-                btn.style.width = '64px';
-                btn.style.height = '64px';
+                btn.style.width = '192px';
+                btn.style.height = '96px';
                 btn.style.display = 'flex';
                 btn.style.alignItems = 'center';
                 btn.style.justifyContent = 'center';
@@ -276,6 +277,13 @@ export class AlertSystem {
 
                 this.buttonsContainer.appendChild(btn);
                 this.buttons.push({ element: btn, config: btnConfig });
+
+                // Level-up alert special: initially disable the OK (dismiss) button
+                if (this.activeAlert.id === 'level_up' && btnConfig.action === 'dismiss') {
+                    btn.style.opacity = '0.5';
+                    btn.style.filter = 'grayscale(1)';
+                    btn.style.cursor = 'default';
+                }
             });
             this.updateButtonSelection();
         } else {
@@ -312,21 +320,76 @@ export class AlertSystem {
     updateButtonSelection() {
         this.buttons.forEach((b, i) => {
             const img = b.element.querySelector('img');
-            if (i === this.selectedButtonIndex) {
+            const isLevelUpOK = this.activeAlert?.id === 'level_up' && b.config.action === 'dismiss' && (this.activeAlert.data.pickedCount || 0) < 1;
+
+            if (i === this.selectedButtonIndex && !isLevelUpOK) {
                 b.element.style.transform = 'scale(1.1)';
                 if (img) img.style.filter = 'brightness(1.2)';
             } else {
                 b.element.style.transform = 'scale(1.0)';
                 if (img) img.style.filter = 'none';
+                
+                // Keep the "disabled" look for OK button if applicable
+                if (isLevelUpOK) {
+                    b.element.style.opacity = '0.5';
+                    b.element.style.filter = 'grayscale(1)';
+                }
             }
         });
     }
 
     executeAction(action) {
         if (action === 'dismiss') {
+            if (this.activeAlert.id === 'level_up') {
+                const pickedCount = this.activeAlert.data.pickedCount || 0;
+                if (pickedCount < 1) {
+                    console.log("Must pick at least one topping!");
+                    return;
+                }
+            }
             this.advance();
         } else if (action === 'restart') {
             window.location.reload();
+        } else if (action && action.type === 'unlock_topping') {
+            if (this.activeAlert.data.pickedCount === undefined) this.activeAlert.data.pickedCount = 0;
+            
+            // Check if already picked (robustness)
+            if (this.activeAlert.data.unlockedToppings === undefined) this.activeAlert.data.unlockedToppings = new Set();
+            if (this.activeAlert.data.unlockedToppings.has(action.toppingId)) return;
+
+            // Unlock!
+            this.game.unlockTopping(action.toppingId);
+            this.activeAlert.data.pickedCount++;
+            this.activeAlert.data.unlockedToppings.add(action.toppingId);
+
+            // Visual feedback on the button
+            const btn = this.buttons.find(b => b.config.action === action);
+            if (btn) {
+                btn.element.style.filter = 'grayscale(1) brightness(0.5)';
+                btn.element.style.pointerEvents = 'none';
+                const span = btn.element.querySelector('span');
+                if (span) span.innerText = 'GOT IT!';
+            }
+
+            // Enable the OK button if this is the first pick
+            if (this.activeAlert.data.pickedCount === 1) {
+                const okBtn = this.buttons.find(b => b.config.action === 'dismiss');
+                if (okBtn) {
+                    okBtn.element.style.opacity = '1.0';
+                    okBtn.element.style.filter = 'url(#cleanOutline)';
+                    okBtn.element.style.cursor = 'pointer';
+                }
+            }
+
+            if (this.activeAlert.data.pickedCount >= 3) {
+                // Keep open to let player hit OK? 
+                // User said "ok button to dismiss... selectable after one thing is taken"
+                // I'll stay open so they can click OK.
+                this.contentText.innerHTML = `MAX REACHED! <br> Press OK to continue!`;
+            } else {
+                // Update text to show progress
+                this.contentText.innerHTML = `UNLOCKED! <br> Pick more or press OK to finish!<br>(${this.activeAlert.data.pickedCount}/3)`;
+            }
         }
     }
 
@@ -368,6 +431,16 @@ export class AlertSystem {
 
         const config = this.activeAlert.config;
         const currentIndex = this.activeAlert.currentStepIndex;
+
+        // Requirement check for level_up alert: Must have picked at least one
+        if (this.activeAlert.id === 'level_up') {
+            const pickedCount = this.activeAlert.data.pickedCount || 0;
+            if (pickedCount < 1) {
+                // Shake or something? for now just return
+                console.log("Must pick at least one topping!");
+                return;
+            }
+        }
 
         // Are there more steps?
         if (currentIndex < config.frames.length - 1) {

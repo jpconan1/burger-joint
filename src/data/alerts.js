@@ -69,5 +69,15 @@ export const ALERTS = {
                 size: { width: '500px', height: '150px' }
             }
         ]
+    },
+    'level_up': {
+        frames: [
+            {
+                text: "LEVEL UP! <br> Pick a topping to unlock!",
+                position: 'center',
+                size: { width: '700px', height: '400px' },
+                buttons: [] // Dynamically populated
+            }
+        ]
     }
 };

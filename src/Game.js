@@ -108,6 +108,11 @@ export class Game {
         this.unlockMiniGameShown = false;
         this.pendingDirtyPlates = [];
 
+        // XP & Level System
+        this.xp = 0;
+        this.level = 1;
+        this.xpToNextLevel = 7;
+
 
 
         // 1. Supplies (Dynamic from DEFINITIONS)
@@ -343,8 +348,8 @@ export class Game {
         // Spawn Starting Inserts (Stack of 9)
         const insertStack = new ItemInstance('insert');
         insertStack.state.count = 9;
-        // Bottom row, column 11
-        const startX = mainGrid.width - 3;
+        // Bottom row, column 12 (to ensure it places on a valid counter given layout changes)
+        const startX = 12;
         const startY = mainGrid.height - 1;
         const targetCell = mainGrid.getCell(startX, startY);
         if (targetCell && targetCell.type.id === 'COUNTER') {
@@ -1148,11 +1153,18 @@ export class Game {
         if (this.alertSystem?.isVisible) return this.alertSystem.handleInput(event.code);
         this.audioSystem?.resume();
 
-        // 1. Cheats (Shift + Key)
-        if (event.shiftKey && this.handleCheatInput(event)) return;
+        // 1. Cheats (Shift / Command + Key)
+        if ((event.shiftKey || event.metaKey) && this.handleCheatInput(event)) return;
 
         // 2. Global Key overrides
         if (event.code === 'KeyO') return this.handleCheatInput(event);
+
+        if (event.code === 'Escape' && (this.gameState === 'PLAYING' || this.gameState === 'PAUSED')) {
+            this.gameState = this.gameState === 'PLAYING' ? 'PAUSED' : 'PLAYING';
+            if (this.gameState === 'PAUSED') this.audioSystem.setMuffled(true);
+            else this.audioSystem.setMuffled(false);
+            return;
+        }
 
         // 3. State-specific input
         switch (this.gameState) {
@@ -1165,6 +1177,8 @@ export class Game {
                 return this.handleRenoInput(event);
             case 'BUILD_MODE':
                 return this.handleBuildModeInput(event);
+            case 'PAUSED':
+                return; // No input during pause except Escape (handled above)
         }
 
 
@@ -1190,6 +1204,13 @@ export class Game {
                 this.alertSystem.trigger('unlock_alert', () => { }, { rewards });
                 return true;
             }
+        }
+        
+        // Command + X (Meta Key) for XP Cheat
+        if (event.metaKey && code === 'KeyX') {
+            this.addXp(1);
+            this.addFloatingText("+1 XP (CHEAT)", this.player.x, this.player.y, '#ffd700');
+            return true;
         }
         if (code === 'KeyO') {
             const cell = this.player.getTargetCell(this.grid);
@@ -1315,6 +1336,23 @@ export class Game {
         const rect = this.renderer.canvas.getBoundingClientRect();
         const mouseX = event.clientX - rect.left;
         const mouseY = event.clientY - rect.top;
+
+        // Global Pause Check
+        if (this.renderer.pauseButtonRect) {
+            const p = this.renderer.pauseButtonRect;
+            if (mouseX >= p.x && mouseX <= p.x + p.width && mouseY >= p.y && mouseY <= p.y + p.height) {
+                this.gameState = this.gameState === 'PAUSED' ? 'PLAYING' : 'PAUSED';
+                if (this.gameState === 'PAUSED') this.audioSystem.setMuffled(true);
+                else this.audioSystem.setMuffled(false);
+                return;
+            }
+        }
+
+        if (this.gameState === 'PAUSED') {
+            this.gameState = 'PLAYING';
+            this.audioSystem.setMuffled(false);
+            return;
+        }
 
         if (this.gameState === 'TITLE') {
             const centerX = this.renderer.canvas.width / 2;
@@ -1594,13 +1632,13 @@ export class Game {
                 if (this.currentShift !== 'DAY') {
                     this.currentShift = 'DAY';
                     this.shiftCount++;
-                    this.automatedRewardSystem.processShiftChange(this.shiftCount);
+                    // this.automatedRewardSystem.processShiftChange(this.shiftCount);
                 }
             } else {
                 if (this.currentShift !== 'NIGHT') {
                     this.currentShift = 'NIGHT';
                     this.shiftCount++;
-                    this.automatedRewardSystem.processShiftChange(this.shiftCount);
+                    // this.automatedRewardSystem.processShiftChange(this.shiftCount);
                 }
                 const nightElapsed = cyclePos - halfCycle;
                 const nightProgress = nightElapsed / halfCycle;
@@ -1626,12 +1664,13 @@ export class Game {
                 if (this.dayNumber === 1 && this.ticketsGeneratedToday < 5) {
                     newTicket = this.orderSystem.generateTutorialTicket(this.ticketsGeneratedToday + 1);
                 } else {
+                    const unlockedIds = this.shopItems.filter(i => i.unlocked).map(i => i.id);
                     newTicket = this.orderSystem.createTicketFromCustomers(
-                        [this.orderSystem.generateCustomerProfile(this.menuSystem.getMenu())],
-                        1
+                        [this.orderSystem.generateCustomerProfile(this.menuSystem.getMenu(), unlockedIds)],
+                        this.ticketsGeneratedToday + 1
                     );
-                    newTicket.calculateParTime();
                 }
+                newTicket.calculateParTime();
                 this.ticketsGeneratedToday++;
                 this.ticketQueue.push(newTicket);
                 console.log("New Ticket Generated via Continuous Spawner");
@@ -1833,7 +1872,7 @@ export class Game {
                                     this.powerupSystem.resumeTime();
                                     const isDineIn = ticket.groups.some(g => g.containerType === 'plate');
                                     if (isDineIn) {
-                                        this.pendingDirtyPlates.push({ timer: 3000, x: 12, y: 0 });
+                                        this.pendingDirtyPlates.push({ timer: 3000, x: 12, y: 2 });
                                     }
                                     const par = ticket.parTime;
                                     const elapsed = ticket.elapsedTime;
@@ -1860,6 +1899,7 @@ export class Game {
                                     this.stability = Math.min(this.stability + par, 100);
                                     this.addFloatingText(`Stability +${Math.round(par)}%`, x, y - 1, '#00ffff');
                                     this.sessionTickets++;
+                                    this.addXp(1); // Give 1 XP per ticket
                                     if (this.sessionTickets > this.highScore) {
                                         this.highScore = this.sessionTickets;
                                         localStorage.setItem('burger_joint_highscore', this.highScore);
@@ -2056,8 +2096,8 @@ export class Game {
                     this.renderer.renderBuildMenu(this.placementState.menu);
                 }
             } else {
-                // Standard Game Render (PLAYING, and all Overlay Menus)
-                if (this.gameState === 'PLAYING' || this.gameState === 'APPLIANCE_SWAP') {
+                // Standard Game Render (PLAYING, PAUSED, and all Overlay Menus)
+                if (this.gameState === 'PLAYING' || this.gameState === 'APPLIANCE_SWAP' || this.gameState === 'PAUSED') {
                     if (this.gameState === 'PLAYING') {
                         if (this.alertSystem && this.alertSystem.isVisible) {
                             // Paused for alert - still update alert animation
@@ -2066,52 +2106,58 @@ export class Game {
                             this.update(dt);
                         }
                     }
-                    // After Hours Interaction Check
-                    // "after the resturant closes, the player gets a new ability"
-                    // Condition: Queue Finished (After Hours)
-                    // Note: isDayActive is false here, so we only check queueFinishedTime
-                    if (true) { // Restriction removed: Allow appliance interaction anytime
-                        const pickUpKeys = [this.settings.getBinding(ACTIONS.PICK_UP), 'Space'];
-                        const interactKey = this.settings.getBinding(ACTIONS.INTERACT);
+                    
+                    if (this.gameState !== 'PAUSED') {
+                        // After Hours Interaction Check
+                        // "after the resturant closes, the player gets a new ability"
+                        // Condition: Queue Finished (After Hours)
+                        // Note: isDayActive is false here, so we only check queueFinishedTime
+                        if (true) { // Restriction removed: Allow appliance interaction anytime
+                            const pickUpKeys = [this.settings.getBinding(ACTIONS.PICK_UP), 'Space'];
+                            const interactKey = this.settings.getBinding(ACTIONS.INTERACT);
 
-                        // 1. Pickup Appliance Check
-                        const isPickupHeld = Object.keys(this.keys || {}).some(k => this.keys[k] && (k === pickUpKeys[0] || k === 'Space'));
+                            // 1. Pickup Appliance Check
+                            const isPickupHeld = Object.keys(this.keys || {}).some(k => this.keys[k] && (k === pickUpKeys[0] || k === 'Space'));
 
-                        if (isPickupHeld) {
-                            this.pickupKeyHeldDuration = (this.pickupKeyHeldDuration || 0) + dt;
-                            if (this.pickupKeyHeldDuration >= 500 && !this.pickupActionTriggered) {
-                                console.log("Triggering Appliance Pickup!");
-                                this.player.actionPickUpAppliance(this.grid, this);
-                                this.pickupActionTriggered = true;
+                            if (isPickupHeld) {
+                                this.pickupKeyHeldDuration = (this.pickupKeyHeldDuration || 0) + dt;
+                                if (this.pickupKeyHeldDuration >= 500 && !this.pickupActionTriggered) {
+                                    console.log("Triggering Appliance Pickup!");
+                                    this.player.actionPickUpAppliance(this.grid, this);
+                                    this.pickupActionTriggered = true;
+                                }
+                            } else {
+                                this.pickupKeyHeldDuration = 0;
+                                this.pickupActionTriggered = false;
                             }
-                        } else {
-                            this.pickupKeyHeldDuration = 0;
-                            this.pickupActionTriggered = false;
-                        }
 
-                        // 2. Change Appliance Check (Swap)
-                        const isInteractHeld = this.keys && this.keys[interactKey];
-                        if (isInteractHeld) {
-                            this.interactKeyHeldDuration = (this.interactKeyHeldDuration || 0) + dt;
-                            if (this.interactKeyHeldDuration >= 500 && !this.swappingActionTriggered && this.gameState === 'PLAYING') {
-                                console.log("Triggering Appliance Swap!");
-                                this.initiateApplianceSwap();
-                                this.swappingActionTriggered = true;
+                            // 2. Change Appliance Check (Swap)
+                            const isInteractHeld = this.keys && this.keys[interactKey];
+                            if (isInteractHeld) {
+                                this.interactKeyHeldDuration = (this.interactKeyHeldDuration || 0) + dt;
+                                if (this.interactKeyHeldDuration >= 500 && !this.swappingActionTriggered && this.gameState === 'PLAYING') {
+                                    console.log("Triggering Appliance Swap!");
+                                    this.initiateApplianceSwap();
+                                    this.swappingActionTriggered = true;
+                                }
+                            } else {
+                                this.interactKeyHeldDuration = 0;
+                                this.swappingActionTriggered = false;
                             }
-                        } else {
-                            this.interactKeyHeldDuration = 0;
-                            this.swappingActionTriggered = false;
-                        }
 
-                        // Clear waiting flag if in SWAP mode and key released
-                        if (this.gameState === 'APPLIANCE_SWAP' && this.swappingState && this.swappingState.waitingForRelease) {
-                            if (!isInteractHeld) {
-                                this.swappingState.waitingForRelease = false;
+                            // Clear waiting flag if in SWAP mode and key released
+                            if (this.gameState === 'APPLIANCE_SWAP' && this.swappingState && this.swappingState.waitingForRelease) {
+                                if (!isInteractHeld) {
+                                    this.swappingState.waitingForRelease = false;
+                                }
                             }
                         }
                     }
                 }
                 this.renderer.render(this);
+                if (this.gameState === 'PAUSED') {
+                    this.renderer.renderPauseScreen(this);
+                }
             }
         }
         requestAnimationFrame((t) => this.loop(t));
@@ -2209,10 +2255,10 @@ export class Game {
         if (!grid) return;
 
         // Define the spots to try if this is the dirty plate return area (index 12 is column 13)
-        const spots = (x === 12 && y === 0) ? [
-            { x: 12, y: 0 },
-            { x: 13, y: 0 },
-            { x: 14, y: 0 }
+        const spots = (x === 12 && y === 2) ? [
+            { x: 12, y: 2 },
+            { x: 13, y: 2 },
+            { x: 14, y: 2 }
         ] : [{ x, y }];
 
         // Dirty parts to choose from (shared across all attempts)
@@ -2290,6 +2336,9 @@ export class Game {
                 pendingOrders: this.pendingOrders,
                 pattyBoxTutorialShown: this.pattyBoxTutorialShown,
                 unlockMiniGameShown: this.unlockMiniGameShown,
+                xp: this.xp,
+                level: this.level,
+                xpToNextLevel: this.xpToNextLevel,
                 rooms: {}
             };
 
@@ -2382,6 +2431,10 @@ export class Game {
                 this.unlockMiniGameShown = data.unlockMiniGameShown;
             }
 
+            if (data.xp !== undefined) this.xp = data.xp;
+            if (data.level !== undefined) this.level = data.level;
+            if (data.xpToNextLevel !== undefined) this.xpToNextLevel = data.xpToNextLevel;
+
             // Re-sort shop items
             this.sortShopItems();
 
@@ -2452,5 +2505,122 @@ export class Game {
             };
             return getRank(a) - getRank(b);
         });
+    }
+
+    addXp(amount) {
+        this.xp += amount;
+        if (this.xp >= this.xpToNextLevel) {
+            this.xp -= this.xpToNextLevel;
+            this.levelUp();
+        }
+        this.saveLevel();
+    }
+
+    levelUp() {
+        this.level++;
+        this.xpToNextLevel = 7; // As per user request: "every 7 xp"
+        this.playRandomSong(); // Change music on level up
+
+        const pool = [
+            'lettuce_leaf',
+            'tomato_slice',
+            'pickle_slice',
+            'onion_slice',
+            'cheddar_cheese',
+            'swiss_cheese',
+            'bacon',
+            'chicken_patty',
+            'sweet_potato_fries'
+        ];
+
+        const boxMap = {
+            'lettuce_leaf': 'lettuce_box',
+            'tomato_slice': 'tomato_box',
+            'pickle_slice': 'pickle_box',
+            'onion_slice': 'onion_box',
+            'cheddar_cheese': 'cheddar_box',
+            'swiss_cheese': 'swiss_box',
+            'bacon': 'bacon_box',
+            'chicken_patty': 'chicken_patty_box',
+            'sweet_potato_fries': 'sweet_potato_fry_box'
+        };
+
+        // Filter pool: only items whose box is still LOCKED
+        const availablePool = pool.filter(toppingId => {
+            const boxId = boxMap[toppingId];
+            const shopItem = this.shopItems.find(i => i.id === boxId);
+            return shopItem && !shopItem.unlocked;
+        });
+
+        if (availablePool.length === 0) {
+            console.log("All toppings unlocked! Skipping level up alert.");
+            this.addFloatingText("MAX LEVEL REACHED!", this.player.x, this.player.y, '#ffd700');
+            return;
+        }
+
+        // Shuffle and take 3 (or fewer if pool is small)
+        const shuffled = [...availablePool].sort(() => 0.5 - Math.random());
+        const selected = shuffled.slice(0, 3);
+
+        const buttons = selected.map(id => {
+            const def = DEFINITIONS[id];
+            return {
+                label: def ? (def.name || id) : id,
+                image: '/assets/button-background.png',
+                action: { type: 'unlock_topping', toppingId: id }
+            };
+        });
+
+        // Add OK button
+        buttons.push({
+            label: 'OK',
+            image: '/assets/button-background.png',
+            action: 'dismiss'
+        });
+
+        this.alertSystem.trigger('level_up', null, { buttons: buttons });
+    }
+
+    unlockTopping(toppingId) {
+        console.log(`[Game] Unlocking Topping: ${toppingId}`);
+
+        // Only add to menu if it's an actual topping (not an alt patty or side)
+        const def = DEFINITIONS[toppingId];
+        const isTopping = def && (def.isTopping || def.category === 'topping' || toppingId.includes('cheese') || toppingId === 'bacon');
+        const isAlt = toppingId === 'chicken_patty' || toppingId === 'sweet_potato_fries';
+
+        if (isTopping && !isAlt) {
+            this.menuSystem.addToppingToMenu(toppingId);
+        }
+
+        // Also unlock the corresponding supply box in shop
+        // Map topping to box
+        const boxMap = {
+            'lettuce_leaf': 'lettuce_box',
+            'tomato_slice': 'tomato_box',
+            'pickle_slice': 'pickle_box',
+            'onion_slice': 'onion_box',
+            'cheddar_cheese': 'cheddar_box',
+            'swiss_cheese': 'swiss_box',
+            'bacon': 'bacon_box',
+            'chicken_patty': 'chicken_patty_box',
+            'sweet_potato_fries': 'sweet_potato_fry_box'
+        };
+
+        const boxId = boxMap[toppingId];
+        if (boxId) {
+            const shopItem = this.shopItems.find(i => i.id === boxId);
+            if (shopItem) {
+                shopItem.unlocked = true;
+                shopItem.justUnlocked = true;
+                
+                // Drop the box down the chute!
+                this.dropInChute(new ItemInstance(boxId));
+            }
+        }
+
+        this.addFloatingText(`Unlocked: ${toppingId}!`, this.player.x, this.player.y, '#ffd700');
+        this.updateCapabilities();
+        this.saveLevel();
     }
 }
