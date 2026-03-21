@@ -128,7 +128,6 @@ export const ASSETS = {
         COLA_SYRUP: 'cola_syrup.png',
         SODA: 'soda.png',
         DRINK_CUP_BOX_CLOSED: 'drink_cup_box-closed.png',
-        CHICKEN_PATTY_COOKED: 'chicken_patty-cooked.png',
         FRIES_DONE: 'fries-done.png',
         SWEET_POTATO_FRIES_DONE: 'sweet_potato_fries-done.png',
 
@@ -242,6 +241,7 @@ export const ASSETS = {
         SONG5_LOOP: 'audio/song5.wav',
         SONG6_INTRO: 'audio/song6-intro.wav',
         SONG6_LOOP: 'audio/song6.wav',
+        DEATH_JINGLE: 'audio/death_jingle.wav',
     },
     TUTORIAL: {
         BUBBLE: 'tutorial/bubble.png', // Placeholder for the sprite sheet

@@ -1,0 +1,15 @@
+{
+  "base_burger": 5,
+  "fries": 3.50,
+  "sweet_potato_fries": 5.50,
+  "take_out_bonus": 4,
+  "toppings": {
+    "tomato_slice": 1.5,
+    "lettuce_leaf": 1.5,
+    "pickle_slice": 1.5,
+    "onion_slice": 1.5,
+    "cheddar_cheese": 1.5,
+    "swiss_cheese": 1.5,
+    "bacon": 4
+  }
+}

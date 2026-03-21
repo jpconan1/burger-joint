@@ -9,21 +9,35 @@ export const InteractionHandlers = {
         const held = player.heldItem;
         if (!held) return false;
 
+        // 1. Box Logic: Delay instantiation
+        if (held.type === ItemType.Box) {
+            if (held.state.count > 0 && held.definition.produces) {
+                const prodId = held.definition.produces;
+
+                if (!cell.object) {
+                    if (cell.type.holdsItems) {
+                        cell.object = new ItemInstance(prodId);
+                        held.state.isOpen = true;
+                        return true;
+                    }
+                } else {
+                    const realItem = new ItemInstance(prodId);
+                    const result = InteractionHandlers._tryCombine(realItem, cell.object);
+                    if (result) {
+                        cell.object = result;
+                        held.state.isOpen = true;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         let itemToDispense = null;
         let consumeAction = null;
 
-        // 1. Box
-        if (held.type === ItemType.Box) {
-            if (held.state.count > 0 && held.definition.produces) {
-                itemToDispense = new ItemInstance(held.definition.produces);
-                consumeAction = () => {
-                    // held.state.count--; // UNLIMITED BOXES
-                    held.state.isOpen = true;
-                };
-            }
-        }
         // 2. Stacked Container (Single OR Stacked, with items)
-        else if (held.definition.useStackRender) {
+        if (held.definition && held.definition.useStackRender) {
             // Priority 1: Dispense ingredient from inside the container
             if (held.state.contents?.length > 0) {
                 itemToDispense = held.state.contents[held.state.contents.length - 1];
@@ -91,12 +105,10 @@ export const InteractionHandlers = {
         // Apply to Cell
         if (!cell.object) {
             // Special Case: FRYER
-            // Fryers need specific state initialization (status='down', timer=0)
             if (cell.type.id === 'FRYER') {
-                // Check if item is fryable
-                const def = itemToDispense.definition;
-                if (def.cooking) {
-                    const stage = itemToDispense.state.cook_level || 'raw';
+                const def = itemToDispense.definition || DEFINITIONS[itemToDispense.definitionId];
+                if (def && def.cooking) {
+                    const stage = (itemToDispense.state && itemToDispense.state.cook_level) || 'raw';
                     const stageDef = def.cooking.stages[stage];
                     if (stageDef && stageDef.cookMethod === 'fry') {
                         cell.object = itemToDispense;
@@ -106,8 +118,6 @@ export const InteractionHandlers = {
                         return true;
                     }
                 }
-                // Handle Fry Bag content (e.g. from Box of Fries -> raw_fries -> Fryer)
-                // Note: Box of Fries makes 'raw_fries', which is fryable.
                 return false;
             }
 
@@ -742,78 +752,50 @@ export const InteractionHandlers = {
         const count = target.state.count || 1;
         const held = player.heldItem;
 
-        // 0. Plating: burger or side onto a plate
-        if (target.definitionId === 'plate' && held) {
-            const heldDef = held.definition || {};
-            const isUnwrappedBurger = (heldDef.category === 'burger' || held.definitionId.includes('burger')) && !held.state.isWrapped;
-            const isCookedSide = heldDef.category === 'side' || (heldDef.category === 'side_prep' && held.state.cook_level === 'cooked');
-
-            if (isUnwrappedBurger || isCookedSide) {
-                if (count > 1) {
-                    // Stack: hand combine — dispense one plate, player holds the filled plate
-                    const plate = new ItemInstance('plate');
-                    target.state.count--;
-                    if (target.state.count <= 0) cell.object = null;
-                    if (!plate.state.contents) plate.state.contents = [];
-                    plate.state.contents.push(held);
-                    player.heldItem = plate;
-                } else {
-                    // Single plate on counter: counter combine — food lands on the plate in-world
-                    if (!target.state.contents) target.state.contents = [];
-                    target.state.contents.push(held);
-                    player.heldItem = null;
-                }
-                return true;
-            }
-        }
-
-        // 1. Stuff in them
-        if (contents.length > 0) {
-            // Dispense to Burger/Bun (Existing Feature for Inserts)
-            const isBurger = held && (held.category === 'burger' || held.definitionId.includes('burger'));
-            const isBun = held && (held.category === 'bun');
-
-            // EXCLUDE PLATES: Plates are for serving, not for dispensing toppings (which pops from contents)
-            if ((isBurger || isBun) && !['plate', 'dirty_plate'].includes(target.definitionId)) {
-                const slice = contents.pop();
-                let targetBurger = held;
-                if (isBun) {
-                    targetBurger = new ItemInstance('plain_burger');
-                    targetBurger.state.bun = held;
-                    targetBurger.state.toppings = [];
-                } else {
-                    const newBurger = new ItemInstance(held.definitionId);
-                    newBurger.state = JSON.parse(JSON.stringify(held.state));
-                    targetBurger = newBurger;
-                }
-                InteractionHandlers._addIngredientToBurger(targetBurger, slice);
-                player.heldItem = targetBurger;
-                return true;
-            }
-
-            // Take one thing out (To Hand)
-            if (!held) {
-                const item = contents.pop();
-                player.heldItem = item;
-                return true;
-            }
-        }
-
-        // 2. Stacked (Empty)
-        if (count > 1) {
-            // Pick up one from stack
-            if (!held) {
-                const oneContainer = new ItemInstance(target.definitionId);
+        // 1. Rule: Targeted stack on counter + held item
+        if (held) {
+            // Put into stack (dispense one to hand)
+            if (count > 1 && InteractionHandlers._canContainerHoldItem(target, held)) {
+                const newContainer = new ItemInstance(target.definitionId);
                 target.state.count--;
                 if (target.state.count <= 0) cell.object = null;
-                player.heldItem = oneContainer;
+                newContainer.state.contents = [held];
+                player.heldItem = newContainer;
+                return true;
+            }
+            // Put into single container on counter
+            if (count === 1 && InteractionHandlers._canContainerHoldItem(target, held)) {
+                if (!target.state.contents) target.state.contents = [];
+                target.state.contents.push(held);
+                player.heldItem = null;
                 return true;
             }
         }
 
-        // 3. Single Empty Container
-        else {
+        // 2. Rule: Targeted container with contents
+        if (contents.length > 0) {
+            // Dispense topping to held Burger/Bun (Inserts only)
+            if (InteractionHandlers._canContainerDispenseTo(target, held)) {
+                const slice = contents.pop();
+                player.heldItem = InteractionHandlers._applyIngredientToHeld(held, slice);
+                return true;
+            }
+            // Take one item out to hand
             if (!held) {
+                player.heldItem = contents.pop();
+                return true;
+            }
+        }
+
+        // 3. Rule: Targeted empty stack/container + empty hands
+        if (!held) {
+            if (count > 1) {
+                const one = new ItemInstance(target.definitionId);
+                target.state.count--;
+                if (target.state.count <= 0) cell.object = null;
+                player.heldItem = one;
+                return true;
+            } else {
                 player.heldItem = target;
                 cell.object = null;
                 return true;
@@ -830,105 +812,38 @@ export const InteractionHandlers = {
         if (held) {
             const count = container.state.count || 1;
 
-            // 0. Plating: burger or side onto a plate
-            if (container.definitionId === 'plate') {
-                const heldDef = held.definition || {};
-                const isUnwrappedBurger = (heldDef.category === 'burger' || held.definitionId.includes('burger')) && !held.state.isWrapped;
-                const isCookedSide = heldDef.category === 'side' || (heldDef.category === 'side_prep' && held.state.cook_level === 'cooked');
-
-                if (isUnwrappedBurger || isCookedSide) {
-                    if (count > 1) {
-                        // Stack: hand combine — dispense one plate, player holds the filled plate
-                        const plate = new ItemInstance('plate');
-                        container.state.count--;
-                        if (container.state.count <= 0) cell.object = null;
-                        if (!plate.state.contents) plate.state.contents = [];
-                        plate.state.contents.push(held);
-                        player.heldItem = plate;
-                    } else {
-                        // Single plate on counter: counter combine — food lands on the plate in-world
-                        if (!container.state.contents) container.state.contents = [];
-                        container.state.contents.push(held);
-                        player.heldItem = null;
-                    }
+            // 1. Generic Stack Rules: held item into counter stack/container
+            if (count > 1) {
+                if (InteractionHandlers._canContainerHoldItem(container, held)) {
+                    const newContainer = new ItemInstance(container.definitionId);
+                    container.state.count--;
+                    if (container.state.count <= 0) cell.object = null;
+                    newContainer.state.contents = [held];
+                    player.heldItem = newContainer;
                     return true;
                 }
+                return false;
             }
-
-            if (count > 1) return false; // Can't place into stack
-
-            const contents = container.state.contents || [];
-
-            // Dispense topping to Burger/Bun (Existing Feature for Inserts)
-            const isBurger = held.category === 'burger' || held.definitionId.includes('burger');
-            const isBun = held.category === 'bun';
-
-            // EXCLUDE PLATES: Plates should NOT dispense their contents onto a burger in-hand (pops from contents)
-            if (contents.length > 0 && (isBurger || isBun) && !['plate', 'dirty_plate'].includes(container.definitionId)) {
-                const slice = contents.pop();
-                let targetBurger = held;
-                if (isBun) {
-                    targetBurger = new ItemInstance('plain_burger');
-                    targetBurger.state.bun = held;
-                    targetBurger.state.toppings = [];
-                } else {
-                    const newBurger = new ItemInstance(held.definitionId);
-                    newBurger.state = JSON.parse(JSON.stringify(held.state));
-                    targetBurger = newBurger;
-                }
-                InteractionHandlers._addIngredientToBurger(targetBurger, slice);
-                player.heldItem = targetBurger;
-                return true;
-            }
-
-            // Normal Place logic
-            const def = held.definition || {};
-            const itemToPlace = held;
-            const isCookedBacon = itemToPlace.definitionId === 'bacon' && itemToPlace.state.cook_level === 'cooked';
-
-            // Plate Logic: Specific items only (One Burger, One Side max)
-            if (container.definitionId === 'plate') {
-                const isUnwrappedBurger = (def.category === 'burger' || itemToPlace.definitionId?.includes('burger')) && !itemToPlace.state.isWrapped;
-                const isCookedSide = (def.category === 'side' || (def.category === 'side_prep' && itemToPlace.state.cook_level === 'cooked'));
-
-                if (isUnwrappedBurger || isCookedSide) {
-                    if (!container.state.contents) container.state.contents = [];
-                    const hasBurger = container.state.contents.some(c => (c.definition.category === 'burger' || c.definitionId?.includes('burger')));
-                    const hasSide = container.state.contents.some(c => c.definition.category === 'side' || c.definition.category === 'side_prep');
-
-                    if (isUnwrappedBurger && !hasBurger) {
-                        container.state.contents.push(itemToPlace);
-                        player.heldItem = null;
-                        return true;
-                    }
-
-                    if (isCookedSide && !hasSide) {
-                        container.state.contents.push(itemToPlace);
-                        player.heldItem = null;
-                        return true;
-                    }
-                    console.log(`Plate slot occupied: burger=${hasBurger}, side=${hasSide}`);
-                }
-                return true; // Block other items or already full
-            }
-
-            // Standard Insert Logic
-            if (container.definitionId === 'dirty_plate') return false;
-            if (def.isSlice || def.category === 'topping' || def.category === 'patty' || isCookedBacon) {
+            
+            if (InteractionHandlers._canContainerHoldItem(container, held)) {
                 if (!container.state.contents) container.state.contents = [];
-                if (container.state.contents.length >= 50) return true;
-
-                // Check mixing
-                if (!['plate', 'dirty_plate'].includes(container.definitionId) && container.state.contents.length > 0 && container.state.contents[0].definitionId !== itemToPlace.definitionId) {
-                    return true;
-                }
-
-                container.state.contents.push(itemToPlace);
+                container.state.contents.push(held);
                 player.heldItem = null;
                 return true;
             }
 
-            // Stack Containers
+            // 2. Rule: Targeted container with contents
+            const contents = container.state.contents || [];
+            if (contents.length > 0) {
+                // Dispense topping to held Burger/Bun (Inserts only)
+                if (InteractionHandlers._canContainerDispenseTo(container, held)) {
+                    const slice = contents.pop();
+                    player.heldItem = InteractionHandlers._applyIngredientToHeld(held, slice);
+                    return true;
+                }
+            }
+
+            // 3. Generic Stacking: combine identical empty stacks
             if (held.definitionId === container.definitionId) {
                 const heldContents = held.state.contents || [];
                 const targetContents = container.state.contents || [];
@@ -968,11 +883,26 @@ export const InteractionHandlers = {
     lettuce_interact: (player, head, cell) => {
         if (!head || head.definitionId !== 'lettuce_head') return false;
 
-        // Player must be empty-handed to pluck leaf
-        if (player.heldItem) return false;
-
         const charges = head.state.charges !== undefined ? head.state.charges : 8;
-        if (charges > 0) {
+        if (charges <= 0) return false;
+
+        // If holding a burger/bun, add leaf directly
+        const held = player.heldItem;
+        const isBurger = held && (held.category === 'burger' || held.category === 'bun' || held.definitionId.includes('burger'));
+
+        if (isBurger) {
+            const leaf = new ItemInstance('lettuce_leaf');
+            const result = InteractionHandlers._tryCombine(held, leaf);
+            if (result) {
+                player.heldItem = result;
+                head.state.charges = charges - 1;
+                if (head.state.charges <= 0) cell.object = null;
+                return true;
+            }
+        }
+
+        // Standard: Pluck leaf to empty hands
+        if (!held) {
             const leaf = new ItemInstance('lettuce_leaf');
             player.heldItem = leaf;
 
@@ -1239,73 +1169,44 @@ export const InteractionHandlers = {
     },
 
     handle_stacked_container_pickup: (player, cell) => {
-        // Logic for picking up INTO a stacked container
         const container = player.heldItem;
-        if (!container || !container.definition.useStackRender) return false;
-
-        // Prevent putting items into a stack of containers
-        if ((container.state.count || 1) > 1) return false;
+        if (!InteractionHandlers._isStackableContainer(container)) return false;
 
         const target = cell.object;
         if (!target) return false;
 
-        let itemToTake = null;
-        let updateSource = null;
-
-        // Simple Item
-        if (target instanceof ItemInstance || target.type === undefined) {
-            // Plate Logic
-            // Plate Logic: Specific items only (One Burger, One Side max)
-            if (container.definitionId === 'plate') {
-                const def = target.definition || {};
-                const isUnwrappedBurger = (def.category === 'burger' || target.definitionId.includes('burger')) && !target.state.isWrapped;
-                const isCookedSide = (def.category === 'side' || (def.category === 'side_prep' && target.state.cook_level === 'cooked'));
-
-                if (isUnwrappedBurger || isCookedSide) {
-                    if (!container.state.contents) container.state.contents = [];
-                    const hasBurger = container.state.contents.some(c => (c.definition.category === 'burger' || c.definitionId.includes('burger')));
-                    const hasSide = container.state.contents.some(c => c.definition.category === 'side' || c.definition.category === 'side_prep');
-
-                    if ((isUnwrappedBurger && !hasBurger) || (isCookedSide && !hasSide)) {
-                        itemToTake = target;
-                        updateSource = () => { cell.object = null; };
-                    }
-                }
-            } else if (container.definitionId !== 'dirty_plate') {
-                // Check suitability (Standard Insert)
-                const def = target.definition || {};
-                const isCookedBacon = target.definitionId === 'bacon' && target.state.cook_level === 'cooked';
-                if (def.isSlice || def.category === 'topping' || def.category === 'patty' || isCookedBacon) {
-                    itemToTake = target;
-                    updateSource = () => { cell.object = null; };
-                }
+        // Rule: Dispense from held stack onto counter item
+        if ((container.state.count || 1) > 1) {
+            const potentialItem = InteractionHandlers._getPossibleDispensedItem(target, false);
+            if (potentialItem && InteractionHandlers._canContainerHoldItem(container, potentialItem)) {
+                const newContainer = new ItemInstance(container.definitionId);
+                // Create real instance now that we decided to place it
+                const realItem = InteractionHandlers._getPossibleDispensedItem(target, true);
+                newContainer.state.contents = [realItem];
+                cell.object = newContainer;
+                container.state.count--;
+                if (target.type === ItemType.Box) target.state.isOpen = true;
+                return true;
             }
-        } else if (target.type === ItemType.Box) {
-            if (target.state.count > 0) {
-                const prodId = target.definition.produces;
-                const tempItem = new ItemInstance(prodId);
-                const def = tempItem.definition;
-                const isCookedBacon = tempItem.definitionId === 'bacon' && tempItem.state.cook_level === 'cooked';
-
-                if (def.isSlice || def.category === 'topping' || def.category === 'patty' || isCookedBacon) {
-                    itemToTake = tempItem;
-                    updateSource = () => {
-                        target.state.isOpen = true;
-                    };
-                }
-            }
+            return false;
         }
 
-        if (itemToTake) {
+        // Rule: Suck up into single held container
+        const potentialItem = InteractionHandlers._getPossibleDispensedItem(target, false);
+        if (potentialItem && InteractionHandlers._canContainerHoldItem(container, potentialItem)) {
+            // If it's a Box, we NEED a real instance to suck up its production.
+            // If it's already an instance, we just use it.
+            const itemToTake = InteractionHandlers._getPossibleDispensedItem(target, true);
             if (!container.state.contents) container.state.contents = [];
-            if (container.state.contents.length >= 50) return true;
-            // Check mixing - must be same type (EXCEPT for plates)
-            if (!['plate', 'dirty_plate'].includes(container.definitionId) && container.state.contents.length > 0 && container.state.contents[0].definitionId !== itemToTake.definitionId) return true;
-
-            updateSource();
             container.state.contents.push(itemToTake);
+            if (target.type === ItemType.Box) {
+                target.state.isOpen = true;
+            } else {
+                cell.object = null;
+            }
             return true;
         }
+
         return false;
     },
 
@@ -1313,11 +1214,31 @@ export const InteractionHandlers = {
     burger_interact: (player, cell) => {
         const burger = cell.object;
         if (!burger) return false;
+        const held = player.heldItem;
 
-        // Unwrap if wrapped
+        // 1. Plating: holding plate(s) + target burger
+        if (held && held.definitionId === 'plate') {
+            if (InteractionHandlers._canContainerHoldItem(held, burger)) {
+                if ((held.state.count || 1) > 1) {
+                    // Holding a stack: dispense one plate to the counter burger
+                    const plate = new ItemInstance('plate');
+                    plate.state.contents = [burger];
+                    cell.object = plate;
+                    held.state.count--;
+                    return true;
+                } else {
+                    // Holding a single plate: suck up the burger
+                    if (!held.state.contents) held.state.contents = [];
+                    held.state.contents.push(burger);
+                    cell.object = null;
+                    return true;
+                }
+            }
+        }
+
+        // 2. Unwrap if wrapped
         if (burger.state.isWrapped) {
-            // Require empty hands to unwrap
-            if (!player.heldItem) {
+            if (!held) {
                 burger.state.isWrapped = false;
                 player.heldItem = new ItemInstance('wrapper');
                 return true;
@@ -1325,8 +1246,8 @@ export const InteractionHandlers = {
             return false;
         }
 
-        // Remove most recent topping
-        if (!player.heldItem) {
+        // 3. Remove most recent topping (Empty hands)
+        if (!held) {
             if (burger.state.toppings && burger.state.toppings.length > 0) {
                 const removedItem = burger.state.toppings.pop();
                 player.heldItem = removedItem;
@@ -1509,5 +1430,131 @@ export const InteractionHandlers = {
         player.heldItem = rack;
         cell.object = null;
         return true;
-    }
+    },
+
+    // --- HELPERS & COMPLEX LOGIC ---
+
+    _isStackableContainer: (item) => {
+        return item && item.definition && item.definition.useStackRender;
+    },
+
+    /**
+     * @param {Object} target - The source cell object or box
+     * @param {boolean} createInstance - If true, returns a full ItemInstance. If false, returns a lightweight mock for validation.
+     */
+    _getPossibleDispensedItem: (target, createInstance = false) => {
+        if (!target) return null;
+        if (target instanceof ItemInstance || target.type === undefined) return target;
+        if (target.type === ItemType.Box && target.state.count > 0) {
+            const prodId = target.definition.produces;
+            if (prodId) {
+                if (createInstance) return new ItemInstance(prodId);
+                // Return lightweight mock for validation
+                return { 
+                    definitionId: prodId, 
+                    state: {}, 
+                    definition: DEFINITIONS[prodId] || {}
+                };
+            }
+        }
+        return null;
+    },
+
+    _canContainerHoldItem: (container, target) => {
+        if (!container || !target) return false;
+        const containerId = container.definitionId;
+        const targetDef = target.definition || DEFINITIONS[target.definitionId] || {};
+        const targetState = target.state || {};
+
+        // Dirty plates hold nothing
+        if (containerId === 'dirty_plate') return false;
+
+        // Plate Rules: 1 Burger, 1 Side
+        if (containerId === 'plate') {
+            const isUnwrappedBurger = (targetDef.category === 'burger' || target.definitionId.includes('burger')) && !targetState.isWrapped;
+            const isCookedSide = (targetDef.category === 'side' || (targetDef.category === 'side_prep' && targetState.cook_level === 'cooked'));
+            
+            if (isUnwrappedBurger || isCookedSide) {
+                const contents = container.state.contents || [];
+                const hasBurger = contents.some(c => (c.definition.category === 'burger' || c.definitionId.includes('burger')));
+                const hasSide = contents.some(c => c.definition.category === 'side' || c.definition.category === 'side_prep');
+                
+                if (isUnwrappedBurger && !hasBurger) return true;
+                if (isCookedSide && !hasSide) return true;
+            }
+            return false;
+        }
+
+        // Insert/Standard Rules: Multiple of same ingredient
+        const isCookedBacon = target.definitionId === 'bacon' && targetState.cook_level === 'cooked';
+        if (targetDef.isSlice || targetDef.category === 'topping' || targetDef.category === 'patty' || isCookedBacon) {
+            const contents = container.state.contents || [];
+            if (contents.length >= 50) return false;
+            // MIXING BLOCK:
+            if (contents.length > 0 && contents[0].definitionId !== target.definitionId) return false;
+            return true;
+        }
+        
+        return false;
+    },
+
+    _canContainerDispenseTo: (container, held) => {
+        if (!container || !held) return false;
+        // EXCLUDE PLATES: Plates are for serving, not for dispensing toppings (which pops from contents)
+        if (['plate', 'dirty_plate'].includes(container.definitionId)) return false;
+
+        const isBurger = held.category === 'burger' || held.definitionId.includes('burger');
+        const isBun = held.category === 'bun';
+        return isBurger || isBun;
+    },
+
+    _applyIngredientToHeld: (held, ingredient) => {
+        if (!held || !ingredient) return held;
+        
+        const isBun = held.category === 'bun';
+        let targetBurger = held;
+        
+        if (isBun) {
+            targetBurger = new ItemInstance('plain_burger');
+            targetBurger.state.bun = held;
+            targetBurger.state.toppings = [];
+        } else {
+            targetBurger = held.clone();
+        }
+        
+        InteractionHandlers._addIngredientToBurger(targetBurger, ingredient);
+        return targetBurger;
+    },
+
+    _addIngredientToBurger: (burgerItem, feedItem) => {
+        if (!burgerItem.state.toppings) burgerItem.state.toppings = [];
+        burgerItem.state.toppings.push(feedItem);
+    },
+
+    _transferBoardToStackedContainer: (player, cell) => {
+        const held = player.heldItem;
+        const cbState = cell.state || {};
+        const boardItem = cbState.heldItem;
+
+        // Plates don't take items from cutting boards (they take finished items)
+        if (held && held.definition.useStackRender && !['plate', 'dirty_plate'].includes(held.definitionId) && boardItem) {
+            const containerContents = held.state.contents || [];
+            // Check compatibility: Empty or same type
+            if (containerContents.length === 0 || containerContents[0].definitionId === boardItem.definitionId) {
+                const count = boardItem.state.count || 1;
+
+                // Limit to 50
+                if (containerContents.length + count <= 50) {
+                    for (let i = 0; i < count; i++) {
+                        const singleSlice = new ItemInstance(boardItem.definitionId);
+                        if (!held.state.contents) held.state.contents = [];
+                        held.state.contents.push(singleSlice);
+                    }
+                    cbState.heldItem = null;
+                    return true;
+                }
+            }
+        }
+        return false;
+    },
 };

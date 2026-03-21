@@ -1,11 +1,11 @@
 import { generateMealConfig } from '../data/orderTemplates.js';
 import { SCORING_CONFIG } from '../data/scoringConfig.js';
 import { CAPABILITY, DEFINITIONS } from '../data/definitions.js';
+import SCORE_CONFIG from '../data/scoreConfig.json';
 
 const INGREDIENT_COSTS = {
     // Patties
     beef_patty: 4.17,
-    chicken_patty: 2.00,
 
     // Buns
     plain_bun: 0.94,
@@ -22,7 +22,6 @@ const INGREDIENT_COSTS = {
     tomato_slice: 0.80,
     onion_slice: 0.80,
     pickle_slice: 0.50,
-    fried_onion: 0.80,
 
     // Meat
     bacon: 2.92,
@@ -36,7 +35,6 @@ const INGREDIENT_COSTS = {
     // Sides/Drinks (Base Cost)
     fries: 1.41,
     sweet_potato_fries: 1.41,
-    onion_rings: 1.10,
     soda: 0.50,
     drink: 0.50
 };
@@ -244,7 +242,7 @@ export class OrderSystem {
                 cost += INGREDIENT_COSTS[mod] || 0.5;
 
                 // Complexity Scoring
-                if (['bacon', 'fried_onion', 'chicken_patty'].includes(mod)) {
+                if (['bacon'].includes(mod)) {
                     complexity += 2;
                 } else if (['mayo', 'ketchup', 'bbq', 'burger_sauce'].includes(mod)) {
                     complexity += 1; // Sauce is simple
@@ -265,6 +263,45 @@ export class OrderSystem {
         const cost = INGREDIENT_COSTS[itemId] || 1.0;
         // 3x Markup for sides/drinks
         return Math.ceil(cost * 3);
+    }
+
+    calculateTicketScore(ticket) {
+        let totalScore = 0;
+
+        ticket.groups.forEach(group => {
+            // Takeout Bonus
+            if (group.containerType === 'bag') {
+                totalScore += SCORE_CONFIG.take_out_bonus;
+            }
+
+            // Burgers
+            group.burgers.forEach(burger => {
+                totalScore += SCORE_CONFIG.base_burger;
+                if (burger.modifications) {
+                    burger.modifications.forEach(mod => {
+                        // Check if it's a topping in the config
+                        if (SCORE_CONFIG.toppings[mod]) {
+                            totalScore += SCORE_CONFIG.toppings[mod];
+                        } else {
+                            // Fallback: If it's a common topping but not in config explicitly, check for base form
+                            let baseMod = mod.replace(/_slice|_leaf|_cheese/g, '');
+                            // (Though the user provided the exact IDs they care about for now)
+                        }
+                    });
+                }
+            });
+
+            // Items
+            group.items.forEach(itemId => {
+                if (itemId === 'fries') totalScore += SCORE_CONFIG.fries;
+                else if (itemId === 'sweet_potato_fries') totalScore += SCORE_CONFIG.sweet_potato_fries;
+                else if (SCORE_CONFIG[itemId]) {
+                   totalScore += SCORE_CONFIG[itemId];
+                }
+            });
+        });
+
+        return totalScore;
     }
 }
 
@@ -356,7 +393,6 @@ export class Ticket {
                 
                 // Clean up specific IDs for the ticket
                 if (itemId === 'sweet_potato_fries') displayName = "Sweet Fries";
-                if (itemId === 'onion_rings') displayName = "Onion Rings";
                 if (itemId === 'fries') displayName = "Potato Fries";
                 
                 lines.push(`${prefix}${displayName}`);
@@ -386,9 +422,6 @@ export class Ticket {
         if (burger) {
             // Patty
             let pattyTexture = 'patty-cooked.png';
-            if (burger.modifications && burger.modifications.includes('chicken_patty')) {
-                pattyTexture = 'chicken_patty-cooked.png';
-            }
             icons.push({ type: 'patty', texture: pattyTexture });
 
             // Toppings
@@ -565,7 +598,6 @@ export class OrderGroup {
             // Loose aliases
             if (rId === 'fries' && (dId === 'raw_fries' || dId === 'fries')) return true;
             if (rId === 'sweet_potato_fries' && (dId === 'raw_sweet_potato_fries' || dId === 'sweet_potato_fries')) return true;
-            if (rId === 'onion_rings' && (dId === 'onion_slice' || dId === 'onion_rings')) return true;
         }
 
         // 3. Specific Aliases (Bags/Cups)

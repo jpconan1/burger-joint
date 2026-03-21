@@ -75,7 +75,7 @@ export const ALERTS = {
             {
                 text: "LEVEL UP! <br> Pick a topping to unlock!",
                 position: 'center',
-                size: { width: '700px', height: '400px' },
+                size: { width: '956px', height: '656px' },
                 buttons: [] // Dynamically populated
             }
         ]

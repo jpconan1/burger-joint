@@ -12,7 +12,7 @@ export class TutorialOverlay {
 
     render(renderer, gameState) {
         if (!gameState.grid) return;
-        if (gameState.gameState === 'BUILD_MODE') return;
+
 
         const now = Date.now();
         let dt = (now - this.lastFrameTime) / 1000;

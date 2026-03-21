@@ -17,13 +17,17 @@ export const CHUTE_TRIGGERS = [
         id: 'START_DAY',
         description: 'Drops all items ordered during the night',
         getItems: (game) => {
-            if (!game.pendingOrders) return [];
-            // Map pending orders to chute delivery format
-            const items = game.pendingOrders.map(order => ({
+            const items = (game.pendingOrders || []).map(order => ({
                 id: order.id,
                 qty: order.qty || 1
             }));
-            // Clear pending orders after processing
+            
+            // Day 1 Essentials Fallback: Ensure boxes drop even if startNewGame logic changes or is bypassed
+            if (game.dayNumber === 1) {
+                if (!items.find(i => i.id === 'patty_box')) items.push({ id: 'patty_box', qty: 1 });
+                if (!items.find(i => i.id === 'bun_box')) items.push({ id: 'bun_box', qty: 1 });
+            }
+
             game.pendingOrders = [];
             return items;
         }

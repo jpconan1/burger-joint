@@ -72,7 +72,7 @@ export class AutomatedRewardSystem {
         this.game.alertSystem.trigger('unlock_alert', () => {
             console.log("[RewardSystem] Unlock Alert finished.");
             this.game.audioSystem.setMuffled(false);
-            this.game.playRandomSong();
+            this.game.playNextSong();
             if (!this.game.unlockMiniGameShown) {
                 this.game.unlockMiniGameShown = true;
                 this.game.saveLevel();

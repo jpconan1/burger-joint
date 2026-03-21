@@ -14,7 +14,7 @@ import { OrderSystem } from './systems/OrderSystem.js';
 import { getMenuForCapabilities } from './data/orderTemplates.js';
 import { Settings, ACTIONS } from './systems/Settings.js';
 import { AudioSystem } from './systems/AudioSystem.js';
-import { ConstructionSystem } from './systems/ConstructionSystem.js';
+
 import { MenuSystem } from './systems/MenuSystem.js';
 import { TouchInputSystem } from './systems/TouchInputSystem.js';
 
@@ -25,7 +25,32 @@ import { PowerupSystem } from './systems/PowerupSystem.js';
 import { CHUTE_TRIGGERS } from './data/chute_triggers.js';
 
 export class Game {
+
     constructor() {
+        this.TOPPING_POOL = [
+            'lettuce_leaf',
+            'tomato_slice',
+            'pickle_slice',
+            'onion_slice',
+            'cheddar_cheese',
+            'swiss_cheese',
+            'bacon',
+            'chicken_patty',
+            'sweet_potato_fries'
+        ];
+
+        this.TOPPING_BOX_MAP = {
+            'lettuce_leaf': 'lettuce_box',
+            'tomato_slice': 'tomato_box',
+            'pickle_slice': 'pickle_box',
+            'onion_slice': 'onion_box',
+            'cheddar_cheese': 'cheddar_box',
+            'swiss_cheese': 'swiss_box',
+            'bacon': 'bacon_box',
+            'chicken_patty': 'chicken_patty_box',
+            'sweet_potato_fries': 'sweet_potato_fry_box'
+        };
+
         this.assetLoader = new AssetLoader();
         this.grid = new Grid(GRID_WIDTH, GRID_HEIGHT);
         this.renderer = null;
@@ -37,7 +62,7 @@ export class Game {
         this.audioSystem = new AudioSystem(this.settings);
 
         // Systems
-        this.constructionSystem = new ConstructionSystem(this);
+
         this.menuSystem = new MenuSystem(this);
         this.touchInputSystem = new TouchInputSystem(this);
         this.automatedRewardSystem = new AutomatedRewardSystem(this);
@@ -91,8 +116,8 @@ export class Game {
         this.dailyMoneyEarned = 0;
 
         // High Score System
-        this.highScore = parseInt(localStorage.getItem('burger_joint_highscore')) || 0;
-        this.sessionTickets = 0;
+        this.score = 0;
+        this.highScore = parseFloat(localStorage.getItem('burger_joint_highscore_v2')) || 0;
         this.ticketsGeneratedToday = 0;
         this.dailyBagsSold = 0;
         this.timeFreezeTimer = 0;
@@ -112,13 +137,19 @@ export class Game {
         this.xp = 0;
         this.level = 1;
         this.xpToNextLevel = 7;
+        this.menuLocked = false;
+        this.ticketSpeedBonus = 0;
 
 
 
         // 1. Supplies (Dynamic from DEFINITIONS)
         Object.keys(DEFINITIONS).forEach(defId => {
             const def = DEFINITIONS[defId];
-            if ((def.type === 'Box' || def.type === 'SauceContainer') && def.price) {
+            // Supply item identification: Check for type being Box/SauceContainer AND being in the SCORING_CONFIG prices
+            const hasScoringPrice = SCORING_CONFIG.PRICES && typeof SCORING_CONFIG.PRICES[defId] !== 'undefined';
+            const hasExplicitPrice = typeof def.price !== 'undefined';
+
+            if ((def.type === 'Box' || def.type === 'SauceContainer') && (hasExplicitPrice || hasScoringPrice)) {
                 // Determine 'unlocked' status based on explicit flag or default
                 // Essential items are always unlocked
                 const isEssential = !!def.isEssential;
@@ -171,9 +202,12 @@ export class Game {
                     }
                 }
 
+                // Prefer non-zero price from definition, otherwise use SCORING_CONFIG, otherwise fallback to 0
+                const finalPrice = (def.price && def.price !== 0) ? def.price : (SCORING_CONFIG.PRICES[defId] || 0);
+
                 this.shopItems.push({
                     id: defId,
-                    price: def.price, // Use price from definition
+                    price: finalPrice, 
                     type: 'supply',
                     unlocked: isUnlocked, // Will be overridden by save data if present
                     isEssential: isEssential,
@@ -186,7 +220,6 @@ export class Game {
 
         // 2. Appliances & Actions (Hardcoded / Special Logic)
         const appliancesAndActions = [
-            { id: 'build_mode', price: 0, type: 'action', unlocked: true, uiAsset: 'RENO_BUILD_MODE' },
             { id: 'expansion', price: SCORING_CONFIG.PRICES.expansion, type: 'action', unlocked: true, uiAsset: 'RENO_EXPAND' },
 
             { id: 'counter', price: SCORING_CONFIG.PRICES.counter, type: 'appliance', unlocked: true, tileType: 'COUNTER', uiAsset: 'RENO_ICON_COUNTER' },
@@ -216,8 +249,7 @@ export class Game {
         this.selectedOrderItemIndex = 0;
 
 
-        // Placement State (Delegated to ConstructionSystem via getter)
-        // this.placementState = { ... };
+
 
         // Capabilities
         this.capabilities = new Set();
@@ -253,12 +285,7 @@ export class Game {
         this.fallingBoxes = [];
     }
 
-    // Proxy getters/setters for compatibility with Renderer and legacy code
-    get placementState() { return this.constructionSystem.state; }
-    set placementState(v) { this.constructionSystem.state = v; }
 
-    get selectedRenoIndex() { return this.constructionSystem.selectedRenoIndex; }
-    set selectedRenoIndex(v) { this.constructionSystem.selectedRenoIndex = v; }
 
     // Computer Item Selection (Deprecated)
 
@@ -267,13 +294,7 @@ export class Game {
         return this.isDayActive && !this.queueFinishedTime;
     }
 
-    enterBuildMode(initialHeldItem = null, fromPurchase = false) {
-        this.constructionSystem.enterBuildMode(initialHeldItem, fromPurchase);
-    }
 
-    exitBuildMode() {
-        this.constructionSystem.exitBuildMode();
-    }
 
     // getInventoryCount(itemId) {
     // }
@@ -335,7 +356,7 @@ export class Game {
         this.audioSystem.setMuffled(true);
 
         // Reset Session Score
-        this.sessionTickets = 0;
+        this.score = 0;
 
         // Clear existing rooms if any
         this.rooms = {};
@@ -374,6 +395,7 @@ export class Game {
         this.player.x = 2;
         this.player.y = 3;
         this.player.facing = { x: 0, y: 1 };
+        this.player.snap();
 
         this.player.heldItem = null;
 
@@ -383,6 +405,8 @@ export class Game {
         this.dayNumber = 0;
         this.appliedExpansions.clear();
         this.autoUpgradedAppliances.clear();
+        this.menuLocked = false;
+        this.ticketSpeedBonus = 0;
 
         // Reset Shop Items (Unlocks)
         this.shopItems.forEach(item => {
@@ -436,20 +460,8 @@ export class Game {
         });
         this.sortShopItems();
 
-        // 4. Pre-purchase Essentials for Day 1 (Since Order Screen is now just info)
-        // Auto-buy 1 of each essential
         this.pendingOrders = [];
-        let kStartCost = 0;
 
-        // Initial supplies: Patties land first (bottom), Buns land second (on top)
-        ['patty_box', 'bun_box'].forEach(id => {
-            const item = this.shopItems.find(i => i.id === id);
-            if (item) {
-                this.pendingOrders.push({ id: item.id, qty: 1 });
-                kStartCost += item.price;
-            }
-        });
-        this.money -= kStartCost;
 
         // Save this clean state immediately so if they refresh they get this
         this.saveLevel();
@@ -461,9 +473,8 @@ export class Game {
         this.gameState = 'TITLE';
         this.updateCapabilities();
 
-        // Show welcome alert for new players
-        this.alertSystem.trigger('welcome_alert');
     }
+
 
     updateCapabilities() {
         this.capabilities.clear();
@@ -747,18 +758,14 @@ export class Game {
 
 
 
-    handleBuildModeInput(event) {
-        this.constructionSystem.handleInput(event);
-    }
+
 
 
 
 
 
     // Helper to sort shop items
-    sortShopItems() {
-        this.sortShopItems();
-    }
+
 
     unlockAllCheat() {
         console.log("CHEAT: Unlocking ALL items and appliances.");
@@ -960,58 +967,7 @@ export class Game {
         // 1. Populate Fridge (Do this FIRST so capabilities avail)
         // Note: We NO LONGER clear the fridge. Persistance!
 
-        // Spawn ordered items into VALID EMPTY spots
-        const deliveryTiles = [];
 
-        ['store_room', 'office'].forEach(roomId => {
-            const room = this.rooms[roomId];
-            if (room) {
-                for (let y = 0; y < room.height; y++) {
-                    for (let x = 0; x < room.width; x++) {
-                        const c = room.getCell(x, y);
-                        if (c.type.id === 'DELIVERY_TILE') {
-                            // Step 0: Clear the delivery tiles. Delete whatever's on them.
-                            // c.object = null;
-                            deliveryTiles.push(c);
-                        }
-                    }
-                }
-            }
-        });
-
-        // Step 7: Go down the list and order one box for every item until all delivery tiles are full...
-        if (this.pendingOrders && this.pendingOrders.length > 0) {
-            console.log(`Processing ${this.pendingOrders.length} pending orders...`);
-
-            for (const order of this.pendingOrders) {
-                // Find first empty tile
-                const targetTile = deliveryTiles.find(c => !c.object);
-
-                if (!targetTile) {
-                    console.log("Delivery Area Full! Stopping restock.");
-                    this.addFloatingText("Delivery Area Full!", this.player.x, this.player.y, '#ff0000');
-                    break;
-                }
-
-                const instance = new ItemInstance(order.id);
-                // Custom Insert Logic: Spawn stack of 3
-                if (order.id === 'insert') {
-                    instance.state.count = 3;
-                }
-
-                // Push to falling boxes queue
-                this.fallingBoxes.push({
-                    x: 0,
-                    y: -1 - this.fallingBoxes.length, // Stack them above the screen
-                    vy: 0,
-                    item: instance
-                });
-
-                // Update cart for compatibility if needed (e.g. UI)
-                this.cart[order.id] = (this.cart[order.id] || 0) + (order.qty || 1);
-            }
-            this.pendingOrders = [];
-        }
 
         // 1. Handle Morning Orders via Trigger System
         this.triggerChute('START_DAY');
@@ -1062,7 +1018,7 @@ export class Game {
         // Clear unlocking notifications
         this.shopItems.forEach(i => i.justUnlocked = false);
 
-        this.playRandomSong();
+        this.playNextSong();
 
         // --- PREP TIME REMOVED ---
         const complexity = this.menuSystem.calculateComplexity();
@@ -1086,6 +1042,7 @@ export class Game {
             this.grid = this.rooms['main'];
             this.player.x = 2; // Center-ish
             this.player.y = 3;
+            this.player.snap();
             this.saveLevel();
         }
 
@@ -1099,7 +1056,7 @@ export class Game {
         console.log(`Starting Continuous Service Loop. Complexity: ${complexity})`);
     }
 
-    playRandomSong() {
+    playNextSong() {
         const songs = [
             { intro: ASSETS.AUDIO.SONG1_INTRO, loop: ASSETS.AUDIO.SONG1_LOOP },
             { intro: ASSETS.AUDIO.SONG2_INTRO, loop: ASSETS.AUDIO.SONG2_LOOP },
@@ -1110,9 +1067,15 @@ export class Game {
         ];
 
         let newIndex;
-        do {
-            newIndex = Math.floor(Math.random() * songs.length);
-        } while (songs.length > 1 && newIndex === this.currentSongIndex);
+        // Play songs 1 to 6 in order (indices 0 to 5)
+        if (this.currentSongIndex < 5) {
+            newIndex = this.currentSongIndex + 1;
+        } else {
+            // After song 6, pick random songs, making sure it's not the same as the current one
+            do {
+                newIndex = Math.floor(Math.random() * songs.length);
+            } while (songs.length > 1 && newIndex === this.currentSongIndex);
+        }
 
         this.currentSongIndex = newIndex;
         const song = songs[newIndex];
@@ -1173,10 +1136,6 @@ export class Game {
                 return this.handleMenuInput(event);
             case 'APPLIANCE_SWAP':
                 return this.handleApplianceSwapInput(event);
-            case 'RENO_SHOP':
-                return this.handleRenoInput(event);
-            case 'BUILD_MODE':
-                return this.handleBuildModeInput(event);
             case 'PAUSED':
                 return; // No input during pause except Escape (handled above)
         }
@@ -1238,6 +1197,7 @@ export class Game {
                     this.startNewGame();
                     this.startDay();
                     this.gameState = 'PLAYING';
+                    this.alertSystem.trigger('welcome_alert');
                 } else {
                     this.gameState = 'SETTINGS';
                     this.settingsState = { selectedIndex: 0, rebindingAction: null };
@@ -1313,8 +1273,7 @@ export class Game {
         if (action === ACTIONS.INTERACT && !event.repeat) {
             const facingCell = this.player.getTargetCell(this.grid);
             if (facingCell?.type.id === 'RENO') {
-                this.addFloatingText("Build Mode", this.player.x, this.player.y, '#ffd700');
-                this.enterBuildMode();
+                this.addFloatingText("Build Mode Disabled", this.player.x, this.player.y, '#ff0000');
             } else if (facingCell?.type.id === 'MENU') {
                 if (this.isEndgameUnlocked) {
                     this.gameState = 'MENU_CUSTOM';
@@ -1394,19 +1353,7 @@ export class Game {
                 }
             }
         } else if (this.gameState === 'RENO_SHOP') {
-            const idx = this.getRenoIndexAt(mouseX, mouseY);
-            if (idx !== -1) {
-                this.selectedRenoIndex = idx;
-                // Simulate Enter key to trigger selection
-                this.handleRenoInput({ code: 'Enter' });
-            }
-        } else if (this.gameState === 'BUILD_MODE' && this.placementState.menu?.active) {
-            const menu = this.placementState.menu;
-            const idx = this.getBuildMenuIndexAt(mouseX, mouseY, menu);
-            if (idx !== -1) {
-                menu.selectedIndex = idx;
-                this.constructionSystem.handleMenuInput({ code: 'Enter' });
-            }
+            // Reno shop disabled
         }
     }
 
@@ -1436,16 +1383,7 @@ export class Game {
                 this.settingsState.selectedIndex = idx;
             }
         } else if (this.gameState === 'RENO_SHOP') {
-            const idx = this.getRenoIndexAt(mouseX, mouseY);
-            if (idx !== -1) {
-                this.selectedRenoIndex = idx;
-            }
-        } else if (this.gameState === 'BUILD_MODE' && this.placementState.menu?.active) {
-            const menu = this.placementState.menu;
-            const idx = this.getBuildMenuIndexAt(mouseX, mouseY, menu);
-            if (idx !== -1) {
-                menu.selectedIndex = idx;
-            }
+            // Reno shop disabled
         }
     }
 
@@ -1571,6 +1509,7 @@ export class Game {
                     else if (targetY === targetGrid.height - 1) this.player.y -= 1;
 
                     // Save state
+                    this.player.snap();
                     this.saveLevel();
                 } else {
                     console.error("Target door not found:", targetDoorId);
@@ -1601,7 +1540,10 @@ export class Game {
         // Lerp
         // 0 -> SLOW
         // 1 -> FAST
-        return config.SLOW_TICKET_INTERVAL - (intensity * (config.SLOW_TICKET_INTERVAL - config.FAST_TICKET_INTERVAL));
+        const baseInterval = config.SLOW_TICKET_INTERVAL - (intensity * (config.SLOW_TICKET_INTERVAL - config.FAST_TICKET_INTERVAL));
+        
+        // Apply Speed Bonus (e.g. 1.2x speed means interval / 1.2)
+        return baseInterval / (1.0 + this.ticketSpeedBonus);
     }
 
     update(dt) {
@@ -1742,6 +1684,11 @@ export class Game {
             if (this.stability <= 0 && !this.timeoutAlertShown) {
                 this.timeoutAlertShown = true;
                 this.currentDayPerfect = false;
+
+                // Play Death Jingle
+                this.audioSystem.stopMusic();
+                this.audioSystem.playSFX(ASSETS.AUDIO.DEATH_JINGLE);
+
                 this.alertSystem.trigger('ticket_timeout');
             }
         } else if (this.ticketQueue.length > 0) {
@@ -1896,14 +1843,15 @@ export class Game {
                                     this.money += bonus;
                                     this.dailyMoneyEarned += bonus;
                                     this.addFloatingText(message + ` ($${bonus})`, x, y, color);
-                                    this.stability = Math.min(this.stability + par, 100);
-                                    this.addFloatingText(`Stability +${Math.round(par)}%`, x, y - 1, '#00ffff');
-                                    this.sessionTickets++;
+                                    this.stability = 100;
+                                    this.addFloatingText(`STABILITY FULL!`, x, y - 1, '#00ffff');
+                                    const ticketScore = this.orderSystem.calculateTicketScore(ticket);
+                                    this.score += ticketScore;
                                     this.addXp(1); // Give 1 XP per ticket
-                                    if (this.sessionTickets > this.highScore) {
-                                        this.highScore = this.sessionTickets;
-                                        localStorage.setItem('burger_joint_highscore', this.highScore);
-                                        if (this.sessionTickets > 1) this.addFloatingText("NEW HIGH SCORE!", x, y - 2, '#ffcc00');
+                                    if (this.score > this.highScore) {
+                                        this.highScore = this.score;
+                                        localStorage.setItem('burger_joint_highscore_v2', this.highScore);
+                                        if (this.score > 0) this.addFloatingText("NEW HIGH SCORE!", x, y - 2, '#ffcc00');
                                     }
                                     this.activeTickets.splice(matchedTicketIndex, 1);
                                     this.orders = this.activeTickets.map(t => t.toDisplayFormat());
@@ -1917,6 +1865,7 @@ export class Game {
     }
 
     updateSystems(dt) {
+        this.player.update(dt);
         this.powerupSystem.update(dt);
         this.alertSystem.update(dt);
     }
@@ -2080,21 +2029,7 @@ export class Game {
                 this.renderer.renderTitleScreen(this.titleSelection);
             } else if (this.gameState === 'SETTINGS') {
                 this.renderer.renderSettingsMenu(this.settingsState, this.settings);
-            } else if (this.gameState === 'BUILD_MODE') {
-                // Special Render for Build Mode (hides player)
-                this.renderer.render({
-                    grid: this.grid,
-                    player: null,
-                    placementState: this.placementState,
-                    gameState: this.gameState,
-                    shopItems: this.shopItems,
-                    money: this.money,
-                    dayNumber: this.dayNumber
-                });
-                this.renderer.renderPlacementCursor(this.placementState);
-                if (this.placementState.menu) {
-                    this.renderer.renderBuildMenu(this.placementState.menu);
-                }
+
             } else {
                 // Standard Game Render (PLAYING, PAUSED, and all Overlay Menus)
                 if (this.gameState === 'PLAYING' || this.gameState === 'APPLIANCE_SWAP' || this.gameState === 'PAUSED') {
@@ -2379,10 +2314,10 @@ export class Game {
                 this.grid = this.rooms[this.currentRoomId];
             }
 
-            // Restore Player
             if (data.player) {
                 this.player.x = data.player.x;
                 this.player.y = data.player.y;
+                this.player.snap();
                 if (data.player.facing) this.player.facing = data.player.facing;
 
                 // Restore Tool (before held item to avoid equip checks blocking)
@@ -2468,9 +2403,7 @@ export class Game {
 
 
 
-    handleRenoInput(event) {
-        this.constructionSystem.handleRenoInput(event);
-    }
+
 
     addEffect(effect) {
         this.effects.push(effect);
@@ -2516,45 +2449,57 @@ export class Game {
         this.saveLevel();
     }
 
-    levelUp() {
-        this.level++;
-        this.xpToNextLevel = 7; // As per user request: "every 7 xp"
-        this.playRandomSong(); // Change music on level up
-
-        const pool = [
-            'lettuce_leaf',
-            'tomato_slice',
-            'pickle_slice',
-            'onion_slice',
-            'cheddar_cheese',
-            'swiss_cheese',
-            'bacon',
-            'chicken_patty',
-            'sweet_potato_fries'
-        ];
-
-        const boxMap = {
-            'lettuce_leaf': 'lettuce_box',
-            'tomato_slice': 'tomato_box',
-            'pickle_slice': 'pickle_box',
-            'onion_slice': 'onion_box',
-            'cheddar_cheese': 'cheddar_box',
-            'swiss_cheese': 'swiss_box',
-            'bacon': 'bacon_box',
-            'chicken_patty': 'chicken_patty_box',
-            'sweet_potato_fries': 'sweet_potato_fry_box'
-        };
-
-        // Filter pool: only items whose box is still LOCKED
-        const availablePool = pool.filter(toppingId => {
-            const boxId = boxMap[toppingId];
+    getAvailableToppingPool() {
+        return this.TOPPING_POOL.filter(toppingId => {
+            const boxId = this.TOPPING_BOX_MAP[toppingId];
             const shopItem = this.shopItems.find(i => i.id === boxId);
             return shopItem && !shopItem.unlocked;
         });
+    }
+
+    getToppingButtonConfig(id) {
+        const def = DEFINITIONS[id];
+        const boxId = this.TOPPING_BOX_MAP[id];
+        const boxDef = DEFINITIONS[boxId];
+
+        // Standard box texture logic from ItemInstance.js
+        let boxImg = boxDef ? (boxDef.texture || `${boxId}-closed.png`) : null;
+        if (boxDef && boxDef.textures && boxDef.textures.base) boxImg = boxDef.textures.base;
+
+        return {
+            label: def ? (def.name || id) : id,
+            image: '/assets/ui/button_background-boil.png',
+            boxImage: boxImg ? `/assets/${boxImg}` : null,
+            action: { type: 'unlock_topping', toppingId: id }
+        };
+    }
+
+    getRerollToppings(count, excludeIds = []) {
+        const pool = this.getAvailableToppingPool().filter(id => !excludeIds.includes(id));
+        const shuffled = [...pool].sort(() => 0.5 - Math.random());
+        return shuffled.slice(0, count);
+    }
+
+    levelUp() {
+        this.level++;
+        this.xpToNextLevel = 7; // As per user request: "every 7 xp"
+
+        if (this.menuLocked) {
+            this.ticketSpeedBonus += SCORING_CONFIG.GAME_PACING.TICKET_SPEED_INCREMENT;
+            this.addFloatingText("LEVEL UP: TICKET SPEED ++", this.player.x, this.player.y, '#ffd700');
+            return;
+        }
+        
+        // Muffle music on level up alert
+        this.audioSystem.setMuffled(true);
+
+        const availablePool = this.getAvailableToppingPool();
 
         if (availablePool.length === 0) {
             console.log("All toppings unlocked! Skipping level up alert.");
             this.addFloatingText("MAX LEVEL REACHED!", this.player.x, this.player.y, '#ffd700');
+            // Unmuffle if we skip the alert
+            this.audioSystem.setMuffled(false);
             return;
         }
 
@@ -2562,23 +2507,36 @@ export class Game {
         const shuffled = [...availablePool].sort(() => 0.5 - Math.random());
         const selected = shuffled.slice(0, 3);
 
-        const buttons = selected.map(id => {
-            const def = DEFINITIONS[id];
-            return {
-                label: def ? (def.name || id) : id,
-                image: '/assets/button-background.png',
-                action: { type: 'unlock_topping', toppingId: id }
-            };
-        });
+        // Add Reroll button (leftmost)
+        const buttons = [{
+            id: 'reroll_button',
+            label: 'Reroll',
+            image: '/assets/ui/button-clean.png',
+            boxImage: '/assets/ui/reroll.png',
+            action: 'reroll'
+        }];
+
+        // Add toppings
+        buttons.push(...selected.map(id => this.getToppingButtonConfig(id)));
 
         // Add OK button
         buttons.push({
             label: 'OK',
-            image: '/assets/button-background.png',
+            image: '/assets/ui/button_background-boil.png',
             action: 'dismiss'
         });
 
-        this.alertSystem.trigger('level_up', null, { buttons: buttons });
+        // Trigger alert with callback to play newest song AFTER dismissal
+        this.alertSystem.trigger('level_up', () => {
+            this.playNextSong();
+        }, { buttons: buttons });
+    }
+
+    lockMenu() {
+        this.menuLocked = true;
+        this.ticketSpeedBonus += SCORING_CONFIG.GAME_PACING.TICKET_SPEED_INCREMENT;
+        this.addFloatingText("MENU LOCKED: TICKET SPEED ++", this.player.x, this.player.y, '#ffd700');
+        this.saveLevel();
     }
 
     unlockTopping(toppingId) {

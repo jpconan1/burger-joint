@@ -67,6 +67,9 @@ export const SCORING_CONFIG = {
         NIGHT_PEAK_INTENSITY: 1.0, // 100% to max speed
 
         // Width of the bell curve (Standard Deviation in seconds)
-        PEAK_WIDTH: 20
+        PEAK_WIDTH: 20,
+
+        // Increment for speed boost when menu is locked (20% faster)
+        TICKET_SPEED_INCREMENT: 0.2
     }
 };

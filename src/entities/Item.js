@@ -19,6 +19,10 @@ export class ItemInstance {
         return DEFINITIONS[this.definitionId];
     }
 
+    clone() {
+        return ItemInstance.deserialize(this.serialize());
+    }
+
     get type() {
         return this.definition.type;
     }

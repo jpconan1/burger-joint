@@ -21,6 +21,57 @@ export class Player {
 
         // Appliance Holding State
         this.heldAppliance = null;
+
+        // Visual position for interpolation/animation
+        this.visualX = x;
+        this.visualY = y;
+        this.targetX = x;
+        this.targetY = y;
+
+        // Juice
+        this.tilt = 0;
+        this.walkBob = 0;
+    }
+
+    update(dt) {
+        if (!dt) return;
+
+        // Constant speed movement in tiles per second
+        const moveSpeed = 15; // tiles per second
+        const step = (moveSpeed * dt) / 1000;
+
+        // Move visualX towards x
+        if (Math.abs(this.x - this.visualX) > step) {
+            this.visualX += Math.sign(this.x - this.visualX) * step;
+        } else {
+            this.visualX = this.x;
+        }
+
+        // Move visualY towards y
+        if (Math.abs(this.y - this.visualY) > step) {
+            this.visualY += Math.sign(this.y - this.visualY) * step;
+        } else {
+            this.visualY = this.y;
+        }
+
+        // Juice: Tilt and Bob while moving
+        const isMoving = this.visualX !== this.x || this.visualY !== this.y;
+        if (isMoving) {
+            this.tilt = Math.sin(Date.now() / 50) * 0.15;
+            this.walkBob = Math.sin(Date.now() / 40) * 4;
+        } else {
+            this.tilt *= 0.7; // Fast decay
+            this.walkBob *= 0.7;
+            if (Math.abs(this.tilt) < 0.01) this.tilt = 0;
+            if (Math.abs(this.walkBob) < 0.1) this.walkBob = 0;
+        }
+    }
+
+    snap() {
+        this.visualX = this.x;
+        this.visualY = this.y;
+        this.tilt = 0;
+        this.walkBob = 0;
     }
 
     move(dx, dy, grid) {

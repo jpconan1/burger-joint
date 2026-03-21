@@ -6,7 +6,7 @@
             "box": {
                 "id": "patty_box",
                 "maxCount": 24,
-                "price": 50,
+                "price": 0,
                 "toolRequirement": "HANDS",
                 "isEssential": true,
                 "unlocked": false
@@ -52,7 +52,7 @@
             "box": {
                 "id": "bun_box",
                 "maxCount": 32,
-                "price": 30,
+                "price": 0,
                 "isEssential": true,
                 "unlocked": false
             },
@@ -72,7 +72,7 @@
             "box": {
                 "id": "tomato_box",
                 "maxCount": 25,
-                "price": 20,
+                "price": 0,
                 "ages": true,
                 "unlocked": false
             },
@@ -111,7 +111,7 @@
             "box": {
                 "id": "lettuce_box",
                 "maxCount": 6,
-                "price": 25,
+                "price": 0,
                 "ages": true,
                 "unlocked": false
             },
@@ -154,7 +154,7 @@
             "box": {
                 "id": "wrapper_box",
                 "maxCount": 100,
-                "price": 20,
+                "price": 0,
                 "isEssential": true
             },
             "item": {
@@ -172,7 +172,7 @@
                     "id": "fry_box",
                     "type": "Box",
                     "maxCount": 3,
-                    "price": 20,
+                    "price": 0,
                     "isEssential": true,
                     "unlocked": false,
                     "produces": "fry_bag"
@@ -295,7 +295,7 @@
             "box": {
                 "id": "side_cup_box",
                 "maxCount": 50,
-                "price": 15,
+                "price": 0,
                 "isEssential": true,
                 "unlocked": false,
                 "classification": "helper",
@@ -315,7 +315,7 @@
                     "id": "cola_box",
                     "type": "Box",
                     "maxCount": 1,
-                    "price": 40,
+                    "price": 0,
                     "produces": "cola"
                 },
                 {
@@ -357,7 +357,7 @@
                 {
                     "id": "mayo_bag",
                     "type": "SauceContainer",
-                    "price": 10,
+                    "price": 0,
                     "maxCount": 1,
                     "produces": "mayo",
                     "unlockCondition": "dispenser",
@@ -396,7 +396,7 @@
             "box": {
                 "id": "bag_box",
                 "maxCount": 50,
-                "price": 20,
+                "price": 0,
                 "isEssential": true
             },
             "item": {
@@ -473,7 +473,7 @@
             "box": {
                 "id": "onion_box",
                 "maxCount": 25,
-                "price": 20,
+                "price": 0,
                 "ages": false,
                 "unlocked": false
             },
@@ -495,25 +495,8 @@
                     "capability": "CUT_TOPPINGS"
                 },
                 "texture": "onion-slice.png",
-                "result": "onion_rings",
-                "cooking": {
-                    "stages": {
-                        "raw": {
-                            "next": "cooked",
-                            "duration": 1500,
-                            "cookMethod": "fry"
-                        }
-                    }
-                },
                 "textures": {
-                    "base": "onion-slice.png",
-                    "rules": [
-                        {
-                            "stateKey": "cook_level",
-                            "value": "cooked",
-                            "texture": "fried_onion-done.png"
-                        }
-                    ]
+                    "base": "onion-slice.png"
                 },
                 "partTexture": "onion-part.png",
                 "nudge": 2,
@@ -532,7 +515,7 @@
             "box": {
                 "id": "cheddar_box",
                 "maxCount": 4,
-                "price": 40,
+                "price": 0,
                 "produces": "cheddar_block",
                 "unlocked": false
             },
@@ -567,7 +550,7 @@
             "box": {
                 "id": "pickle_box",
                 "maxCount": 30,
-                "price": 15,
+                "price": 0,
                 "ages": false,
                 "unlocked": false,
                 "textures": {
@@ -662,7 +645,7 @@
                 {
                     "id": "bbq_bag",
                     "type": "SauceContainer",
-                    "price": 10,
+                    "price": 0,
                     "maxCount": 1,
                     "produces": "bbq",
                     "unlocked": false,
@@ -702,7 +685,7 @@
                 {
                     "id": "burger_sauce_bag",
                     "type": "SauceContainer",
-                    "price": 10,
+                    "price": 0,
                     "maxCount": 1,
                     "produces": "burger_sauce",
                     "unlocked": false,
@@ -742,7 +725,7 @@
                 {
                     "id": "ketchup_bag",
                     "type": "SauceContainer",
-                    "price": 10,
+                    "price": 0,
                     "maxCount": 1,
                     "produces": "ketchup",
                     "unlocked": false,
@@ -781,7 +764,7 @@
             "box": {
                 "id": "drink_cup_box",
                 "maxCount": 50,
-                "price": 15,
+                "price": 0,
                 "produces": "drink_cup",
                 "isEssential": false,
                 "unlocked": false,
@@ -802,7 +785,7 @@
                     "id": "hetap_box",
                     "type": "Box",
                     "maxCount": 1,
-                    "price": 40,
+                    "price": 0,
                     "produces": "hetap_syrup",
                     "unlocked": false
                 },
@@ -896,7 +879,7 @@
             "box": {
                 "id": "whole_wheat_bun_box",
                 "maxCount": 32,
-                "price": 40,
+                "price": 0,
                 "unlocked": false
             },
             "item": {
@@ -911,51 +894,7 @@
                 "texture": "bun-old.png"
             }
         },
-        {
-            "id": "chicken_patty",
-            "type": "supply_chain",
-            "box": {
-                "id": "chicken_patty_box",
-                "maxCount": 30,
-                "price": 60,
-                "toolRequirement": "HANDS",
-                "unlocked": false
-            },
-            "item": {
-                "id": "chicken_patty",
-                "category": "patty",
-                "toolRequirement": "HANDS",
-                "nudge": 5,
-                "partTexture": "chicken_patty-part.png",
-                "initialState": {
-                    "cook_level": "raw",
-                    "cookingProgress": 0
-                },
-                "cooking": {
-                    "stages": {
-                        "raw": {
-                            "next": "cooked",
-                            "duration": 15000,
-                            "cookMethod": "fry"
-                        }
-                    }
-                },
-                "textures": {
-                    "base": "chicken_patty-raw.png",
-                    "rules": [
-                        {
-                            "stateKey": "cook_level",
-                            "value": "cooked",
-                            "texture": "chicken_patty-cooked.png"
-                        }
-                    ]
-                }
-            },
-            "spoilage": {
-                "id": "patty_old",
-                "texture": "patty-old.png"
-            }
-        },
+
         {
             "id": "sweet_potato_fry",
             "type": "variant_complex",
@@ -964,7 +903,7 @@
                     "id": "sweet_potato_fry_box",
                     "type": "Box",
                     "maxCount": 3,
-                    "price": 20,
+                    "price": 0,
                     "produces": "sweet_potato_fry_bag",
                     "unlocked": false
                 },
@@ -1086,7 +1025,7 @@
             "box": {
                 "id": "bacon_box",
                 "maxCount": 12,
-                "price": 35,
+                "price": 0,
                 "ages": false,
                 "unlocked": false,
                 "texture": "bacon_box-closed.png"
@@ -1133,7 +1072,7 @@
             "box": {
                 "id": "swiss_box",
                 "maxCount": 4,
-                "price": 40,
+                "price": 0,
                 "produces": "swiss_block",
                 "unlocked": false
             },
@@ -1170,7 +1109,7 @@
                     "id": "orange_box",
                     "type": "Box",
                     "maxCount": 1,
-                    "price": 40,
+                    "price": 0,
                     "produces": "orange_syrup",
                     "unlocked": false
                 },
@@ -1210,7 +1149,7 @@
                     "id": "dr_matt_box",
                     "type": "Box",
                     "maxCount": 1,
-                    "price": 40,
+                    "price": 0,
                     "produces": "dr_matt_syrup",
                     "unlocked": false
                 },
@@ -1250,7 +1189,7 @@
                     "id": "grape_box",
                     "type": "Box",
                     "maxCount": 1,
-                    "price": 40,
+                    "price": 0,
                     "produces": "grape_syrup",
                     "unlocked": false
                 },
@@ -1290,7 +1229,7 @@
                     "id": "gingie_box",
                     "type": "Box",
                     "maxCount": 1,
-                    "price": 40,
+                    "price": 0,
                     "produces": "gingie_syrup",
                     "unlocked": false
                 },
@@ -1333,36 +1272,7 @@
                 }
             ]
         },
-        {
-            "id": "onion_products",
-            "type": "complex_group",
-            "items": [
-                {
-                    "id": "fried_onion",
-                    "type": "Ingredient",
-                    "category": "topping",
-                    "texture": "fried_onion.png",
-                    "partTexture": "fried_onion-part.png",
-                    "isTopping": true,
-                    "orderConfig": {
-                        "type": "topping",
-                        "value": 2,
-                        "capability": "ADD_FRIED_ONION"
-                    }
-                },
-                {
-                    "id": "onion_rings",
-                    "type": "Ingredient",
-                    "category": "side",
-                    "orderConfig": {
-                        "type": "side",
-                        "value": 5,
-                        "capability": "SERVE_ONION_RINGS"
-                    },
-                    "texture": "onion_rings.png"
-                }
-            ]
-        },
+
         {
             "id": "appliances",
             "type": "complex_group",

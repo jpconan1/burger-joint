@@ -4,6 +4,15 @@ import { DEFINITIONS } from '../data/definitions.js';
 import { SPRITE_DEFINITIONS } from '../data/sprite_definitions.js';
 import { TutorialOverlay } from '../renderers/TutorialOverlay.js';
 import { ACTIONS, ALT_BINDINGS } from './Settings.js';
+import * as ScreenRenderer from '../renderers/ScreenRenderer.js';
+import * as TicketRenderer from '../renderers/TicketRenderer.js';
+import * as ObjectRenderer from '../renderers/ObjectRenderer.js';
+import * as UIRenderer from '../renderers/UIRenderer.js';
+import * as EffectRenderer from '../renderers/EffectRenderer.js';
+
+
+
+
 
 export class Renderer {
     constructor(canvasId, assetLoader) {
@@ -400,8 +409,8 @@ export class Renderer {
                         tileTexture = ASSETS.TILES.DISHWASHER_OPEN;
                         // Fade if player is "behind" the tall dishwasher image
                         if (gameState.player) {
-                            const px = Math.round(gameState.player.x);
-                            const py = Math.round(gameState.player.y);
+                            const px = Math.round(gameState.player.visualX);
+                            const py = Math.round(gameState.player.visualY);
                             if (px === x && py === y - 1) {
                                 this.ctx.globalAlpha = 0.5;
                             }
@@ -450,11 +459,6 @@ export class Renderer {
                     this.drawEntity(ASSETS.OBJECTS.SODA, x, y);
                 }
 
-                // 1.6 Draw Reno Lock Overlay
-                if (cell.type.id === 'RENO_LOCKED') {
-                    this.drawTile(ASSETS.TILES.LOCKED, x, y);
-                }
-
                 // Draw Locked Overlay on Custom Menu
                 if (cell.type.id === 'MENU' && !gameState.isEndgameUnlocked) {
                     this.drawTile(ASSETS.TILES.LOCKED, x, y);
@@ -492,13 +496,13 @@ export class Renderer {
 
                         let alpha = 1.0;
                         if (cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE') {
-                            if (gameState.player) {
-                                const playerX = Math.round(gameState.player.x);
-                                const playerY = Math.round(gameState.player.y);
-                                if (playerX === x && playerY === y - 1) {
-                                    alpha = 0.5;
-                                }
+                        if (gameState.player) {
+                            const playerX = Math.round(gameState.player.visualX);
+                            const playerY = Math.round(gameState.player.visualY);
+                            if (playerX === x && playerY === y - 1) {
+                                alpha = 0.5;
                             }
+                        }
 
                             // If there is a service counter above this counter, fade items so we can see the service counter
                             if (y > 0) {
@@ -510,7 +514,8 @@ export class Renderer {
                         }
 
                         this.ctx.globalAlpha = alpha;
-                        this.drawObject(cell.object, x, y, overrideTexture, yOffset);
+                        ObjectRenderer.drawObject(this, cell.object, x, y, overrideTexture, yOffset);
+
                         this.ctx.globalAlpha = 1.0;
                     }
 
@@ -613,17 +618,13 @@ export class Renderer {
             }
 
             // Draw Player if in this row (Z-sorting)
-            if (gameState.player && Math.floor(gameState.player.y) === y) {
-                this.drawPlayer(gameState);
+            if (gameState.player && Math.round(gameState.player.visualY) === y) {
+                ObjectRenderer.drawPlayer(this, gameState);
             }
+
         }
 
-        // Draw Expand Button (Build Mode)
-        if (gameState.gameState === 'BUILD_MODE' && gameState.grid) {
-            const topRightX = gameState.grid.width - 1;
-            const topRightY = 0;
-            this.drawTile(ASSETS.UI.RENO_EXPAND, topRightX, topRightY);
-        }
+
 
         // 3. Draw Player: Handled in render loop (Z-sorted)
 
@@ -649,8 +650,10 @@ export class Renderer {
             this.drawProgressBar(pb.x, pb.y, pb.pct);
         });
 
-        this.drawEffects(gameState);
-        this.drawHangingTickets(gameState);
+        EffectRenderer.drawEffects(this, gameState);
+
+        TicketRenderer.drawHangingTickets(this, gameState);
+
 
         // --- END WORLD RENDERING ---
 
@@ -682,28 +685,30 @@ export class Renderer {
 
         // 4. Draw UI Overlays (Screen Space)
         if (gameState.isViewingOrders) {
-            this.drawOrderTickets(gameState.orders || [], gameState.pickUpKey, gameState.penalty, gameState.possibleMenu);
+            TicketRenderer.drawOrderTickets(this, gameState.orders || [], gameState.pickUpKey, gameState.penalty, gameState.possibleMenu);
         }
+
 
         // Draw Stability Meter
         drawStabilityMeter(this, gameState);
 
         // 5. Draw HUD (Screen Space)
-        this.drawHUD(gameState);
+        UIRenderer.drawHUD(this, gameState);
 
         // 6. Draw Floating Texts (World Space projected)
         if (gameState.floatingTexts) {
-            this.drawFloatingTexts(gameState.floatingTexts);
+            UIRenderer.drawFloatingTexts(this, gameState.floatingTexts);
         }
+
 
         // 7. Computer Overlay (Screen Space)
         if (gameState.gameState === 'COMPUTER_ORDERING') {
-            this.renderComputerScreen(gameState);
+            // this.renderComputerScreen(gameState);
         }
         if (gameState.gameState === 'RENO_SHOP') {
-            // console.log("Renderer: Calling renderRenoScreen");
-            this.renderRenoScreen(gameState);
+            ScreenRenderer.renderRenoScreen(this, gameState);
         }
+
 
         if (gameState.gameState === 'APPLIANCE_SWAP' && gameState.swappingState) {
             this.ctx.save();
@@ -716,7 +721,8 @@ export class Renderer {
             this.ctx.restore();
         }
 
-        this.drawControlsHelp(gameState);
+        UIRenderer.drawControlsHelp(this, gameState);
+
 
         // Render Tutorial Overlay
         if (this.tutorialOverlay) {
@@ -724,54 +730,14 @@ export class Renderer {
         }
 
         // Render Build Mode UI (Global Space)
-        if (gameState.gameState === 'BUILD_MODE' && gameState.placementState) {
-            this.renderPlacementCursor(gameState.placementState);
-            this.drawPlacementHUD(gameState.placementState, gameState);
-            if (gameState.placementState.menu) {
-                this.renderBuildMenu(gameState.placementState.menu);
-            }
-        }
+
+
     }
 
     drawPlayer(gameState) {
-        if (gameState.player) {
-            this.drawEntity(gameState.player.texture, gameState.player.x, gameState.player.y);
-
-            // Draw Tool
-            if (gameState.player.toolTexture) {
-                const rotation = Math.atan2(gameState.player.facing.y, gameState.player.facing.x) + Math.PI / 2;
-                this.drawRotatedEntity(gameState.player.toolTexture, gameState.player.x, gameState.player.y, rotation);
-            }
-
-            // Draw Held Item (ItemInstance)
-            if (gameState.player.heldItem) {
-                this.drawEntity(gameState.player.heldItem, gameState.player.x, gameState.player.y);
-            }
-
-            // Draw Held Appliance (New)
-            if (gameState.player.heldAppliance) {
-                const app = gameState.player.heldAppliance;
-                // Draw Appliance Texture
-                const texName = TILE_TYPES[app.tileType] ? TILE_TYPES[app.tileType].texture : null;
-                // Use drawObject logic or manual draw
-                if (texName) {
-                    const img = this.assetLoader.get(texName);
-                    if (img) {
-                        // Draw slightly offset (lifted)
-                        this.ctx.drawImage(img, gameState.player.x * TILE_SIZE, gameState.player.y * TILE_SIZE - 20, TILE_SIZE, TILE_SIZE);
-                    }
-                }
-
-                // Draw Attached Object on top
-                if (app.attachedObject) {
-                    this.ctx.save();
-                    this.ctx.translate(0, -20);
-                    this.drawObject(app.attachedObject, gameState.player.x, gameState.player.y);
-                    this.ctx.restore();
-                }
-            }
-        }
+        ObjectRenderer.drawPlayer(this, gameState);
     }
+
 
     findTileByType(gameState, typeId) {
         if (!gameState.grid) return null;
@@ -786,50 +752,14 @@ export class Renderer {
     }
 
     drawServiceTimer(gridX, gridY, percent) {
-        const halfTile = TILE_SIZE / 2;
-        const cx = gridX * TILE_SIZE + halfTile;
-        const cy = gridY * TILE_SIZE + halfTile;
-
-        // Dynamic Color
-        if (percent > 0.6) this.ctx.fillStyle = '#2ecc71'; // Green
-        else if (percent > 0.3) this.ctx.fillStyle = '#f1c40f'; // Yellow
-        else this.ctx.fillStyle = '#e74c3c'; // Red
-
-        this.ctx.save();
-        this.ctx.beginPath();
-        this.ctx.rect(gridX * TILE_SIZE, gridY * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-        this.ctx.clip();
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(cx, cy);
-
-        // Deplete Clockwise:
-        // Full Circle = 100%. "Missing" part grows clockwise from top.
-        // Drawn part is the "Remaining" part.
-        // Start Angle shifts clockwise. End Angle is constant at Top (1.5 PI).
-        const endAngle = 1.5 * Math.PI;
-        const startAngle = -0.5 * Math.PI + (1 - percent) * (2 * Math.PI);
-
-        // Use a large radius to cover the corners of the square
-        this.ctx.arc(cx, cy, TILE_SIZE, startAngle, endAngle);
-        this.ctx.lineTo(cx, cy);
-        this.ctx.fill();
-
-        this.ctx.restore();
+        UIRenderer.drawServiceTimer(this, gridX, gridY, percent);
     }
+
 
     drawProgressBar(x, y, percent) {
-        const px = x * TILE_SIZE + 4;
-        const py = y * TILE_SIZE - 6; // slightly above tile
-        const w = TILE_SIZE - 8;
-        const h = 4;
-
-        this.ctx.fillStyle = 'black';
-        this.ctx.fillRect(px, py, w, h);
-
-        this.ctx.fillStyle = '#00ff00';
-        this.ctx.fillRect(px + 1, py + 1, (w - 2) * percent, h - 2);
+        UIRenderer.drawProgressBar(this, x, y, percent);
     }
+
 
     drawTile(textureName, x, y, yOffset = 0) {
         if (!textureName) return;
@@ -859,231 +789,34 @@ export class Renderer {
     }
 
     drawSodaFountain(object, x, y, yOffset = 0) {
-        let texture = ASSETS.TILES.SODA_FOUNTAIN_EMPTY;
-        const status = object.state.status;
-
-        if (status === 'full') texture = ASSETS.TILES.SODA_FOUNTAIN_FULL;
-        else if (status === 'warning') texture = ASSETS.TILES.SODA_FOUNTAIN_WARNING;
-        else if (status === 'filling') texture = ASSETS.TILES.SODA_FOUNTAIN_FILLING;
-        else if (status === 'done') texture = ASSETS.TILES.SODA_FOUNTAIN_EMPTY;
-
-        // Draw Base
-        this.drawTile(texture, x, y, yOffset);
-
-        // Draw Sign
-        if (status === 'full' || status === 'warning' || status === 'filling' || status === 'done') {
-            const resultId = object.state.resultId;
-            // Fallback
-            const drinkId = resultId || (object.state.syrupId ? DEFINITIONS[object.state.syrupId]?.result : null);
-
-            if (drinkId && DEFINITIONS[drinkId] && DEFINITIONS[drinkId].sign) {
-                this.drawTile(DEFINITIONS[drinkId].sign, x, y, yOffset);
-            }
-        }
-
-        // Draw Finished Soda
-        if (status === 'done') {
-            this.drawEntity(ASSETS.OBJECTS.SODA, x, y);
-        }
+        ObjectRenderer.drawSodaFountain(this, object, x, y, yOffset);
     }
+
 
     drawDispenser(object, x, y, yOffset = 0) {
-        // Base Empty
-        this.drawTile(ASSETS.TILES.DISPENSER_EMPTY, x, y, yOffset);
-
-        const status = object.state.status;
-        if (status === 'loaded' || status === 'has_mayo') {
-            // 1. Bag
-            let bagTexture = ASSETS.OBJECTS.MAYO_BAG; // Default
-            if (object.state.bagId && DEFINITIONS[object.state.bagId]) {
-                bagTexture = DEFINITIONS[object.state.bagId].texture;
-            }
-            this.drawTile(bagTexture, x, y, yOffset);
-
-            // 2. Overlay
-            const charges = object.state.charges;
-            let texture = ASSETS.TILES.DISPENSER_PARTIAL2;
-            if (charges > 10) texture = ASSETS.TILES.DISPENSER_FULL;
-            else if (charges > 5) texture = ASSETS.TILES.DISPENSER_PARTIAL1;
-
-            this.drawTile(texture, x, y, yOffset);
-        }
+        ObjectRenderer.drawDispenser(this, object, x, y, yOffset);
     }
+
 
     drawObject(object, x, y, overrideTexture = null, yOffset = 0) {
-        if (!object) return;
-
-        // Custom Appliance Rendering
-        if (object.definitionId === 'soda_fountain') {
-            this.drawSodaFountain(object, x, y, yOffset);
-            return;
-        }
-        if (object.definitionId === 'dispenser') {
-            this.drawDispenser(object, x, y, yOffset);
-            return;
-        }
-
-        // Dynamic Burger Rendering
-        if (object.type === 'Composite' && object.definitionId !== 'burger_old' && (object.definitionId.includes('burger') || object.state.bun)) {
-            this.drawBurger(object, x, y, yOffset);
-            return;
-        }
-
-        if (object.type === 'Box') {
-            this.drawBox(object, x, y, yOffset);
-            return;
-        }
-
-        // Stackable Items (Inserts, Plates etc)
-        if (object.definition && object.definition.useStackRender) {
-            this.drawStackedItem(object, x, y, 1.0, yOffset);
-            return;
-        }
-
-        if (object.definitionId === 'dish_rack') {
-            this.drawDishRack(object, x, y, yOffset);
-            return;
-        }
-
-        const textureName = overrideTexture || object.texture;
-        if (!textureName) return;
-        const img = this.assetLoader.get(textureName);
-        if (img) {
-            // Objects also align to grid
-            this.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE + yOffset, TILE_SIZE, TILE_SIZE);
-        }
+        ObjectRenderer.drawObject(this, object, x, y, overrideTexture, yOffset);
     }
+
 
     drawDishRack(rack, x, y, yOffset = 0) {
-        const contents = rack.state.contents || [];
-        const bx = x * TILE_SIZE;
-        const by = y * TILE_SIZE + yOffset;
-
-        // 1. Base Layer
-        this.drawTile(ASSETS.TILES.DISH_RACK_BASE, x, y, yOffset);
-
-        // Plate positioning config
-        // Two rows of 3.
-        // Row 1 (Back): indices 0, 1, 2
-        // Row 2 (Front): indices 3, 4, 5
-        const plateOffsets = [
-            { dx: 12, dy: 12 }, { dx: 24, dy: 12 }, { dx: 36, dy: 12 }, // Row 1 (Back)
-            { dx: 12, dy: 28 }, { dx: 24, dy: 28 }, { dx: 36, dy: 28 } // Row 2 (Front)
-        ];
-
-        // 2. Render first row (indices 0, 1, 2)
-        for (let i = 0; i < Math.min(contents.length, 3); i++) {
-            const plate = contents[i];
-            const offset = plateOffsets[i];
-            this.drawDishRackPlate(plate, bx + offset.dx, by + offset.dy);
-        }
-
-        // 3. Layer 1 (behind back prongs/middle)
-        this.drawTile(ASSETS.TILES.DISH_RACK_LAYER1, x, y, yOffset);
-
-        // 4. Render second row (indices 3, 4, 5)
-        for (let i = 3; i < Math.min(contents.length, 6); i++) {
-            const plate = contents[i];
-            const offset = plateOffsets[i];
-            this.drawDishRackPlate(plate, bx + offset.dx, by + offset.dy);
-        }
-
-        // 5. Layer 2 (Front prongs)
-        this.drawTile(ASSETS.TILES.DISH_RACK_LAYER2, x, y, yOffset);
+        ObjectRenderer.drawDishRack(this, rack, x, y, yOffset);
     }
+
 
     drawDishRackPlate(plate, px, py) {
-        // Plates in rack need to be scaled down
-        // The plate asset is 64x64, but we need it to fit in a small slot.
-        // Scale 0.4 seems reasonable for 3 in a row.
-        const scale = 0.4;
-        const size = TILE_SIZE * scale;
-
-        const texture = plate.texture || 'plates/plate.png';
-        const img = this.assetLoader.get(texture);
-        if (img) {
-            this.ctx.drawImage(img, px, py, size, size);
-        }
-
-        // If dirty plate, draw layers
-        if (plate.definitionId === 'dirty_plate' && plate.state.dirtyLayers) {
-            plate.state.dirtyLayers.forEach(layer => {
-                const layerImg = this.assetLoader.get(layer.texture);
-                if (layerImg) {
-                    this.ctx.save();
-                    this.ctx.translate(px + size / 2, py + size / 2);
-                    this.ctx.rotate(layer.rotation);
-                    this.ctx.drawImage(layerImg, -size / 2, -size / 2, size, size);
-                    this.ctx.restore();
-                }
-            });
-        }
+        // Internal helper, not used by ObjectRenderer anymore
     }
+
 
     drawBox(object, x, y, yOffset = 0) {
-        // 1. Data-Driven Override: 
-        // If the item definition has explicit texture rules (e.g. custom jar stages),
-        // we trust getTexture() to return the correct full asset and skip generic compositing.
-        if (object.definition.textures) {
-            const tex = object.getTexture();
-            this.drawTile(tex, x, y, yOffset);
-            return;
-        }
-
-        if (object.state.isOpen) {
-            // Draw open box base
-            this.drawTile(ASSETS.OBJECTS.OPEN_BOX, x, y, yOffset);
-
-            // Draw contents
-            const def = DEFINITIONS[object.definitionId];
-            if (def && def.produces) {
-                const productDef = DEFINITIONS[def.produces];
-                if (productDef) {
-                    let productTexture = productDef.texture;
-
-                    // Aging Logic for Box Contents
-                    if (productDef.aging && object.state.age) {
-                        // 1. Is it fully spoiled?
-                        if (object.state.age >= productDef.aging.spoilAge) {
-                            const spoiledId = productDef.aging.spoiledItem;
-                            if (spoiledId && DEFINITIONS[spoiledId]) {
-                                productTexture = DEFINITIONS[spoiledId].texture;
-                            }
-                        } else if (productDef.aging.stages) {
-                            // 2. Is it wilting?
-                            const stages = productDef.aging.stages;
-                            let maxStageDay = -1;
-                            for (const [day, texture] of Object.entries(stages)) {
-                                const dayNum = parseInt(day);
-                                if (object.state.age >= dayNum && dayNum > maxStageDay) {
-                                    maxStageDay = dayNum;
-                                    productTexture = texture;
-                                }
-                            }
-                        }
-                    }
-
-                    if (!productTexture && productDef.textures) {
-                        productTexture = productDef.textures.base;
-                    }
-
-                    if (productTexture) {
-                        const img = this.assetLoader.get(productTexture);
-                        if (img) {
-                            // Scale 75%, center.
-                            const scale = 0.75;
-                            const size = TILE_SIZE * scale;
-                            const offset = (TILE_SIZE - size) / 2;
-                            this.ctx.drawImage(img, x * TILE_SIZE + offset, y * TILE_SIZE + offset + yOffset, size, size);
-                        }
-                    }
-                }
-            }
-        } else {
-            // Closed Box - use existing texture logic (e.g. patty_box-closed.png)
-            this.drawTile(object.texture, x, y, yOffset);
-        }
+        ObjectRenderer.drawBox(this, object, x, y, yOffset);
     }
+
 
     drawAutoTile(sheetName, x, y, mask, fallbackTexture) {
         const img = this.assetLoader.get(sheetName);
@@ -1110,155 +843,9 @@ export class Renderer {
     }
 
     drawStackedItem(item, x, y, scale = 1.0, yOffset = 0) {
-        const def = item.definition;
-        const count = item.state.count || 1;
-        const contents = item.state.contents;
-
-        this.ctx.save();
-
-        // Scale handling (Centered)
-        const cx = x * TILE_SIZE + TILE_SIZE / 2;
-        const cy = y * TILE_SIZE + TILE_SIZE / 2 + yOffset;
-        this.ctx.translate(cx, cy);
-        this.ctx.scale(scale, scale);
-
-        // Base coordinate (relative to center)
-        const baseX = -TILE_SIZE / 2;
-        const baseY = -TILE_SIZE / 2;
-
-        const partTexture = def.partTexture;
-        const fullTexture = def.texture;
-
-        // Use def values if present, else fallback to defaults
-        const stackNudge = def.stackNudge || 6;
-        const contentNudge = def.contentNudge || 12;
-
-        // Render from Top (Back/Farthest) to Bottom (Front/Closest)
-        // This ensures the stacking looks correct with the bottom-most item overlapping those above it visually.
-        for (let i = count - 1; i >= 0; i--) {
-            const isTop = (i === count - 1);
-            const nudgeY = i * -stackNudge;
-
-            if (isTop) {
-                // 1. Draw Base Texture (Back)
-                const imgFull = this.assetLoader.get(fullTexture);
-                if (imgFull) this.ctx.drawImage(imgFull, baseX, baseY + nudgeY, TILE_SIZE, TILE_SIZE);
-
-                // 1.5. Draw Dirty Plate Layers (if applicable)
-                if (def.id === 'dirty_plate') {
-                    const layers = item.state.dirtyLayers || [];
-                    const contentY = baseY + nudgeY;
-
-                    layers.forEach(layer => {
-                        const img = this.assetLoader.get(layer.texture);
-                        if (img) {
-                            this.ctx.save();
-                            this.ctx.translate(baseX + TILE_SIZE / 2, contentY + TILE_SIZE / 2);
-                            this.ctx.rotate(layer.rotation);
-                            this.ctx.drawImage(img, -TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
-                            this.ctx.restore();
-                        }
-                    });
-                }
-
-                // 2. Draw Contents (if any, sandwiched between base and part)
-                if (contents && contents.length > 0) {
-                    if (def.id === 'plate' || def.id === 'dirty_plate') {
-                        // Plate Logic: Render burger and side side-by-side
-                        const burger = contents.find(c => (c.definition && (c.definition.category === 'burger' || c.definitionId.includes('burger'))) || c.category === 'burger');
-                        const side = contents.find(c => c.definition && c.definition.category === 'side_prep');
-
-                        const innerScale = 0.55;
-                        const innerSize = TILE_SIZE * innerScale;
-                        const contentY = baseY + nudgeY - contentNudge;
-
-                        // 1. Draw Side first (so it appears behind/below the burger)
-                        if (side) {
-                            // Right side
-                            if (side.definitionId === 'raw_fries' || side.definitionId === 'raw_sweet_potato_fries') {
-                                // Use specialized fitted asset for fries if available
-                                const plateFriesImg = this.assetLoader.get('plates/fries-plate-part.png');
-                                if (plateFriesImg) {
-                                    this.ctx.drawImage(plateFriesImg, baseX, baseY + nudgeY, TILE_SIZE, TILE_SIZE);
-                                } else {
-                                    // Fallback if asset missing
-                                    const sideTex = side.getTexture();
-                                    const sideImg = this.assetLoader.get(sideTex);
-                                    if (sideImg) {
-                                        this.ctx.drawImage(sideImg, 0, contentY + 10, innerSize, innerSize);
-                                    }
-                                }
-                            } else {
-                                // Other sides use scaled fallback
-                                const sideTex = side.getTexture();
-                                const sideImg = this.assetLoader.get(sideTex);
-                                if (sideImg) {
-                                    this.ctx.drawImage(sideImg, 0, contentY + 10, innerSize, innerSize);
-                                }
-                            }
-                        }
-
-                        // 2. Draw Burger second (so it appears on top)
-                        if (burger) {
-                            // Left side
-                            this.drawBurgerPixels(burger, -innerSize + 4, contentY + 15, innerScale);
-                        }
-                    } else {
-                        // Standard logic for other containers
-                        const firstContent = contents[0];
-                        let contentTexture = null;
-
-                        if (firstContent.texture) {
-                            contentTexture = firstContent.texture;
-                        } else if (firstContent.definitionId && DEFINITIONS[firstContent.definitionId]) {
-                            contentTexture = DEFINITIONS[firstContent.definitionId].texture;
-                        } else if (typeof firstContent === 'string' && DEFINITIONS[firstContent]) {
-                            contentTexture = DEFINITIONS[firstContent].texture;
-                        }
-
-                        if (contentTexture) {
-                            const imgContent = this.assetLoader.get(contentTexture);
-                            if (imgContent) {
-                                const contentY = baseY + nudgeY - contentNudge;
-                                this.ctx.drawImage(imgContent, baseX, contentY, TILE_SIZE, TILE_SIZE);
-                            }
-                        }
-                    }
-                }
-
-                // 3. Draw Part Texture (Front/Top Layer)
-                if (partTexture) {
-                    const imgPart = this.assetLoader.get(partTexture);
-                    if (imgPart) this.ctx.drawImage(imgPart, baseX, baseY + nudgeY, TILE_SIZE, TILE_SIZE);
-                }
-
-                // 4. Optional Label (Age/Status)
-                // We keep this generic but check if the definition requests it (insert uses this)
-                if (def.showLabel !== false && contents && contents.length > 0 && contents[0].age === 1) {
-                    const labelAsset = def.labelAsset || ASSETS.UI.INSERT_LABEL;
-                    const imgLabel = this.assetLoader.get(labelAsset);
-                    if (imgLabel) {
-                        this.ctx.drawImage(imgLabel, baseX, baseY + nudgeY, TILE_SIZE, TILE_SIZE);
-                    }
-                }
-
-            } else if (partTexture) {
-                // Non-top items: Just draw the partTexture to simulate stack depth
-                const img = this.assetLoader.get(partTexture);
-                if (img) {
-                    this.ctx.drawImage(img, baseX, baseY + nudgeY, TILE_SIZE, TILE_SIZE);
-                }
-            }
-        }
-
-        this.ctx.restore();
-
-        // Draw Quantity Number (number of items inside the container)
-        // Plates don't show the count as they are purely visual/served containers
-        if (contents && contents.length > 0 && !['plate', 'dirty_plate'].includes(def.id) && def.showLabel !== false) {
-            this.drawTinyNumber(x, y, contents.length);
-        }
+        ObjectRenderer.drawStackedItem(this, item, x, y, scale, yOffset);
     }
+
 
     drawRotatedTile(textureName, x, y, rotation) {
         if (!textureName) return;
@@ -1276,465 +863,41 @@ export class Renderer {
     }
 
     drawEntity(itemOrTexture, x, y, scale = 1.0) {
-        if (!itemOrTexture) return;
-
-        // Apply Scaling if needed (Centered)
-        if (scale !== 1.0) {
-            this.ctx.save();
-            const cx = x * TILE_SIZE + TILE_SIZE / 2;
-            const cy = y * TILE_SIZE + TILE_SIZE / 2;
-            this.ctx.translate(cx, cy);
-            this.ctx.scale(scale, scale);
-            this.ctx.translate(-cx, -cy);
-        }
-
-        // Check if it's an Item object
-        if (typeof itemOrTexture === 'object' && itemOrTexture.definitionId) {
-            if (itemOrTexture.type === 'Composite' && itemOrTexture.definitionId !== 'burger_old' && (itemOrTexture.definitionId.includes('burger') || itemOrTexture.state.bun)) {
-                this.drawBurger(itemOrTexture, x, y);
-            } else if (itemOrTexture.type === 'Box') {
-                this.drawBox(itemOrTexture, x, y);
-            } else if (itemOrTexture.definitionId === 'dish_rack') {
-                this.drawDishRack(itemOrTexture, x, y, 0);
-            } else if (itemOrTexture.definitionId === 'insert' || (itemOrTexture.definition && itemOrTexture.definition.useStackRender)) {
-                this.drawStackedItem(itemOrTexture, x, y, scale);
-            } else {
-                // Fallback to texture property
-                const textureName = itemOrTexture.texture;
-                if (textureName) {
-                    const img = this.assetLoader.get(textureName);
-                    if (img) {
-                        this.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                    }
-                }
-            }
-        } else {
-            // It's a string (texture name)
-            const textureName = itemOrTexture;
-            const img = this.assetLoader.get(textureName);
-            if (img) {
-                // Interpolation could go here later, for now snap to grid
-                this.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-            }
-        }
-
-        if (scale !== 1.0) {
-            this.ctx.restore();
-        }
+        ObjectRenderer.drawEntity(this, itemOrTexture, x, y, scale);
     }
+
 
     drawRotatedEntity(textureName, x, y, rotation) {
-        if (!textureName) return;
-        const img = this.assetLoader.get(textureName);
-        if (img) {
-            const centerX = x * TILE_SIZE + TILE_SIZE / 2;
-            const centerY = y * TILE_SIZE + TILE_SIZE / 2;
-
-            this.ctx.save();
-            this.ctx.translate(centerX, centerY);
-            this.ctx.rotate(rotation);
-            this.ctx.drawImage(img, -TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
-            this.ctx.restore();
-        }
+        ObjectRenderer.drawRotatedEntity(this, textureName, x, y, rotation);
     }
+
 
     drawAnimatedSprite(defId, x, y, startTime = 0, overridePixelX = null, overridePixelY = null) {
-        const def = SPRITE_DEFINITIONS[defId];
-        if (!def) return;
-
-        // Resolve Texture
-        let textureName = def.texture;
-
-        const img = this.assetLoader.get(textureName);
-        if (!img) return;
-
-        // Calculate Frame
-        const elapsed = Date.now() - startTime;
-        let frameIndex = 0;
-
-        if (def.loop) {
-            // Line Boil / Loop
-            const totalFrames = def.frameCount;
-            const period = totalFrames * (def.duration || 100);
-            const t = elapsed % period;
-            frameIndex = Math.floor(t / (def.duration || 100));
-        } else {
-            const totalFrames = def.frameCount;
-            frameIndex = Math.floor(elapsed / (def.duration || 100));
-            if (frameIndex >= totalFrames) frameIndex = totalFrames - 1;
-        }
-
-        const fw = def.frameWidth;
-        const fh = def.frameHeight;
-        const sx = frameIndex * fw;
-        const sy = 0;
-
-        let destX, destY;
-
-        if (overridePixelX !== null && overridePixelY !== null) {
-            destX = overridePixelX;
-            destY = overridePixelY;
-        } else {
-            // Grid-based default behavior
-            destX = x * TILE_SIZE;
-            destY = y * TILE_SIZE;
-            const offsetX = (TILE_SIZE - fw) / 2;
-            const offsetY = (TILE_SIZE - fh) / 2;
-            destX += offsetX;
-            destY += offsetY;
-        }
-
-        this.ctx.drawImage(img, sx, sy, fw, fh, destX, destY, fw, fh);
+        ObjectRenderer.drawAnimatedSprite(this, defId, x, y, startTime, overridePixelX, overridePixelY);
     }
+
 
 
 
     renderTitleScreen(selection = 0) {
-        // Ensure fullscreen
-        if (this.canvas.width !== window.innerWidth || this.canvas.height !== window.innerHeight) {
-            this.resizeCanvas();
-        }
-
-        const bgImg = this.assetLoader.get(ASSETS.UI.CRUMPLED_PAPER_BACKGROUND);
-        if (bgImg) {
-            this.ctx.drawImage(bgImg, 0, 0, this.canvas.width, this.canvas.height);
-        } else {
-            this.ctx.fillStyle = '#e1d2d2'; // Fallback to light paper color
-            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        }
-
-        // Title
-        this.ctx.save();
-        const centerX = this.canvas.width / 2;
-        const titleY = this.canvas.height / 3 - 40;
-
-        this.ctx.translate(centerX, titleY);
-        this.ctx.rotate(-5 * Math.PI / 180); // Slight tilt
-
-        this.ctx.font = '900 80px "Inter", sans-serif';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        this.ctx.lineJoin = 'round';
-        this.ctx.miterLimit = 2; // Fix spikes
-
-        // Stroke
-        // Stroke
-        this.ctx.lineWidth = 42; // SUPER THICK
-        this.ctx.strokeStyle = '#000';
-        this.ctx.strokeText('BURGER JOINT!', 0, 0);
-
-        // Fill
-        this.ctx.fillStyle = '#fff';
-        this.ctx.fillText('BURGER JOINT!', 0, 0);
-
-        this.ctx.restore();
-
-        // Options
-        this.ctx.font = '900 40px "Inter", sans-serif';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        this.ctx.lineWidth = 28;
-        this.ctx.lineJoin = 'round';
-        this.ctx.strokeStyle = '#000';
-
-        const startY = this.canvas.height / 2 + 30; // Push down a bit
-        const spacing = 60;
-
-        const options = ['New Game', 'Settings'];
-
-        options.forEach((opt, index) => {
-            const y = startY + (index * spacing);
-            const isSelected = (selection === index);
-
-            this.ctx.strokeText(opt, centerX, y);
-
-            this.ctx.fillStyle = isSelected ? '#00FF7F' : '#fff'; // Spring Green if selected
-            this.ctx.fillText(opt, centerX, y);
-
-            if (isSelected) {
-                // Double stroke for selected? Or just color change. Color change is requested.
-            }
-        });
-
-        // Controls hint
-        this.ctx.font = '900 18px "Inter", sans-serif';
-        this.ctx.lineWidth = 12;
-        this.ctx.fillStyle = '#fff';
-
-        const hintY = this.canvas.height - 40;
-        const hintText1 = 'WASD / Arrows to Navigate';
-        const hintText2 = 'ENTER / SPACE to Select';
-
-        this.ctx.strokeText(hintText1, centerX, hintY - 25);
-        this.ctx.fillText(hintText1, centerX, hintY - 25);
-
-        this.ctx.strokeText(hintText2, centerX, hintY);
-        this.ctx.fillText(hintText2, centerX, hintY);
+        ScreenRenderer.renderTitleScreen(this, selection);
     }
+
 
     renderSettingsMenu(state, settings) {
-        // Ensure fullscreen
-        if (this.canvas.width !== window.innerWidth || this.canvas.height !== window.innerHeight) {
-            this.resizeCanvas();
-        }
-
-        // state: { selectedIndex, rebindingAction }
-        const bgImg = this.assetLoader.get(ASSETS.UI.CRUMPLED_PAPER_BACKGROUND);
-        if (bgImg) {
-            this.ctx.drawImage(bgImg, 0, 0, this.canvas.width, this.canvas.height);
-        } else {
-            this.ctx.fillStyle = '#e1d2d2';
-            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        }
-
-        this.ctx.fillStyle = '#000';
-        this.ctx.textAlign = 'center';
-
-        this.ctx.font = '32px Arial';
-        this.ctx.fillText('Controls', this.canvas.width / 2, 50);
-
-        // 1. Audio Settings
-        this.ctx.textAlign = 'left';
-        this.ctx.font = '24px Arial';
-        this.ctx.fillStyle = '#333';
-        this.ctx.fillText("Audio", 100, 100);
-
-        const audioOptions = [
-            { label: 'Music', key: 'musicEnabled' },
-            { label: 'SFX', key: 'sfxEnabled' }
-        ];
-
-        let currentY = 140;
-        const rowHeight = 40;
-
-        audioOptions.forEach((opt, index) => {
-            // Index match?
-            // Global index 0 = Music, 1 = SFX
-            const isSelected = (state.selectedIndex === index);
-            const val = settings.preferences[opt.key];
-
-            if (isSelected) {
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-                this.ctx.fillRect(100, currentY - 25, this.canvas.width - 200, rowHeight);
-                this.ctx.fillStyle = '#d35400';
-            } else {
-                this.ctx.fillStyle = '#444';
-            }
-
-            this.ctx.font = '20px Monospace';
-            this.ctx.fillText(opt.label, 120, currentY);
-
-            this.ctx.textAlign = 'right';
-            const statusText = val ? "ON" : "OFF";
-            this.ctx.fillStyle = val ? '#27ae60' : '#c0392b'; // Darker Green/Red
-            this.ctx.fillText(statusText, this.canvas.width - 120, currentY);
-
-            this.ctx.textAlign = 'left';
-            currentY += rowHeight;
-        });
-
-        // 2. Controls
-        currentY += 20; // Spacer
-        this.ctx.font = '24px Arial';
-        this.ctx.fillStyle = '#333';
-        this.ctx.fillText("Key Bindings", 100, currentY);
-        currentY += 40;
-
-        const bindings = settings.bindings;
-        const displayOrder = [
-            'MOVE_UP', 'MOVE_DOWN', 'MOVE_LEFT', 'MOVE_RIGHT',
-            'INTERACT', 'PICK_UP', 'VIEW_ORDERS',
-            'EQUIP_1', 'EQUIP_2', 'EQUIP_3', 'EQUIP_4'
-        ];
-
-        this.ctx.font = '20px Monospace';
-
-        displayOrder.forEach((action, i) => {
-            // Index offset by 2
-            const globalIndex = i + 2;
-            const isSelected = (state.selectedIndex === globalIndex);
-            const isRebinding = (action === state.rebindingAction);
-
-            const y = currentY;
-
-            if (isSelected) {
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-                this.ctx.fillRect(100, y - 25, this.canvas.width - 200, rowHeight);
-                this.ctx.fillStyle = '#d35400';
-            } else {
-                this.ctx.fillStyle = '#444';
-            }
-
-            // Action Name
-            let niceName = action.replace(/_/g, ' ');
-            if (action === 'VIEW_ORDERS') niceName = 'SHOW TICKET';
-            this.ctx.fillText(niceName, 120, y);
-
-            // Key Binding
-            this.ctx.textAlign = 'right';
-            let keyParams = bindings[action];
-            if (isRebinding) {
-                this.ctx.fillStyle = '#27ae60';
-                this.ctx.fillText('PRESS KEY...', this.canvas.width - 120, y);
-            } else {
-                // Formatting key code
-                let displayKey = keyParams ? keyParams.replace('Key', '').replace('Digit', '') : '???';
-                this.ctx.fillText(displayKey, this.canvas.width - 120, y);
-            }
-            this.ctx.textAlign = 'left';
-
-            currentY += rowHeight;
-        });
-
-        // 3. Alternate Controls (Read Only)
-        currentY += 20;
-        this.ctx.fillStyle = '#333';
-        this.ctx.font = '24px Arial';
-        this.ctx.fillText("Alternative Controls", 100, currentY);
-        currentY += 30;
-
-        Object.keys(ALT_BINDINGS).forEach((action, i) => {
-            const key = ALT_BINDINGS[action].replace('Key', '').replace('Arrow', '');
-            let niceName = action.replace(/_/g, ' ');
-            if (action === 'VIEW_ORDERS') niceName = 'SHOW TICKET';
-
-            this.ctx.font = '16px Monospace';
-            this.ctx.fillStyle = '#666';
-            this.ctx.fillText(niceName, 120, currentY);
-
-            this.ctx.textAlign = 'right';
-            this.ctx.fillText(key, this.canvas.width - 120, currentY);
-            this.ctx.textAlign = 'left';
-
-            currentY += 25;
-        });
-
-        // Instructions
-        this.ctx.textAlign = 'center';
-        this.ctx.fillStyle = '#333';
-        this.ctx.font = '16px Arial';
-        this.ctx.fillText('Use Arrows/WASD to Navigate. ENTER to Rebind. ESC to Back.', this.canvas.width / 2, this.canvas.height - 30);
+        ScreenRenderer.renderSettingsMenu(this, state, settings);
     }
+
 
     drawOrderTickets(orders, pickUpKey, penalty, menuItems) {
-        const ticketImg = this.assetLoader.get(ASSETS.UI.ORDER_TICKET);
-        if (!ticketImg) return;
-
-        this.ctx.save();
-        // 1. Darken Background
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // 2. Setup Layout
-        // Max tickets per row: 6. 
-        // If more than 6, wrap.
-        const scale = 2.0; // Smaller scale
-        const ticketW = ticketImg.width * scale;
-        const ticketH = ticketImg.height * scale;
-        const spacingX = 20;
-        const spacingY = 20;
-
-        const maxPerRow = 6;
-        const totalW = Math.min(orders.length, maxPerRow) * (ticketW + spacingX) - spacingX;
-
-        let startX = (this.canvas.width - totalW) / 2;
-        let startY = 100;
-
-        // 3. Draw Each Ticket
-        orders.forEach((order, index) => {
-            const col = index % maxPerRow;
-            const row = Math.floor(index / maxPerRow);
-
-            const x = startX + col * (ticketW + spacingX);
-            const y = startY + row * (ticketH + spacingY);
-
-            // Deterministic "Random" Jitter
-            // Use index to create consistent but organic offsets
-            const angle = (Math.sin(index * 997) * 0.1); // +/- 0.1 radians (~5 degrees)
-            const offsetY = Math.cos(index * 457) * 10; // +/- 10px vertical bounce
-
-            this.drawSingleTicket(ticketImg, x, y + offsetY, ticketW, ticketH, angle, order);
-        });
-
-        const displayKey = pickUpKey ? pickUpKey.replace('Key', '').replace('Digit', '') : '???';
-
-        if (orders.length === 0) {
-            this.ctx.fillStyle = '#fff';
-            this.ctx.font = '24px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            this.ctx.fillText(`Press [${displayKey}] to finish day!`, this.canvas.width / 2, this.canvas.height / 2);
-        } else {
-            this.ctx.fillStyle = '#ffaaaa';
-            this.ctx.font = 'bold 18px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'bottom';
-            this.ctx.shadowColor = 'black';
-            this.ctx.shadowBlur = 4;
-            this.ctx.fillText(`Press [${displayKey}] to end day.`, this.canvas.width / 2, this.canvas.height - 40);
-        }
-
-        if (menuItems && menuItems.length > 0) {
-            this.ctx.fillStyle = '#ddd';
-            this.ctx.font = '16px Monospace';
-            this.ctx.textAlign = 'left';
-            this.ctx.textBaseline = 'bottom';
-
-            const startX = 20;
-            // Draw above the bottom edge, avoiding overlap with center text
-            let startY = this.canvas.height - 20;
-
-            this.ctx.fillText("Available Items:", startX, startY - (menuItems.length * 20) - 5);
-
-            menuItems.forEach((item, index) => {
-                this.ctx.fillText(`- ${item}`, startX, startY - ((menuItems.length - 1 - index) * 20));
-            });
-        }
-
-        this.ctx.restore();
+        TicketRenderer.drawOrderTickets(this, orders, pickUpKey, penalty, menuItems);
     }
+
 
     drawSingleTicket(img, x, y, w, h, angle, order) {
-        this.ctx.save();
-
-        // Pivot around center of ticket for rotation
-        const cx = x + w / 2;
-        const cy = y + h / 2;
-
-        this.ctx.translate(cx, cy);
-        this.ctx.rotate(angle);
-        this.ctx.translate(-cx, -cy);
-
-        // Draw Ticket
-        this.ctx.drawImage(img, x, y, w, h);
-
-        // Active ticket highlight removed
-
-        // Draw Text
-        this.ctx.fillStyle = '#000';
-        this.ctx.font = '14px Monospace'; // Smaller font
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'top';
-
-        const padding = 15;
-        this.ctx.fillText(`#${order.id}`, cx, y + padding);
-
-        this.ctx.font = '12px Monospace';
-        this.ctx.textAlign = 'left';
-
-        // Left margin relative to the ticket's top-left
-        const leftMargin = x + 25;
-        let textY = y + padding + 25;
-
-        if (order.items) {
-            order.items.forEach(item => {
-                this.ctx.fillText(item, leftMargin, textY);
-                textY += 14;
-            });
-        }
-
-        this.ctx.restore();
+        TicketRenderer.drawSingleTicket(this, img, x, y, w, h, angle, order);
     }
+
 
     drawLightingEffect(width, height, opacity = 1.0) {
         this.ctx.save();
@@ -1766,364 +929,39 @@ export class Renderer {
 
 
     drawControlsHelp(gameState) {
-        if (!gameState.grid) return;
-        // Don't show in Title or Settings (though grid is usually null there anyway)
-        if (gameState.gameState === 'TITLE' || gameState.gameState === 'SETTINGS') return;
-
-        const gridPixelHeight = gameState.grid.height * TILE_SIZE;
-        // Use the offsets calculated in render()
-        // We need to position relative to the grid, but draw in screen space (no translation needed if using calculated offsets?)
-        // The offsets this.offsetX and this.offsetY are the top-left of the grid.
-
-        const y = this.offsetY + gridPixelHeight + 35;
-        const centerX = this.canvas.width / 2;
-
-        this.ctx.save();
-        this.ctx.fillStyle = '#aaa';
-        this.ctx.font = '16px Monospace';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'top';
-
-        if (gameState.settings) {
-            const getBind = (action) => {
-                let k = gameState.settings.getBinding(action);
-                return k ? k.replace('Key', '').replace('Digit', '') : '???';
-            };
-
-            const iKey = getBind('INTERACT');
-            const pKey = getBind('PICK_UP');
-            const vKey = getBind('VIEW_ORDERS');
-
-            this.ctx.fillText(`MOVE: WASD | INTERACT: ${iKey} | PICK UP: ${pKey} | SHOW TICKET: ${vKey}`, centerX, y);
-
-            // Day Counter
-            this.ctx.font = 'bold 16px Monospace';
-            this.ctx.fillStyle = '#ffffff';
-            this.ctx.fillText(`Day ${gameState.dayNumber}`, centerX, y + 25);
-        }
-
-        this.ctx.restore();
+        UIRenderer.drawControlsHelp(this, gameState);
     }
+
 
     drawHUD(gameState) {
-        // Placement Mode HUD
-        if (gameState.placementState && gameState.placementState.active) {
-            this.drawPlacementHUD(gameState.placementState, gameState);
-            return;
-        }
-
-        this.ctx.save();
-        this.ctx.font = '20px Arial';
-        this.ctx.textBaseline = 'top';
-
-        // High Score Display (Top Right)
-        const scoreText = `HIGH SCORE: ${gameState.highScore || 0}`;
-        const runText = `RUN: ${gameState.sessionTickets || 0}`;
-
-        this.ctx.textAlign = 'right';
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.strokeStyle = 'black';
-        this.ctx.lineWidth = 3;
-        this.ctx.lineJoin = 'round';
-        this.ctx.miterLimit = 2;
-
-        // Stroke
-        this.ctx.strokeText(scoreText, this.canvas.width - 20, 10);
-        this.ctx.strokeText(runText, this.canvas.width - 20, 40);
-
-        // Fill
-        this.ctx.fillStyle = '#ffcc00'; // Gold for High Score
-        this.ctx.fillText(scoreText, this.canvas.width - 20, 10);
-
-        this.ctx.fillStyle = '#ffffff'; // White for Current Run
-        this.ctx.fillText(runText, this.canvas.width - 20, 40);
-
-        // Next Ticket Timer (Debug/Playtest)
-        if (gameState.isDayActive && !gameState.isPrepTime && typeof gameState.timeToNextTicket !== 'undefined') {
-            const nextTicketText = `NEXT TICKET: ${gameState.timeToNextTicket.toFixed(1)}s`;
-            this.ctx.strokeText(nextTicketText, this.canvas.width - 20, 70);
-            this.ctx.fillStyle = '#00ff00';
-            this.ctx.fillText(nextTicketText, this.canvas.width - 20, 70);
-
-            // XP Display
-            const xpText = `LEVEL ${gameState.level} (${gameState.xp}/${gameState.xpToNextLevel} XP)`;
-            this.ctx.strokeText(xpText, this.canvas.width - 20, 100);
-            this.ctx.fillStyle = '#ffd700';
-            this.ctx.fillText(xpText, this.canvas.width - 20, 100);
-        }
-
-        this.ctx.restore();
-        this.drawPauseButton(gameState);
+        UIRenderer.drawHUD(this, gameState);
     }
+
+
 
     drawPauseButton(gameState) {
-        this.ctx.save();
-        this.ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset for screen space
-        
-        const x = 20;
-        const y = 20;
-        const size = 40;
-        
-        // Button Background
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        this.ctx.strokeStyle = '#ffffff';
-        this.ctx.lineWidth = 2;
-        this.ctx.beginPath();
-        if (this.ctx.roundRect) {
-            this.ctx.roundRect(x, y, size, size, 5);
-        } else {
-            this.ctx.rect(x, y, size, size);
-        }
-        this.ctx.fill();
-        this.ctx.stroke();
-        
-        // Pause/Play Icon
-        this.ctx.fillStyle = '#ffffff';
-        if (gameState.gameState === 'PAUSED') {
-            // Play Icon (Triangle)
-            this.ctx.beginPath();
-            this.ctx.moveTo(x + 15, y + 10);
-            this.ctx.lineTo(x + 30, y + 20);
-            this.ctx.lineTo(x + 15, y + 30);
-            this.ctx.closePath();
-            this.ctx.fill();
-        } else {
-            // Pause Icon (Bars)
-            this.ctx.fillRect(x + 13, y + 12, 5, 16);
-            this.ctx.fillRect(x + 22, y + 12, 5, 16);
-        }
-        
-        this.ctx.restore();
-
-        // Store button hit box for mouse handling
-        this.pauseButtonRect = { x: x, y: y, width: size, height: size };
+        UIRenderer.drawPauseButton(this, gameState);
     }
+
 
     renderPauseScreen(gameState) {
-        this.ctx.save();
-        this.ctx.setTransform(1, 0, 0, 1, 0, 0); // Screen space
-
-        // Overlay
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // Text
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        
-        // PAUSED Text
-        this.ctx.font = 'bold 72px Arial';
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 8;
-        this.ctx.lineJoin = 'round';
-        this.ctx.strokeText('PAUSED', this.canvas.width / 2, this.canvas.height / 2 - 40);
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.fillText('PAUSED', this.canvas.width / 2, this.canvas.height / 2 - 40);
-
-        // Subtext
-        this.ctx.font = '24px Arial';
-        const resumeText = `Press ESC or Click anywhere to Resume`;
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 4;
-        this.ctx.strokeText(resumeText, this.canvas.width / 2, this.canvas.height / 2 + 40);
-        this.ctx.fillStyle = '#ffcc00';
-        this.ctx.fillText(resumeText, this.canvas.width / 2, this.canvas.height / 2 + 40);
-
-        this.ctx.restore();
+        ScreenRenderer.renderPauseScreen(this, gameState);
     }
 
-    drawPlacementHUD(state, gameState) {
-        this.ctx.save();
-        this.ctx.font = '24px Arial';
-        this.ctx.fillStyle = 'white';
-        this.ctx.textAlign = 'center';
-        this.ctx.shadowColor = 'black';
-        this.ctx.shadowBlur = 4;
 
-        let statusText = "BUILD MODE";
-        if (state.heldItem) {
-            statusText = `PLACING: ${state.heldItem.tileType}`;
-        } else {
-            statusText = "BUILD MODE - Drag & Drop";
-        }
 
-        if (state.menu && state.menu.active) {
-            statusText = "MENU OPEN";
-        }
 
-        this.ctx.fillText(statusText, this.canvas.width / 2, 30);
-        this.ctx.font = '16px Arial';
-        this.ctx.fillText('Move: WASD | Pick/Place: SPACE | Menu: ENTER | Exit: ESC', this.canvas.width / 2, 60);
-
-        // Expansion Hint
-        if (gameState) {
-            const expItem = gameState.shopItems.find(i => i.id === 'expansion');
-            if (expItem) {
-                this.ctx.fillStyle = '#ffd700';
-                this.ctx.fillText(`[X] Expand Kitchen`, this.canvas.width / 2, 85);
-            }
-        }
-
-        this.ctx.restore();
-    }
-
-    renderPlacementCursor(state) {
-        if (!state.active) return;
-
-        // Debugging Cursor Visibility
-        // console.log(`Rendering Cursor: X=${state.x}, Y=${state.y}, Active=${state.active}`);
-
-        // This method renders the cursor which belongs to the GRID coordinates.
-        // We must apply the same offset!
-
-        this.ctx.save();
-        this.ctx.translate(this.offsetX, this.offsetY);
-
-        const img = this.assetLoader.get(ASSETS.UI.SELECTOR);
-        if (!img) {
-            console.warn("Cursor Image (SELECTOR) not found in AssetLoader!");
-        }
-        if (img) {
-            // Pulse effect?
-            const pulse = 1.0 + Math.sin(Date.now() / 200) * 0.1;
-            const size = TILE_SIZE * pulse;
-            const offset = (size - TILE_SIZE) / 2;
-
-            this.ctx.drawImage(img,
-                state.x * TILE_SIZE - offset,
-                state.y * TILE_SIZE - offset,
-                size, size
-            );
-        }
-
-        // Draw ghost of the item being placed?
-        if (state.heldItem && state.heldItem.tileType) {
-            const tileTx = ASSETS.TILES[state.heldItem.tileType];
-            if (tileTx) {
-                const tImg = this.assetLoader.get(tileTx);
-                if (tImg) {
-                    this.ctx.save();
-                    this.ctx.globalAlpha = 0.5;
-                    this.ctx.drawImage(tImg, state.x * TILE_SIZE, state.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                    this.ctx.restore();
-                }
-            }
-
-            // Draw attached object ghost on top
-            if (state.heldItem.attachedObject) {
-                this.ctx.save();
-                this.ctx.globalAlpha = 0.5;
-                this.drawObject(state.heldItem.attachedObject, state.x, state.y);
-                this.ctx.restore();
-            }
-        }
-
-        this.ctx.restore();
-    }
-
-    renderBuildMenu(menu) {
-        if (!menu || !menu.active) return;
-
-        // Draw Menu Overlay near the cursor (grid coords in menu.x, menu.y)
-        // Need to project to screen space
-        // We can reuse this.offsetX/Y from the last render pass?
-        // Yes, render() sets them.
-
-        const gridX = menu.x;
-        const gridY = menu.y;
-
-        const screenX = this.offsetX + (gridX * TILE_SIZE) + TILE_SIZE; // Right of cursor
-        const screenY = this.offsetY + (gridY * TILE_SIZE);
-
-        this.ctx.save();
-        this.ctx.translate(screenX, screenY);
-
-        this.ctx.font = '16px Monospace'; // Set font first for measurement
-
-        // Calculate dynamic width
-        let maxTextWidth = 0;
-        menu.options.forEach(opt => {
-            const text = `> ${opt.label}`;
-            const metrics = this.ctx.measureText(text);
-            if (metrics.width > maxTextWidth) maxTextWidth = metrics.width;
-        });
-
-        // Ensure enough padding (10px left + text + 10px right)
-        // Keep minimum width of 200 for consistency
-        const width = Math.max(200, maxTextWidth + 20);
-        const height = menu.options.length * 30 + 10;
-
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-        this.ctx.strokeStyle = '#ffd700';
-        this.ctx.lineWidth = 2;
-
-        // Prevent going off screen (basic clamp)
-        // (Skipped for brevity, assume centered kitchen)
-
-        this.ctx.fillRect(0, 0, width, height);
-        this.ctx.strokeRect(0, 0, width, height);
-
-        // Options
-        this.ctx.textAlign = 'left';
-        this.ctx.textBaseline = 'middle';
-
-        menu.options.forEach((opt, i) => {
-            const isSelected = i === menu.selectedIndex;
-            const y = 5 + i * 30 + 15;
-
-            if (isSelected) {
-                this.ctx.fillStyle = '#ffd700';
-                this.ctx.fillText(`> ${opt.label}`, 10, y);
-            } else {
-                this.ctx.fillStyle = 'white';
-                this.ctx.fillText(`  ${opt.label}`, 10, y);
-            }
-        });
-
-        this.ctx.restore();
-    }
 
 
     drawFloatingTexts(texts) {
-        this.ctx.save();
-        this.ctx.font = 'bold 16px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.shadowColor = 'black';
-        this.ctx.shadowBlur = 2;
-
-        // Apply World Transform
-        this.ctx.translate(this.offsetX, this.offsetY);
-
-        texts.forEach(ft => {
-            const px = ft.x * TILE_SIZE + TILE_SIZE / 2;
-            const py = ft.y * TILE_SIZE;
-
-            this.ctx.fillStyle = ft.color;
-            this.ctx.strokeStyle = 'black';
-            this.ctx.lineWidth = 3;
-            this.ctx.strokeText(ft.text, px, py);
-            this.ctx.fillText(ft.text, px, py);
-        });
-
-        this.ctx.restore();
+        UIRenderer.drawFloatingTexts(this, texts);
     }
+
 
     drawTinyNumber(gridX, gridY, number) {
-        const x = gridX * TILE_SIZE + TILE_SIZE - 4;
-        const y = gridY * TILE_SIZE + TILE_SIZE - 4;
-
-        this.ctx.save();
-        this.ctx.font = 'bold 14px Arial';
-        this.ctx.textAlign = 'right';
-        this.ctx.textBaseline = 'bottom';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeStyle = 'black';
-        this.ctx.fillStyle = 'white';
-
-        this.ctx.strokeText(number, x, y);
-        this.ctx.fillText(number, x, y);
-        this.ctx.restore();
+        UIRenderer.drawTinyNumber(this, gridX, gridY, number);
     }
+
 
 
 
@@ -2132,490 +970,40 @@ export class Renderer {
 
 
     renderRenoScreen(gameState) {
-        // Background
-        this.ctx.save();
-        const renoBg = this.assetLoader.get(ASSETS.UI.RENO_MENU_BG);
-        if (renoBg) {
-            this.ctx.drawImage(renoBg, 0, 0, this.canvas.width, this.canvas.height);
-        } else {
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
-            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        }
-
-        // Title
-        this.ctx.fillStyle = '#fff';
-        this.ctx.font = '32px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'top';
-        this.ctx.fillText("RENO SHOP", this.canvas.width / 2, 40);
-
-
-
-        // Filter items
-        // Note: Sort order is Action (0,1) -> Appliances (2+) due to Game.js sortShopItems
-        const items = gameState.shopItems.filter(i => i.type === 'appliance' || i.type === 'action');
-        const selectedIndex = gameState.selectedRenoIndex || 0;
-
-        // Layout Constants
-        const startY = 120;
-        const buttonH = 120;
-        const gap = 30;
-        const cols = 3; // New: 3 Columns
-        const gridSize = 120;
-
-        // Total Width Calculation
-        // Grid: 3x 120 + 2x Gap
-        const gridW = cols * gridSize + (cols - 1) * gap;
-        const startX = (this.canvas.width - gridW) / 2;
-
-        // Draw Items
-        items.forEach((item, index) => {
-            let x = 0;
-            let y = 0;
-            let w = 0;
-            let h = buttonH; // Default height
-
-            if (index === 0) {
-                // Build Mode (Left)
-                // Spans first 2 columns (0, 1)
-                // Width = 2 * gridSize + gap
-                x = startX;
-                y = startY;
-                w = gridSize * 2 + gap;
-            } else if (index === 1) {
-                // Expand (Right)
-                // Spans last column (2)
-                x = startX + (gridSize * 2 + gap) + gap;
-                y = startY;
-                w = gridSize;
-            } else {
-                // Grid Items (Index 2+)
-                const gridIdx = index - 2;
-                const col = gridIdx % cols;
-                const row = Math.floor(gridIdx / cols);
-                x = startX + col * (gridSize + gap);
-                y = startY + buttonH + gap + row * (gridSize + gap);
-                w = gridSize;
-            }
-
-            const isSelected = (index === selectedIndex);
-
-            // 1. Draw Background / Button Asset
-            let bgAsset = null;
-            if (item.id === 'build_mode') bgAsset = ASSETS.UI.RENO_BUILD_MODE;
-            else if (item.id === 'expansion') bgAsset = ASSETS.UI.RENO_EXPAND;
-            else bgAsset = ASSETS.UI.RENO_ITEM_BG;
-
-            const bgImg = this.assetLoader.get(bgAsset);
-            if (bgImg) {
-                this.ctx.drawImage(bgImg, x, y, w, h);
-            } else {
-                // Fallback
-                this.ctx.fillStyle = '#555';
-                this.ctx.fillRect(x, y, w, h);
-            }
-
-            // 2. Draw Icon (if appliance)
-            if (item.uiAsset && item.type === 'appliance') {
-                const icon = this.assetLoader.get(ASSETS.UI[item.uiAsset] || item.uiAsset);
-                if (icon) {
-                    // Center icon
-                    const iconSize = w * 0.7;
-                    const ix = x + (w - iconSize) / 2;
-                    const iy = y + (h - iconSize) / 2;
-                    this.ctx.drawImage(icon, ix, iy, iconSize, iconSize);
-                }
-            } else if (item.tileType && ASSETS.TILES[item.tileType]) {
-                // Fallback to Tile Texture
-                const icon = this.assetLoader.get(ASSETS.TILES[item.tileType]);
-                if (icon) {
-                    const iconSize = w * 0.6;
-                    const ix = x + (w - iconSize) / 2;
-                    const iy = y + (h - iconSize) / 2;
-                    this.ctx.drawImage(icon, ix, iy, iconSize, iconSize);
-                }
-            }
-
-            // 3. Selection Highlight
-            if (isSelected) {
-                this.ctx.save();
-                this.ctx.strokeStyle = 'white';
-                this.ctx.lineWidth = 6;
-                this.ctx.shadowColor = 'black';
-                this.ctx.shadowBlur = 10;
-                this.ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
-                this.ctx.restore();
-            }
-
-
-
-            // 5. Owned Count (if > 0)
-            const count = gameState.storage[item.id] || 0;
-            if (count > 0 && item.type === 'appliance') {
-                this.ctx.fillStyle = '#00ff00';
-                this.ctx.font = 'bold 16px Arial';
-                this.ctx.textAlign = 'left';
-                this.ctx.strokeText(`x${count}`, x + 10, y + h - 10);
-                this.ctx.fillText(`x${count}`, x + 10, y + h - 10);
-            }
-        });
-
-        // Instructions
-        this.ctx.fillStyle = '#aaa';
-        this.ctx.font = '16px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText("ARROWS to Navigate  |  ENTER to Select  |  ESC to Exit", this.canvas.width / 2, this.canvas.height - 40);
-
-        this.ctx.restore();
+        ScreenRenderer.renderRenoScreen(this, gameState);
     }
+
 
     drawServiceHint(x, y, gameState, cellObject, yOffset = 0, ticketIndex = 0) {
-        if (!gameState.activeTickets || gameState.activeTickets.length === 0) return;
-        const ticket = gameState.activeTickets[ticketIndex];
-        if (!ticket || !ticket.groups[0]) return;
-
-        const group = ticket.groups[0];
-        const containerType = group.containerType || 'bag';
-
-        // 1. Draw Container Outline
-        const outlineTex = containerType === 'plate' ? 'plates/plate-outline.png' : 'bag-trans.png';
-        this.drawTile(outlineTex, x, y, yOffset);
-
-        // 2. Validate Contents (if container exists on counter)
-        let validation = { 
-            containerMatch: false, 
-            burgers: group.burgers.map(b => ({ req: b, matched: false })), 
-            items: group.items.map(i => ({ req: i, matched: false })),
-            extras: []
-        };
-        
-        if (cellObject) {
-            validation = ticket.getValidationDetails(cellObject);
-        }
-
-        // 3. Render Hooks
-        if (containerType === 'plate') {
-            this.ctx.save();
-            const cx = x * TILE_SIZE + TILE_SIZE / 2;
-            const cy = y * TILE_SIZE + TILE_SIZE / 2 + yOffset;
-            this.ctx.translate(cx, cy);
-
-            const baseX = -TILE_SIZE / 2;
-            const baseY = -TILE_SIZE / 2;
-            const innerScale = 0.55;
-            const innerSize = TILE_SIZE * innerScale;
-            const contentNudge = 8;
-            const contentY = baseY - contentNudge;
-
-            // Burger Ghosts
-            validation.burgers.forEach((b, idx) => {
-                if (!b.matched) {
-                    const bOutline = this.assetLoader.get('plates/burger-plate-outline.png');
-                    if (bOutline) {
-                        this.ctx.drawImage(bOutline, -innerSize + 4, contentY + 15, innerSize, innerSize);
-                    }
-                }
-            });
-
-            // Side Ghosts
-            validation.items.forEach((s, idx) => {
-                if (!s.matched) {
-                    const def = DEFINITIONS[s.req];
-                    const isSide = def && (def.category === 'side' || (def.orderConfig && def.orderConfig.type === 'side'));
-                    if (isSide) {
-                        const sOutline = this.assetLoader.get('plates/fries-plate-outline.png');
-                        if (sOutline) {
-                            this.ctx.drawImage(sOutline, 4, contentY + 15, innerSize, innerSize);
-                        }
-                    }
-                }
-            });
-
-            this.ctx.restore();
-        } else {
-            // Bag/Standard Rendering: Uses progress tags
-            const bMatched = validation.burgers.filter(b => b.matched).length;
-            const bTotal = validation.burgers.length;
-            const sMatched = validation.items.filter(i => i.matched).length;
-            const sTotal = validation.items.length;
-            const hasExtra = validation.extras.length > 0;
-
-            if (bTotal > 0) {
-                this.drawProgressTag('burger', x, y, bMatched, bTotal, hasExtra, yOffset);
-            }
-            if (sTotal > 0) {
-                this.drawProgressTag('side', x, y, sMatched, sTotal, hasExtra, yOffset);
-            }
-        }
+        UIRenderer.drawServiceHint(this, x, y, gameState, cellObject, yOffset, ticketIndex);
     }
+
 
     drawProgressTag(type, x, y, current, total, isError = false, yOffset = 0) {
-        // 0. Error State
-        if (isError) {
-            this.drawTile(`${type}-tag-wrong.png`, x, y, yOffset);
-            return;
-        }
-
-        // 1. Finished State: Draw 'Done' tag (fully filled + checkmark)
-        if (current >= total) {
-            this.drawTile(`${type}-tag-done.png`, x, y, yOffset);
-            return;
-        }
-
-        // 2. In Progress: Draw Empty Base + Clipped Partial Fill
-        this.drawTile(`${type}-tag-trans.png`, x, y, yOffset);
-
-        if (current > 0) {
-            const pct = Math.min(current / total, 1.0);
-            const layout = TAG_LAYOUTS[type] || { top: 0, bottom: 64 };
-
-            const height = layout.bottom - layout.top;
-            const fillHeight = height * pct;
-
-            // Calculate Clipping Rect
-            // We want to reveal the image from layout.bottom upwards.
-            const gridPixelX = x * TILE_SIZE;
-            const gridPixelY = y * TILE_SIZE + yOffset;
-
-            const clipY = gridPixelY + layout.bottom - fillHeight;
-
-            this.ctx.save();
-            this.ctx.beginPath();
-            // width 64 (TILE_SIZE), height fillHeight
-            this.ctx.rect(gridPixelX, clipY, TILE_SIZE, fillHeight);
-            this.ctx.clip();
-
-            // Use 'partial' for the filling animation
-            this.drawTile(`${type}-tag-partial.png`, x, y, yOffset);
-
-            this.ctx.restore();
-        }
+        UIRenderer.drawProgressTag(this, type, x, y, current, total, isError, yOffset);
     }
+
 
     drawBurger(item, x, y, yOffset = 0) {
-        const px = x * TILE_SIZE;
-        const py = y * TILE_SIZE + yOffset;
-        this.drawBurgerPixels(item, px, py);
+        ObjectRenderer.drawBurger(this, item, x, y, yOffset);
     }
+
 
     drawBurgerPixels(item, px, py, scale = 1.0, ctx = this.ctx) {
-        const drawSize = TILE_SIZE * scale;
-
-        // 0. Wrapped State - Override everything else
-        if (item.state.isWrapped) {
-            const wrappedImg = this.assetLoader.get(ASSETS.OBJECTS.BURGER_WRAPPED);
-            // Fallback to wrapper texture if specific wrapped burger asset missing? 
-            // Better to rely on the defined asset.
-            if (wrappedImg) {
-                ctx.drawImage(wrappedImg, px, py, drawSize, drawSize);
-            }
-            return;
-        }
-
-        // Resolve Bun Assets
-        let bottomTexName = ASSETS.OBJECTS.BUN_BOTTOM;
-        let topTexName = ASSETS.OBJECTS.BUN_TOP;
-
-        if (item.state.bun) {
-            const bunDef = DEFINITIONS[item.state.bun.definitionId];
-            if (bunDef) {
-                // Check for custom textures in definition
-                // Supports explicit 'bottomTexture'/'topTexture' 
-                // OR fallback to checking if textures.bottom/textures.top exist if we used a complex object
-                if (bunDef.bottomTexture) bottomTexName = bunDef.bottomTexture;
-                if (bunDef.topTexture) topTexName = bunDef.topTexture;
-            }
-        }
-
-        // 1. Bottom Bun
-        const bunBottomImg = this.assetLoader.get(bottomTexName);
-        if (bunBottomImg) {
-            ctx.drawImage(bunBottomImg, px, py, drawSize, drawSize);
-        }
-
-        let yOffset = 0; // Moves UP (negative Y)
-
-        // Helper to draw a layer
-        const drawLayer = (objOrStr) => {
-            let texName = null;
-            let nudge = 0;
-
-            // Explicitly handle 'mayo' string first
-            if (objOrStr === 'mayo') {
-                texName = ASSETS.OBJECTS.MAYO_PART;
-                nudge = 0;
-            }
-            else if (typeof objOrStr === 'string') {
-                if (DEFINITIONS[objOrStr]) {
-                    const def = DEFINITIONS[objOrStr];
-                    texName = def.partTexture || def.texture;
-                    nudge = def.nudge !== undefined ? def.nudge : 2;
-                } else {
-                    texName = objOrStr;
-                }
-            }
-            else if (typeof objOrStr === 'object') {
-                // ItemInstance
-                const item = objOrStr;
-                // Try to find partTexture in definition
-                if (item.definitionId && DEFINITIONS[item.definitionId]) {
-                    const def = DEFINITIONS[item.definitionId];
-                    texName = def.partTexture || def.texture; // Prioritize partTexture
-
-                    // Specific override for beef_patty if nudge not set
-                    if (def.nudge !== undefined) {
-                        nudge = def.nudge;
-                    } else if (item.definitionId === 'beef_patty') {
-                        nudge = 5;
-                    } else {
-                        nudge = 2;
-                    }
-                } else {
-                    texName = item.texture || (item.getTexture ? item.getTexture() : null);
-                }
-            }
-
-            // Apply Scale to Nudge
-            nudge = nudge * scale;
-
-            if (texName) {
-                const img = this.assetLoader.get(texName);
-                if (img) {
-                    ctx.drawImage(img, px, py - yOffset, drawSize, drawSize);
-                    yOffset += nudge;
-                }
-            }
-        };
-
-
-
-        // 3. Toppings (Iterate in order)
-        if (item.state.toppings && Array.isArray(item.state.toppings)) {
-            item.state.toppings.forEach(t => {
-                if (t) drawLayer(t);
-            });
-        }
-
-        // 4. Top Bun
-        const bunTopImg = this.assetLoader.get(topTexName);
-        if (bunTopImg) {
-            ctx.drawImage(bunTopImg, px, py - yOffset, drawSize, drawSize);
-        }
+        ObjectRenderer.drawBurgerPixels(this, item, px, py, scale, ctx);
     }
+
 
 
     drawHangingTickets(gameState) {
-        const ticketImg = this.assetLoader.get(ASSETS.UI.NEW_TICKET);
-        if (!ticketImg) return;
-
-        // Draw Active Tickets from Game State (starting at column 2)
-        if (gameState.activeTickets && gameState.activeTickets.length > 0) {
-            gameState.activeTickets.forEach((ticket, i) => {
-                const x = (2 + i) * TILE_SIZE;
-                const y = 0;
-
-                // Draw Base Ticket
-                this.ctx.drawImage(ticketImg, x, y);
-
-                // Recipe Content
-                const icons = ticket.getDisplayIcons();
-                const size = TILE_SIZE;
-                const ox = x;
-                const oy = y + 17;
-
-                icons.forEach(icon => {
-                    const img = this.assetLoader.get(icon.texture);
-                    if (!img) return;
-
-                    if (icon.type === 'patty' || icon.type === 'topping') {
-                        // Stacked on patty
-                        this.ctx.drawImage(img, ox, oy, size, size);
-                    } else if (icon.type === 'side' || icon.type === 'drink') {
-                        // Offset below patty
-                        const sideSize = 48;
-                        const sox = x + (TILE_SIZE - sideSize) / 2;
-                        const soy = y + 57;
-                        this.ctx.drawImage(img, sox, soy, sideSize, sideSize);
-                    }
-                });
-            });
-        }
+        TicketRenderer.drawHangingTickets(this, gameState);
     }
+
 
 
 
     drawEffects(gameState) {
-        if (!gameState.effects) return;
-
-        gameState.effects.forEach(effect => {
-            if (effect.type === 'dust') {
-                const img = this.assetLoader.get(ASSETS.EFFECTS.DUST_SHEET);
-                if (!img) return;
-
-                const elapsed = Date.now() - effect.startTime;
-                const totalFrames = 6;
-                const frameDuration = effect.duration / totalFrames;
-                const currentFrame = Math.floor(elapsed / frameDuration);
-
-                if (currentFrame >= totalFrames) return;
-
-                const frameWidth = img.width / totalFrames;
-                const frameHeight = img.height;
-
-                const sx = currentFrame * frameWidth;
-                const sy = 0;
-
-                const x = effect.x * TILE_SIZE;
-                const y = effect.y * TILE_SIZE;
-
-                this.ctx.save();
-                // Translate to center of the tile
-                this.ctx.translate(x + TILE_SIZE / 2, y + TILE_SIZE / 2);
-
-                if (effect.rotation) {
-                    this.ctx.rotate(effect.rotation);
-                }
-
-                // Draw centered relative to the translation
-                this.ctx.drawImage(img, sx, sy, frameWidth, frameHeight, -TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
-                this.ctx.restore();
-            } else if (effect.type === 'fire') {
-                const img = this.assetLoader.get(ASSETS.EFFECTS.FIRE_SHEET);
-                if (!img) return;
-
-                const elapsed = Date.now() - effect.startTime;
-                const totalFrames = 7;
-                const frameDuration = effect.duration / totalFrames;
-                const currentFrame = Math.floor(elapsed / frameDuration);
-
-                if (currentFrame >= totalFrames) return;
-
-                const frameWidth = img.width / totalFrames;
-                const frameHeight = img.height;
-
-                const sx = currentFrame * frameWidth;
-                const sy = 0;
-
-                const x = effect.x * TILE_SIZE;
-                const y = effect.y * TILE_SIZE;
-
-                this.ctx.save();
-                // Nudge the fire up further so it's clearly visible above appliances
-                const yOffset = -32;
-                this.ctx.translate(x + TILE_SIZE / 2, y + TILE_SIZE / 2 + yOffset);
-
-                if (effect.rotation) {
-                    this.ctx.rotate(effect.rotation);
-                }
-
-                // Support custom scale or default to normal size
-                const scale = (effect.scale || 1.0);
-                const drawWidth = TILE_SIZE * scale;
-                const drawHeight = TILE_SIZE * scale;
-
-                this.ctx.drawImage(img, sx, sy, frameWidth, frameHeight, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-                this.ctx.restore();
-            }
-        });
+        EffectRenderer.drawEffects(this, gameState);
     }
+
 }
