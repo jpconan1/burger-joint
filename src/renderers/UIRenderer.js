@@ -176,7 +176,11 @@ export function drawProgressTag(renderer, type, x, y, current, total, isError = 
         return;
     }
 
-    renderer.drawTile(`${type}-tag-trans.png`, x, y, yOffset);
+    if (type === 'burger' || type === 'side') {
+        renderer.drawBoilTile(`plates/${type}-tag-outline-sheet.png`, x, y, yOffset);
+    } else {
+        renderer.drawTile(`${type}-tag-trans.png`, x, y, yOffset);
+    }
 
     if (current > 0) {
         const pct = Math.min(current / total, 1.0);
@@ -209,10 +213,6 @@ export function drawServiceHint(renderer, x, y, gameState, cellObject, yOffset =
         const group = ticket.groups[0];
         const containerType = group.containerType || 'bag';
 
-        // 1. Draw Container Outline
-        const outlineTex = containerType === 'plate' ? 'plates/plate-outline.png' : 'bag-trans.png';
-        renderer.drawTile(outlineTex, x, y, yOffset);
-
         // 2. Validate Contents (if container exists on counter)
         let validation = { 
             containerMatch: false, 
@@ -232,21 +232,30 @@ export function drawServiceHint(renderer, x, y, gameState, cellObject, yOffset =
             const cy = y * TILE_SIZE + TILE_SIZE / 2 + yOffset;
             ctx.translate(cx, cy);
 
-
             const baseX = -TILE_SIZE / 2;
             const baseY = -TILE_SIZE / 2;
-            const innerScale = 0.55;
-            const innerSize = TILE_SIZE * innerScale;
+            const burgerCount = validation.burgers.length;
+            const sideCount = validation.items.filter(s => {
+                const def = DEFINITIONS[s.req];
+                return def && (def.category === 'side' || (def.orderConfig && def.orderConfig.type === 'side'));
+            }).length;
+
+            let innerScale = 0.55;
+            let burgerX = - (TILE_SIZE * innerScale) + 4;
             const contentNudge = 8;
-            const contentY = baseY - contentNudge;
+            let contentY = baseY - contentNudge;
+
+            if (burgerCount === 1 && sideCount === 0) {
+                innerScale = 0.7;
+                burgerX = -(TILE_SIZE * innerScale) / 2;
+            }
+
+            const innerSize = TILE_SIZE * innerScale;
 
             // Burger Ghosts
             validation.burgers.forEach((b, idx) => {
                 if (!b.matched) {
-                    const bOutline = renderer.assetLoader.get('plates/burger-plate-outline.png');
-                    if (bOutline) {
-                        ctx.drawImage(bOutline, -innerSize + 4, contentY + 15, innerSize, innerSize);
-                    }
+                    renderer.drawBoilTilePixels('plates/burger-outline-sheet.png', burgerX, contentY + 15, 3, false, innerSize, innerSize);
                 }
             });
 
@@ -256,16 +265,24 @@ export function drawServiceHint(renderer, x, y, gameState, cellObject, yOffset =
                     const def = DEFINITIONS[s.req];
                     const isSide = def && (def.category === 'side' || (def.orderConfig && def.orderConfig.type === 'side'));
                     if (isSide) {
-                        const sOutline = renderer.assetLoader.get('plates/fries-plate-outline.png');
-                        if (sOutline) {
-                            ctx.drawImage(sOutline, 4, contentY + 15, innerSize, innerSize);
-                        }
+                        // This outline is already matched to the plate, draw at plate base
+                        renderer.drawBoilTilePixels('plates/fries-outline-sheet.png', baseX, baseY, 3, false, TILE_SIZE, TILE_SIZE);
                     }
                 }
             });
 
+            // 1. Draw Container Outline LAST (layered on top)
+            if (!validation.containerMatch) {
+                renderer.drawBoilTilePixels('plates/plate-outline-sheet.png', baseX, baseY, 3, false);
+            }
+
             ctx.restore();
         } else {
+            // 1. Draw Takeout Bag Outline
+            if (!validation.containerMatch) {
+                renderer.drawBoilTile('plates/bag-outline-sheet.png', x, y, yOffset);
+            }
+            
             // Bag/Standard Rendering: Uses progress tags
             const bMatched = validation.burgers.filter(b => b.matched).length;
             const bTotal = validation.burgers.length;

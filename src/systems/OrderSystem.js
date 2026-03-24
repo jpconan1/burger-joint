@@ -421,7 +421,17 @@ export class Ticket {
         const burger = firstGroup.burgers[0];
         if (burger) {
             // Patty
-            let pattyTexture = 'patty-cooked.png';
+            let pattyId = (burger.modifications || []).find(m => m.includes('patty')) || 'beef_patty';
+            let pattyDef = DEFINITIONS[pattyId];
+            let pattyTexture = 'patty-cooked.png'; // default
+
+            // Use the "cooked" texture from the definition if it exists
+            if (pattyDef && pattyDef.textures && pattyDef.textures.rules) {
+                const cookedRule = pattyDef.textures.rules.find(r => r.stateKey === 'cook_level' && r.value === 'cooked');
+                if (cookedRule) {
+                    pattyTexture = cookedRule.texture;
+                }
+            }
             icons.push({ type: 'patty', texture: pattyTexture });
 
             // Toppings

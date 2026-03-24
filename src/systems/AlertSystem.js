@@ -134,7 +134,8 @@ export class AlertSystem {
         this.burgerPreviewContainer.style.justifyContent = 'center';
         this.burgerPreviewContainer.style.alignItems = 'center';
         this.burgerPreviewContainer.style.width = '100%';
-        this.burgerPreviewContainer.style.height = '400px'; 
+        this.burgerPreviewContainer.style.height = '420px'; 
+        this.burgerPreviewContainer.style.paddingTop = '100px'; 
         this.burgerPreviewContainer.style.position = 'relative';
         this.burgerPreviewContainer.style.zIndex = '15';
         this.container.appendChild(this.burgerPreviewContainer);
@@ -152,6 +153,27 @@ export class AlertSystem {
         this.burgerPreviewContainer.appendChild(this.burgerCanvas);
         this.burgerCtx = this.burgerCanvas.getContext('2d');
         this.burgerCtx.imageSmoothingEnabled = false;
+
+        this.burgerCanvas.onclick = (e) => {
+            if (!this.allocationMode) return;
+            const rect = this.burgerCanvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left) * (this.burgerCanvas.width / rect.width);
+            
+            // Check which burger was clicked
+            const activeSlots = this.game.menuSystem.menuSlots.filter(s => s !== null);
+            const cardWidth = 160;
+            const gutter = 20;
+            const totalWidth = activeSlots.length * cardWidth + (activeSlots.length - 1) * gutter;
+            const startX = (this.burgerCanvas.width - totalWidth) / 2;
+
+            activeSlots.forEach((slot, i) => {
+                const cardX = startX + i * (cardWidth + gutter);
+                if (x >= cardX && x <= cardX + cardWidth) {
+                    this.game.unlockTopping(this.allocationMode.toppingId, i);
+                    this.finalizeToppingPick(this.allocationMode.buttonAction);
+                }
+            });
+        };
 
         // Portrait Image
         this.portrait = document.createElement('img');
@@ -521,48 +543,55 @@ export class AlertSystem {
             if (this.activeAlert.data.unlockedToppings === undefined) this.activeAlert.data.unlockedToppings = new Set();
             if (this.activeAlert.data.unlockedToppings.has(action.toppingId)) return;
 
-            // Unlock!
-            this.game.unlockTopping(action.toppingId);
-            this.activeAlert.data.pickedCount++;
-            this.activeAlert.data.unlockedToppings.add(action.toppingId);
-
-            // Update Preview Burger
-            if (this.activeAlert.data.previewBurger) {
-                const def = DEFINITIONS[action.toppingId];
-                const isTopping = def && (def.category === 'topping' || def.isTopping || def.category === 'patty');
-
-                if (isTopping) {
-                    if (!this.activeAlert.data.previewBurger.state.toppings) {
-                        this.activeAlert.data.previewBurger.state.toppings = [];
-                    }
-                    // Toppings can be strings in drawBurgerPixels
-                    this.activeAlert.data.previewBurger.state.toppings.push(action.toppingId);
-                }
-            }
-            // Visual feedback on the button
-            const btnObj = this.buttons.find(b => b.config.action === action);
-            if (btnObj) {
-                btnObj.element.style.display = 'none';
-                btnObj.element.style.pointerEvents = 'none';
-                
-                // If the currently selected button was just hidden, move selection
-                if (this.buttons.indexOf(btnObj) === this.selectedButtonIndex) {
-                    this.selectedButtonIndex = this.getNextVisibleButton(this.selectedButtonIndex, 1);
-                    this.updateButtonSelection();
-                }
+            // SPECIAL CASE: Chicken Patty immediately unlocks the burger
+            if (action.toppingId === 'chicken_patty') {
+                this.game.unlockTopping(action.toppingId);
+                this.finalizeToppingPick(action);
+                return;
             }
 
-            // Enable the OK button if this is the first pick
-            if (this.activeAlert.data.pickedCount >= 1) {
-                this.updateButtonSelection();
-            }
-
-            if (this.activeAlert.data.pickedCount >= 3) {
-                // Stay open so player can click OK.
+            // Check if we need allocation
+            const activeSlots = this.game.menuSystem.menuSlots.filter(s => s !== null);
+            if (activeSlots.length > 1 && !this.isToppingSide(action.toppingId)) {
+                // ENTER ALLOCATION MODE
+                this.allocationMode = { toppingId: action.toppingId, buttonAction: action };
+                this.selectedBurgerIndex = 0; // Reset for keyboard choice
+                this.showCurrentStep(); // Re-render to show allocation prompt
             } else {
-                // Update text removed as per user request
+                // Immediate unlock (for sides or if only one burger)
+                this.game.unlockTopping(action.toppingId, 0);
+                this.finalizeToppingPick(action);
             }
         }
+    }
+
+    isToppingSide(id) {
+        const def = DEFINITIONS[id];
+        return id === 'sweet_potato_fries' || (def && def.orderConfig && def.orderConfig.type === 'side');
+    }
+
+    finalizeToppingPick(action) {
+        this.activeAlert.data.pickedCount++;
+        this.activeAlert.data.unlockedToppings.add(action.toppingId);
+
+        // Visual feedback on the button
+        const btnObj = this.buttons.find(b => b.config.action === action);
+        if (btnObj) {
+            btnObj.element.style.display = 'none';
+            btnObj.element.style.pointerEvents = 'none';
+            
+            if (this.buttons.indexOf(btnObj) === this.selectedButtonIndex) {
+                this.selectedButtonIndex = this.getNextVisibleButton(this.selectedButtonIndex, 1);
+                this.updateButtonSelection();
+            }
+        }
+
+        if (this.activeAlert.data.pickedCount >= 1) {
+            this.updateButtonSelection();
+        }
+
+        this.allocationMode = null;
+        this.showCurrentStep();
     }
 
     rerollToppings() {
@@ -728,62 +757,129 @@ export class AlertSystem {
     }
 
     renderLevelUpBurger() {
-        if (!this.activeAlert || !this.activeAlert.data.previewBurger) return;
+        if (!this.activeAlert) return;
 
         const ctx = this.burgerCtx;
-        const burger = this.activeAlert.data.previewBurger;
         const renderer = this.game.renderer;
-        const scale = 2.0;
-        const tileSize = 64; // TILE_SIZE
+        const scale = 1.5;
+        const tileSize = 64;
 
         ctx.clearRect(0, 0, this.burgerCanvas.width, this.burgerCanvas.height);
         ctx.imageSmoothingEnabled = false;
 
-        // CALCULATE TOTAL UNIT SIZE
-        // Column 1: Burger (128px)
-        // Column 2: Sides (128px) 
-        // Gutter: 32px
-        const combinedWidth = 128 + 32 + 128;
-        const startX = (this.burgerCanvas.width - combinedWidth) / 2;
-        const startY = (this.burgerCanvas.height - 128) / 2; // Assume a 128px base row height
+        const activeSlots = this.game.menuSystem.menuSlots.filter(s => s !== null);
+        const cardWidth = 160;
+        const cardHeight = 220;
+        const gutter = 20;
+        const totalWidth = activeSlots.length * cardWidth + (activeSlots.length - 1) * gutter;
+        const startX = (this.burgerCanvas.width - totalWidth) / 2;
+        const startY = 60;
 
-        // DRAW BURGER COLUMN
-        drawBurgerPixels(renderer, burger, startX, startY, scale, ctx);
-
-        // DRAW SIDES COLUMN (Source of Truth: MenuSystem.sides + Session Unlocks)
-        const activeSides = this.game.menuSystem.sides || [];
-        const sessionUnlocks = this.activeAlert.data.unlockedToppings || new Set();
-        
-        const sidesToDraw = [...activeSides.map(s => s.definitionId)];
-        
-        // Add session unlocks if they are sides
-        sessionUnlocks.forEach(id => {
-            if (id === 'sweet_potato_fries' && !sidesToDraw.includes(id)) {
-                sidesToDraw.push(id);
-            }
-            if (id === 'fries' && !sidesToDraw.includes(id)) {
-                sidesToDraw.push(id);
-            }
-        });
-
-        const sideScale = 2.0; 
-        const sideSize = tileSize * sideScale;
-        const sideX = startX + 128 + 32;
-        let currentSideY = startY;
-
-        sidesToDraw.forEach(sideId => {
-            let tex = null;
-            if (sideId === 'fries') tex = 'fries-done.png';
-            else if (sideId === 'sweet_potato_fries') tex = 'sweet_potato_fries-done.png';
+        activeSlots.forEach((slot, i) => {
+            const cardX = startX + i * (cardWidth + gutter);
             
-            if (tex) {
-                const img = renderer.assetLoader.get(tex);
-                if (img) {
-                    ctx.drawImage(img, sideX, currentSideY, sideSize, sideSize);
-                    currentSideY += 80; // Space for next row
+            // DRAW DINER MENU CARD (Subtle)
+            ctx.fillStyle = '#fff9f0';
+            ctx.strokeStyle = '#d4c4a8';
+            ctx.lineWidth = 2;
+            
+            // Subtle Shadow
+            ctx.shadowColor = 'rgba(0,0,0,0.2)';
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetY = 4;
+            
+            // Rounded rect (manual)
+            const r = 8;
+            ctx.beginPath();
+            ctx.moveTo(cardX + r, startY);
+            ctx.lineTo(cardX + cardWidth - r, startY);
+            ctx.quadraticCurveTo(cardX + cardWidth, startY, cardX + cardWidth, startY + r);
+            ctx.lineTo(cardX + cardWidth, startY + cardHeight - r);
+            ctx.quadraticCurveTo(cardX + cardWidth, startY + cardHeight, cardX + cardWidth - r, startY + cardHeight);
+            ctx.lineTo(cardX + r, startY + cardHeight);
+            ctx.quadraticCurveTo(cardX, startY + cardHeight, cardX, startY + cardHeight - r);
+            ctx.lineTo(cardX, startY + r);
+            ctx.quadraticCurveTo(cardX, startY, cardX + r, startY);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Highlight if in allocation mode
+            const isSelected = this.allocationMode && i === this.selectedBurgerIndex;
+            if (isSelected) {
+                ctx.strokeStyle = '#ffcc00';
+                ctx.lineWidth = 6;
+                ctx.stroke();
+            } else if (this.allocationMode) {
+                ctx.strokeStyle = '#d4c4a8';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+
+            ctx.shadowColor = 'transparent'; // Reset shadow
+
+            // LABEL
+            ctx.fillStyle = '#4a3c28';
+            ctx.font = '900 18px "Inter", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(slot.name.toUpperCase(), cardX + cardWidth / 2, startY + 25);
+            ctx.fillText('BURGER', cardX + cardWidth / 2, startY + 45);
+
+            // DRAW BURGER PIXELS
+            const burger = new ItemInstance(slot.definitionId || 'plain_burger');
+            if (slot.state) {
+                burger.state.bun = slot.state.bun;
+                burger.state.toppings = [...(slot.state.toppings || [])];
+                
+                // Add session preview topping if being allocated
+                if (this.allocationMode && this.selectedBurgerIndex === i) {
+                    burger.state.toppings.push(this.allocationMode.toppingId);
                 }
             }
+            
+            const bX = cardX + (cardWidth - 64 * scale) / 2;
+            const bY = startY + 60;
+            drawBurgerPixels(renderer, burger, bX, bY, scale, ctx);
+
+            // Allocation Hover Check (simple)
+            if (this.allocationMode) {
+                if (isSelected) {
+                    ctx.fillStyle = 'rgba(255, 204, 0, 0.1)';
+                    ctx.fillRect(cardX, startY, cardWidth, cardHeight);
+                    ctx.fillStyle = '#ffcc00';
+                } else {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                    ctx.fillRect(cardX, startY, cardWidth, cardHeight);
+                    ctx.fillStyle = '#999';
+                }
+                ctx.font = '900 14px "Inter", sans-serif';
+                ctx.fillText(isSelected ? '-> PRESS ENTER TO ASSIGN <-' : 'SELECT WITH ARROWS', cardX + cardWidth / 2, startY + cardHeight - 15);
+            }
         });
+
+        // DRAW SIDES COLUMN (To the right of cards)
+        const activeSides = this.game.menuSystem.sides || [];
+        const sessionUnlocks = this.activeAlert.data.unlockedToppings || new Set();
+        const sidesToDraw = [...activeSides.map(s => s.definitionId)];
+        sessionUnlocks.forEach(id => {
+            if (this.isToppingSide(id) && !sidesToDraw.includes(id)) sidesToDraw.push(id);
+        });
+
+        if (sidesToDraw.length > 0) {
+            const sideX = startX + totalWidth + 30;
+            let currentSideY = startY;
+            sidesToDraw.forEach(sideId => {
+                let tex = sideId === 'fries' ? 'fries-done.png' : (sideId === 'sweet_potato_fries' ? 'sweet_potato_fries-done.png' : null);
+                if (tex) {
+                    const img = renderer.assetLoader.get(tex);
+                    if (img) {
+                        ctx.drawImage(img, sideX, currentSideY, 64, 64);
+                        currentSideY += 70;
+                    }
+                }
+            });
+        }
     }
 
     // Input handling
@@ -801,6 +897,27 @@ export class AlertSystem {
         const isInteract = action === ACTIONS.INTERACT || code === 'Enter' || code === 'Space';
         const isLeft = action === ACTIONS.MOVE_LEFT || code === 'ArrowLeft';
         const isRight = action === ACTIONS.MOVE_RIGHT || code === 'ArrowRight';
+
+        if (this.allocationMode) {
+            if (isRight) {
+                const activeSlots = this.game.menuSystem.menuSlots.filter(s => s !== null);
+                this.selectedBurgerIndex = (this.selectedBurgerIndex || 0) + 1;
+                if (this.selectedBurgerIndex >= activeSlots.length) this.selectedBurgerIndex = 0;
+                this.showCurrentStep();
+                return true;
+            } else if (isLeft) {
+                const activeSlots = this.game.menuSystem.menuSlots.filter(s => s !== null);
+                this.selectedBurgerIndex = (this.selectedBurgerIndex || 0) - 1;
+                if (this.selectedBurgerIndex < 0) this.selectedBurgerIndex = activeSlots.length - 1;
+                this.showCurrentStep();
+                return true;
+            } else if (isInteract) {
+                this.game.unlockTopping(this.allocationMode.toppingId, this.selectedBurgerIndex);
+                this.finalizeToppingPick(this.allocationMode.buttonAction);
+                return true;
+            }
+            return true; // Swallow while in allocation
+        }
 
         // Button Navigation
         if (this.buttons.length > 0) {

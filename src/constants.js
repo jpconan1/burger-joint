@@ -162,7 +162,9 @@ export const ASSETS = {
         PLATE_PART: 'plates/plate-part.png',
         PLATE_DIRTY_PART1: 'plates/plate-dirty-part1.png',
         PLATE_DIRTY_PART2: 'plates/plate-dirty-part2.png',
-        PLATE_DIRTY_PART3: 'plates/plate-dirty-part3.png'
+        PLATE_DIRTY_PART3: 'plates/plate-dirty-part3.png',
+        BOMB: 'bomb.png',
+        BOMB_OUTLINE: 'bomb-outline.png'
     },
     PLAYER: {
         NEUTRAL: 'player-neutral.png',

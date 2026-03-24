@@ -66,6 +66,10 @@ export function drawObject(renderer, object, x, y, overrideTexture = null, yOffs
         drawDispenser(renderer, object, x, y, yOffset);
         return;
     }
+    if (object.definitionId === 'bomb') {
+        drawBomb(renderer, object, x, y, yOffset);
+        return;
+    }
 
     if (object.type === 'Composite' && object.definitionId !== 'burger_old' && (object.definitionId.includes('burger') || object.state.bun)) {
         drawBurger(renderer, object, x, y, yOffset);
@@ -376,24 +380,35 @@ export function drawStackedItem(renderer, item, x, y, scale = 1.0, yOffset = 0) 
                 if (def.id === 'plate' || def.id === 'dirty_plate') {
                     const burger = contents.find(c => (c.definition && (c.definition.category === 'burger' || c.definitionId.includes('burger'))) || c.category === 'burger');
                     const side = contents.find(c => c.definition && c.definition.category === 'side_prep');
-                    const innerScale = 0.55;
-                    const innerSize = TILE_SIZE * innerScale;
+                    
+                    let innerScale = 0.55;
+                    let burgerX = - (TILE_SIZE * innerScale) + 4;
                     const contentY = baseY + nudgeY - contentNudge;
 
+                    if (burger && !side) {
+                        innerScale = 0.7;
+                        burgerX = -(TILE_SIZE * innerScale) / 2;
+                    }
+
+                    const innerSize = TILE_SIZE * innerScale;
+
                     if (side) {
+                        // Sides always use the smaller scale and default position for now
+                        const sideScale = 0.55;
+                        const sideSize = TILE_SIZE * sideScale;
                         if (side.definitionId === 'raw_fries' || side.definitionId === 'raw_sweet_potato_fries') {
                             const plateFriesImg = assetLoader.get('plates/fries-plate-part.png');
                             if (plateFriesImg) ctx.drawImage(plateFriesImg, baseX, baseY + nudgeY, TILE_SIZE, TILE_SIZE);
                             else {
                                 const sImg = assetLoader.get(side.getTexture());
-                                if (sImg) ctx.drawImage(sImg, 0, contentY + 10, innerSize, innerSize);
+                                if (sImg) ctx.drawImage(sImg, 0, contentY + 10, sideSize, sideSize);
                             }
                         } else {
                             const sImg = assetLoader.get(side.getTexture());
-                            if (sImg) ctx.drawImage(sImg, 0, contentY + 10, innerSize, innerSize);
+                            if (sImg) ctx.drawImage(sImg, 0, contentY + 10, sideSize, sideSize);
                         }
                     }
-                    if (burger) drawBurgerPixels(renderer, burger, -innerSize + 4, contentY + 15, innerScale);
+                    if (burger) drawBurgerPixels(renderer, burger, burgerX, contentY + 15, innerScale);
                 } else {
                     const firstContent = contents[0];
                     let cTex = firstContent.texture || (firstContent.definitionId && DEFINITIONS[firstContent.definitionId]?.texture) || (DEFINITIONS[firstContent]?.texture);
@@ -497,4 +512,28 @@ export function drawAnimatedSprite(renderer, defId, x, y, startTime = 0, overrid
     let dy = overridePixelY !== null ? overridePixelY : y * TILE_SIZE + (TILE_SIZE - fh) / 2;
 
     renderer.ctx.drawImage(img, sx, 0, fw, fh, dx, dy, fw, fh);
+}
+
+export function drawBomb(renderer, object, x, y, yOffset = 0) {
+    // Draw Base
+    renderer.drawTile(ASSETS.OBJECTS.BOMB, x, y, yOffset);
+
+    // Draw Outline with stepped flickering colors
+    const time = Date.now() / 1000;
+    
+    // Use a fast-cycling palette for a "flicker" effect
+    // 5 changes per second (time * 5)
+    const palette = [
+        '#ff00ff', // Magenta
+        '#00ffff', // Cyan
+        '#ffff00', // Yellow
+        '#00ff00', // Green
+        '#ff3300', // Orange-Red
+        '#ffffff'  // White flash
+    ];
+    
+    const step = Math.floor(time * 5);
+    const color = palette[step % palette.length];
+
+    renderer.drawTintedTile(ASSETS.OBJECTS.BOMB_OUTLINE, x, y, color, yOffset);
 }

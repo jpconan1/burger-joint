@@ -11,7 +11,7 @@ export class MenuSystem {
         this.menuSlots[0] = {
             type: 'Composite',
             definitionId: 'burger',
-            name: 'Plain',
+            name: 'Beef',
             state: {
                 bun: new ItemInstance('plain_bun'),
                 toppings: [(() => {
@@ -114,6 +114,25 @@ export class MenuSystem {
         });
     }
 
+    addChickenBurger() {
+        if (this.menuSlots[1]) return; // Already exists
+
+        this.menuSlots[1] = {
+            type: 'Composite',
+            definitionId: 'burger',
+            name: 'Chicken',
+            state: {
+                bun: new ItemInstance('plain_bun'),
+                toppings: [(() => {
+                    const p = new ItemInstance('chicken_patty');
+                    p.state.cook_level = 'cooked';
+                    return p;
+                })()]
+            }
+        };
+        console.log("[MenuSystem] Added Chicken Burger to slot 1");
+    }
+
     /**
      * Resolves a box/bag item ID to the topping ID that would appear on a burger.
      */
@@ -158,7 +177,7 @@ export class MenuSystem {
     /**
      * Adds the unlocked topping to the best available burger menu slot
      */
-    addToppingToMenu(itemId) {
+    addToppingToMenu(itemId, slotIndex = null) {
         const toppingId = this.resolveToppingId(itemId) || itemId;
         const toppingDef = DEFINITIONS[toppingId];
         if (!toppingDef || !(toppingDef.category === 'topping' || toppingDef.isTopping)) {
@@ -166,7 +185,7 @@ export class MenuSystem {
             return;
         }
 
-        const activeSlots = this.menuSlots.filter(s => s !== null);
+        const activeSlots = slotIndex !== null ? [this.menuSlots[slotIndex]].filter(s => s !== null) : this.menuSlots.filter(s => s !== null);
         if (activeSlots.length === 0) return;
 
         activeSlots.forEach(slot => {

@@ -9,7 +9,8 @@ export class PowerupSystem {
         this.powerupConfigs = [
             { id: 'keroscene', interval: 60000, timer: 0 },
             { id: 'magic_bag', interval: 90000, timer: 0 },
-            { id: 'freeze_clock', interval: 150000, timer: 0 }
+            { id: 'freeze_clock', interval: 150000, timer: 0 },
+            { id: 'bomb', interval: 999999, timer: 0 }
         ];
         this.tutorialPowerupSpawned = false;
 
@@ -17,6 +18,9 @@ export class PowerupSystem {
         this.freezeClockItem = null;       // reference to the active freeze_clock item
         this.autoResumeTimer = 0;          // counts up while time is frozen
         this.AUTO_RESUME_DURATION = 45000; // 45 seconds
+        
+        this.bombSpawned = false;
+        this.BOMB_THRESHOLD = 9;
     }
 
     update(dt) {
@@ -44,6 +48,15 @@ export class PowerupSystem {
                 }
             }
         });
+
+        // Bomb Spawning (Once per run, when tickets >= 9)
+        if (!this.bombSpawned) {
+            const totalTickets = this.game.activeTickets.length + this.game.ticketQueue.length;
+            if (totalTickets >= this.BOMB_THRESHOLD) {
+                this.spawnPowerup({ id: 'bomb' });
+                this.bombSpawned = true;
+            }
+        }
     }
 
     isPowerupPresent(id) {
@@ -134,6 +147,9 @@ export class PowerupSystem {
             return this._activateFreezeClock(item);
         } else if (id === 'magic_bag') {
             return this._activateMagicBag(item);
+        } else if (id === 'bomb') {
+            this._activateBomb();
+            return true;
         }
         return true;
     }
@@ -147,23 +163,6 @@ export class PowerupSystem {
         this.game.timeFreezeManual = false;
         this.autoResumeTimer = 0;
         this.freezeClockItem = null;
-
-        // Remove the freeze_clock item from the grid (it was left in place while active)
-        const grid = this.game.grid;
-        if (grid) {
-            for (let y = 0; y < grid.height; y++) {
-                for (let x = 0; x < grid.width; x++) {
-                    const cell = grid.getCell(x, y);
-                    if (cell.object &&
-                        cell.object.definitionId === 'freeze_clock' &&
-                        cell.object.state.isActivated) {
-                        cell.object = null;
-                        console.log(`freeze_clock removed from grid at ${x},${y}`);
-                        return;
-                    }
-                }
-            }
-        }
     }
 
     _activateKeroscene() {
@@ -240,11 +239,11 @@ export class PowerupSystem {
             item.state.isActivated = true;
             this.freezeClockItem = item;
             this.autoResumeTimer = 0;
-            return false; // Don't remove yet
+            return true; // DESPAWN powerup after start
         } else {
-            // Player re-interacted — resume immediately
+            // Player re-interacted (though it should be despawned now)
             this.resumeTime();
-            return true; // Remove now
+            return true;
         }
     }
 
@@ -279,6 +278,41 @@ export class PowerupSystem {
         this.game.player.heldItem = item;
         this.game.addFloatingText("MAGIC BAG!", this.game.player.x, this.game.player.y, '#ff00ff');
         return true; // Remove from counter
+    }
+
+    _activateBomb() {
+        console.log("ACTIVATE BOMB: Burn rail and 1.5s flash");
+        const now = Date.now();
+
+        // 1. Spawn Fire Effects on the rail (2x scale)
+        let railCount = this.game.activeTickets.length;
+        
+        // Cheat/Test Fallback: if rail is empty, spawn fire at first 3 slots anyway
+        const effectiveCount = Math.max(railCount, 3);
+        
+        for (let i = 0; i < effectiveCount; i++) {
+            this.game.addEffect({
+                type: 'fire',
+                x: 2 + i, // World X coordinate
+                y: 0.2,   // Slightly down from top
+                startTime: now,
+                duration: 250,
+                scale: 2.0
+            });
+        }
+
+        // 2. Wipe everything
+        this.game.activeTickets = [];
+        this.game.ticketQueue = [];
+        this.game.incomingTicket = null;
+        this.game.ticketSpawnTimer = 0;
+
+        // 3. Trigger Game Logic Pause & Renderer Effect
+        this.game.bombEffectActive = true;
+        this.game.bombEffectTimer = 1500; // 1.5 Seconds total
+
+        // 4. Shake the screen
+        this.game.screenShake = 45; 
     }
 }
 

@@ -97,7 +97,20 @@ export class Renderer {
             this.ensureWorldCanvas(gameState.grid.width, gameState.grid.height);
         }
 
+        // --- Screen Shake Logic ---
+        let shakeX = 0;
+        let shakeY = 0;
+        if (gameState.screenShake > 0) {
+            shakeX = (Math.random() - 0.5) * gameState.screenShake;
+            shakeY = (Math.random() - 0.5) * gameState.screenShake;
+            // Decay shake
+            gameState.screenShake *= 0.9;
+            if (gameState.screenShake < 0.1) gameState.screenShake = 0;
+        }
+
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.save();
+        this.ctx.setTransform(1, 0, 0, 1, shakeX, shakeY);
 
         // Calculate centering offsets (for final blit position)
         this.offsetX = 0;
@@ -640,7 +653,7 @@ export class Renderer {
             }
 
             if (gameState.timeFreezeTimer > 0) {
-                this.drawTimeFreezeFilter(gridPixelWidth, gridPixelHeight);
+                this.drawTimeFreezeFilter(gridPixelWidth, gridPixelHeight, gameState);
             }
         }
 
@@ -732,6 +745,71 @@ export class Renderer {
         // Render Build Mode UI (Global Space)
 
 
+        // 8. BOMB BREAKDOWN EFFECT (Layered on top of everything)
+        if (gameState.bombEffectActive) {
+            this.drawBombEffect(gameState);
+        }
+
+        this.ctx.restore(); // Restore shake/transform
+    }
+
+    drawBombEffect(gameState) {
+        const ctx = this.ctx;
+        const canvas = this.canvas;
+        // Effect total duration is 1500ms
+        const progress = 1.0 - (gameState.bombEffectTimer / 1500.0);
+        
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // Absolute screen space
+
+        // 1. Calculate the Trapezoidal Mask (flat top matching window width)
+        // Originating from the "Window" behind the counter (top center of the grid)
+        const gridWidth = gameState.grid ? gameState.grid.width * TILE_SIZE * this.zoomLevel : canvas.width;
+        const gridHeight = gameState.grid ? gameState.grid.height * TILE_SIZE * this.zoomLevel : canvas.height;
+        
+        // Window is central, slightly narrowed (12 tiles minus 10px on each side)
+        const topWidth = (gridWidth * (12 / 16)) - 20; 
+        const topLeftX = this.offsetX + (gridWidth * (2 / 16)) + 10;
+        const topY = this.offsetY + 55;
+
+        ctx.beginPath();
+        ctx.moveTo(topLeftX, topY);
+        ctx.lineTo(topLeftX + topWidth, topY);
+        // Fan out extremely wide at the bottom (way past grid edges)
+        ctx.lineTo(this.offsetX + gridWidth * 2.8, this.offsetY + gridHeight + 55);
+        ctx.lineTo(this.offsetX - gridWidth * 1.8, this.offsetY + gridHeight + 55);
+        ctx.closePath();
+        ctx.clip();
+
+        // Phase 1: Immediate White Flash (0% - 7%)
+        if (progress < 0.07) {
+            const flashOpacity = 1.0 - (progress / 0.07);
+            ctx.fillStyle = `rgba(255, 255, 255, ${flashOpacity})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // Phase 2: Lingering Glow / Embers (7% - 100%)
+        if (progress > 0.07) {
+            const fadeOut = (progress - 0.07) / 0.93;
+            
+            // Subtle bloom (masked to triangle)
+            ctx.fillStyle = `rgba(255, 255, 255, ${(1.0 - fadeOut) * 0.4})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Small glowing embers
+            const t = Math.floor(progress * 100);
+            for (let i = 0; i < 30; i++) {
+                // Distribute embers within a wider area, clipping will handle the triangle shape
+                const ex = (Math.sin(i * 13 + t/10) * 0.8 + 0.5) * canvas.width;
+                const ey = (Math.cos(i * 7 + t/15) * 0.8 + 0.5) * canvas.height;
+                ctx.fillStyle = i % 2 === 0 ? '#ffcc00' : '#ffffff';
+                ctx.globalAlpha = 1.0 - fadeOut;
+                ctx.fillRect(ex, ey, 3, 3);
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        ctx.restore();
     }
 
     drawPlayer(gameState) {
@@ -768,6 +846,59 @@ export class Renderer {
             const hOffset = TILE_SIZE - img.height;
             this.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE + hOffset + yOffset, img.width, img.height);
         }
+    }
+
+    drawBoilTile(textureName, x, y, yOffset = 0, frames = 3, isVertical = false) {
+        const img = this.assetLoader.get(textureName);
+        if (img) {
+            const fh = isVertical ? img.height / frames : img.height;
+            const hOffset = TILE_SIZE - fh;
+            this.drawBoilTilePixels(textureName, x * TILE_SIZE, y * TILE_SIZE + yOffset + hOffset, frames, isVertical);
+        }
+    }
+
+    drawBoilTilePixels(textureName, px, py, frames = 3, isVertical = false, dw = null, dh = null) {
+        if (!textureName) return;
+        const img = this.assetLoader.get(textureName);
+        if (img) {
+            const frameIndex = Math.floor(Date.now() / 150) % frames;
+            const fw = isVertical ? img.width : img.width / frames;
+            const fh = isVertical ? img.height / frames : img.height;
+            const sx = isVertical ? 0 : frameIndex * fw;
+            const sy = isVertical ? frameIndex * fh : 0;
+
+            const targetW = dw !== null ? dw : fw;
+            const targetH = dh !== null ? dh : fh;
+
+            this.ctx.drawImage(img, sx, sy, fw, fh, px, py, targetW, targetH);
+        }
+    }
+
+    drawTintedTile(textureName, x, y, color, yOffset = 0) {
+        if (!textureName) return;
+        const img = this.assetLoader.get(textureName);
+        if (!img) return;
+
+        // Use an offscreen canvas for tinting to avoid bleeding into the main scene
+        if (!this.tintCanvas) {
+            this.tintCanvas = document.createElement('canvas');
+            this.tintCtx = this.tintCanvas.getContext('2d');
+        }
+
+        if (this.tintCanvas.width !== img.width || this.tintCanvas.height !== img.height) {
+            this.tintCanvas.width = img.width;
+            this.tintCanvas.height = img.height;
+        }
+
+        this.tintCtx.clearRect(0, 0, this.tintCanvas.width, this.tintCanvas.height);
+        this.tintCtx.drawImage(img, 0, 0);
+        this.tintCtx.globalCompositeOperation = 'source-in';
+        this.tintCtx.fillStyle = color;
+        this.tintCtx.fillRect(0, 0, this.tintCanvas.width, this.tintCanvas.height);
+        this.tintCtx.globalCompositeOperation = 'source-over';
+
+        const hOffset = TILE_SIZE - img.height;
+        this.ctx.drawImage(this.tintCanvas, x * TILE_SIZE, y * TILE_SIZE + hOffset + yOffset, img.width, img.height);
     }
 
     drawChuteSegment(textureName, x, y) {
@@ -920,11 +1051,34 @@ export class Renderer {
         this.ctx.restore();
     }
 
-    drawTimeFreezeFilter(width, height) {
-        this.ctx.save();
-        this.ctx.fillStyle = 'rgba(0, 100, 255, 0.2)';
-        this.ctx.fillRect(0, 0, width, height);
-        this.ctx.restore();
+    drawTimeFreezeFilter(width, height, gameState) {
+        const ps = gameState.powerupSystem;
+        if (!ps) {
+            this.ctx.save();
+            this.ctx.fillStyle = 'rgba(0, 100, 255, 0.2)';
+            this.ctx.fillRect(0, 0, width, height);
+            this.ctx.restore();
+            return;
+        }
+
+        const remaining = ps.AUTO_RESUME_DURATION - ps.autoResumeTimer;
+        let opacity = 0.2;
+        let shouldDraw = true;
+
+        if (remaining <= 1500) {
+            // Fast blink: 150ms cycle
+            shouldDraw = Math.floor(Date.now() / 150) % 2 === 0;
+        } else if (remaining <= 5000) {
+            // Slow blink: 500ms cycle
+            shouldDraw = Math.floor(Date.now() / 500) % 2 === 0;
+        }
+
+        if (shouldDraw) {
+            this.ctx.save();
+            this.ctx.fillStyle = `rgba(0, 100, 255, ${opacity})`;
+            this.ctx.fillRect(0, 0, width, height);
+            this.ctx.restore();
+        }
     }
 
 

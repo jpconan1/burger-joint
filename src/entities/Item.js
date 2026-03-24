@@ -161,24 +161,6 @@ export class ItemInstance {
             return base;
         }
 
-        // 1.5 Aging Texture Logic
-        if (this.definition.aging && this.definition.aging.stages && this.state.age) {
-            const stages = this.definition.aging.stages;
-            // Find the highest stage <= current age
-            let matchedTexture = null;
-            let maxStageDay = -1;
-
-            for (const [day, texture] of Object.entries(stages)) {
-                const dayNum = parseInt(day);
-                if (this.state.age >= dayNum && dayNum > maxStageDay) {
-                    maxStageDay = dayNum;
-                    matchedTexture = texture;
-                }
-            }
-
-            if (matchedTexture) return matchedTexture;
-        }
-
         // 2. Legacy/Hardcoded Logic (Preserved for items not yet refactored)
         // Box Logic
         if (this.type === ItemType.Box) {

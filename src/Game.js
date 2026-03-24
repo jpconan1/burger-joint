@@ -61,6 +61,11 @@ export class Game {
         this.settings = new Settings();
         this.audioSystem = new AudioSystem(this.settings);
 
+        this.toppingCharges = {};
+        this.TOPPING_POOL.forEach(id => {
+            this.toppingCharges[id] = 1;
+        });
+
         // Systems
 
         this.menuSystem = new MenuSystem(this);
@@ -139,6 +144,11 @@ export class Game {
         this.xpToNextLevel = 7;
         this.menuLocked = false;
         this.ticketSpeedBonus = 0;
+        
+        // Bomb Breakdown Logic
+        this.bombEffectActive = false;
+        this.bombEffectTimer = 0;
+        this.screenShake = 0;
 
 
 
@@ -785,122 +795,6 @@ export class Game {
         this.sortShopItems();
     }
 
-    spoilStaleItems() {
-        console.log("Checking for stale items...");
-        let staleCount = 0;
-
-        // Core Spoilage Rules:
-        // 1. Boxes (and their contents) NEVER spoil.
-        // 2. Unboxed Items: Spoil IMMEDIATELY (overnight).
-        // 3. Exception: Items in 'inserts' last 1 night (Age 0 -> Age 1). Spoil if Age >= 2.
-
-        const checkItem = (item) => {
-            if (!item) return null;
-
-            // Box Check
-            if (item.type === 'Box' || item.definition.type === 'Box') {
-                return item; // No spoilage
-            }
-
-            // Insert Check
-            if (item.definitionId === 'insert') {
-                // Check contents
-                if (item.state.contents && item.state.contents.length > 0) {
-                    const newContents = [];
-                    item.state.contents.forEach(content => {
-                        // Increment age
-                        const age = (content.age || 0) + 1;
-                        content.age = age;
-
-                        // Survival Check (Max Age 1)
-                        if (age < 2) {
-                            newContents.push(content);
-                        } else {
-                            // Spoils! turning into trash? Or just disappearing?
-                            // User "stuff not in boxes spoils overnight".
-                            // Usually this means it turns into 'spoil.png' or similar.
-                            // However, inserts hold distinct items.
-                            // Let's create a 'generic_spoil' item in its place.
-                            staleCount++;
-                            newContents.push({
-                                definitionId: 'generic_spoil',
-                                state: {},
-                                texture: 'spoil.png' // shim for renderer
-                            });
-                        }
-                    });
-                    item.state.contents = newContents;
-                }
-                return item;
-            }
-
-            // Unboxed Item (Not Insert, Not Box)
-            // IMMEDIATE SPOILAGE
-            // Unless it is explicitly non-spoilable (e.g. tools? plates?)
-            // We rely on 'spoilable' on definition, OR whitelist trash/tools.
-            // But user said "stuff not in boxes spoils".
-            // Let's assume Ingredients/Containers/Composites spoil.
-            const def = item.definition;
-            if (!def) return item;
-
-            // Whitelist types that don't spoil?
-            // Player held items?
-            // Assume Tools don't spoil.
-            if (def.category === 'tool') return item;
-
-            // Whitelist types that don't spoil (Stock items)
-            if (def.category === 'sauce_refill') return item;
-            if (def.id === 'fry_bag' || def.id === 'sweet_fry_bag') return item;
-
-            // Whitelist Appliances (placed as objects)
-            if (def.type === 'appliance' || ['dispenser', 'soda_fountain', 'fryer', 'grill', 'counter'].includes(def.id)) return item;
-
-            // Standard Spoiling
-            let newId = 'generic_spoil';
-            if (def.spoilage && def.spoilage.id) newId = def.spoilage.id;
-            else if (def.aging && def.aging.spoiledItem) newId = def.aging.spoiledItem; // Legacy config support if present
-
-            // Legacy fallbacks (explicit map for cleaner UX than generic spoil)
-            const id = item.definitionId;
-            if (id === 'plain_bun') newId = 'bun_old';
-            else if (id === 'beef_patty') newId = 'patty_old';
-            else if (id.includes('burger')) newId = 'burger_old';
-            else if (id === 'fries') newId = 'fries_old';
-            else if (id === 'soda') newId = 'soda_old';
-            else if (id === 'bag') {
-                // Empty bags don't spoil
-                if (!item.state.contents || item.state.contents.length === 0) return item;
-                newId = 'bag_old';
-            }
-
-            staleCount++;
-            return new ItemInstance(newId);
-        };
-
-        // 1. Check Player Hands
-        if (this.player.heldItem) {
-            this.player.heldItem = checkItem(this.player.heldItem);
-        }
-
-        // 2. Check All Rooms
-        Object.values(this.rooms).forEach(room => {
-            if (!room) return;
-            for (let y = 0; y < room.height; y++) {
-                for (let x = 0; x < room.width; x++) {
-                    const cell = room.getCell(x, y);
-                    if (cell.object) {
-                        cell.object = checkItem(cell.object);
-                    }
-                }
-            }
-        });
-
-        if (staleCount > 0) {
-            console.log(`${staleCount} items spoiled!`);
-            this.addFloatingText(`${staleCount} items spoiled!`, this.player.x, this.player.y, '#90ee90');
-        }
-    }
-
     cleanAppliances() {
         console.log("Cleaning appliances...");
         Object.values(this.rooms).forEach(room => {
@@ -948,9 +842,6 @@ export class Game {
 
         // Create Clean Slate for Appliances
         this.cleanAppliances();
-
-        // Handle Overnight Spoilage
-        this.spoilStaleItems();
 
         // Handle Morning Orders (Spawn Pending Items)
         // User Request: Clear tiles, use sorted list, stop if full.
@@ -1112,6 +1003,15 @@ export class Game {
     handleInput(event) {
         if (!this.keys) this.keys = {};
         this.keys[event.code] = true;
+
+        // Bomb Cheat (Cmd+B)
+        if (event.code === 'KeyB' && (event.metaKey || event.ctrlKey)) {
+            console.log("CHEAT: Spawning Bomb Powerup Early");
+            this.powerupSystem.spawnPowerup({ id: 'bomb' });
+            this.powerupSystem.bombSpawned = true;
+            event.preventDefault();
+            return;
+        }
 
         if (this.alertSystem?.isVisible) return this.alertSystem.handleInput(event.code);
         this.audioSystem?.resume();
@@ -1549,6 +1449,15 @@ export class Game {
     update(dt) {
         if (!dt) return;
 
+        // Breakdown Logic (Visual Timer)
+        if (this.bombEffectActive) {
+            this.bombEffectTimer -= dt;
+            if (this.bombEffectTimer <= 0) {
+                this.bombEffectTimer = 0;
+                this.bombEffectActive = false;
+            }
+        }
+
         this.updateSystems(dt);
         this.updateWorldState(dt);
         this.updateServiceCycle(dt);
@@ -1753,10 +1662,11 @@ export class Game {
                         }
                     }
 
-                    // Dishwasher Logic
                     if (cell.type.id === 'DISHWASHER' && cell.state) {
-                        if (cell.state.status === 'washing' && this.timeFreezeTimer <= 0) {
-                            cell.state.timer = (cell.state.timer || 0) - dt;
+                        if (cell.state.status === 'washing') {
+                            if (this.timeFreezeTimer <= 0) {
+                                cell.state.timer = (cell.state.timer || 0) - dt;
+                            }
                             if (cell.state.timer <= 0) {
                                 const count = cell.state.dishCount || 0;
                                 cell.state.status = 'idle';
@@ -1766,6 +1676,7 @@ export class Game {
                                 const cleanRack = new ItemInstance('dish_rack');
                                 cleanRack.state.contents = Array.from({ length: count }, () => new ItemInstance('plate'));
                                 cell.object = cleanRack;
+                                console.log("Dishwasher finished wash.");
                             }
                         }
                     }
@@ -1795,6 +1706,14 @@ export class Game {
 
                     // Service Counter Logic
                     if (cell.type.id === 'SERVICE' && cell.object && (cell.object.definitionId === 'bag' || cell.object.definitionId === 'magic_bag' || cell.object.definitionId === 'plate')) {
+                        // Skip if already matched while frozen
+                        if (cell.object.state.isMatched) {
+                            if (!this.timeFreezeManual) {
+                                cell.object = null;
+                            }
+                            continue; // Use continue since we/re in a nested loop in the real file
+                        }
+
                         if (this.activeTickets.length > 0) {
                             let matchedTicketIndex = -1;
                             let matchResult = null;
@@ -1813,48 +1732,17 @@ export class Game {
                                 this.money += matchResult.payout;
                                 this.dailyMoneyEarned += matchResult.payout;
                                 this.dailyBagsSold++;
-                                cell.object = null;
-
-                                if (ticket.isComplete()) {
-                                    this.powerupSystem.resumeTime();
-                                    const isDineIn = ticket.groups.some(g => g.containerType === 'plate');
-                                    if (isDineIn) {
-                                        this.pendingDirtyPlates.push({ timer: 3000, x: 12, y: 2 });
+                                
+                                // If frozen, keep it on the counter visually
+                                if (this.timeFreezeManual) {
+                                    cell.object.state.isMatched = true;
+                                    ticket.finalizePos = { x, y };
+                                    this.addFloatingText("Matched!", x, y, '#00ffff');
+                                } else {
+                                    cell.object = null;
+                                    if (ticket.isComplete()) {
+                                        this._finalizeTicket(ticket, matchedTicketIndex, x, y);
                                     }
-                                    const par = ticket.parTime;
-                                    const elapsed = ticket.elapsedTime;
-                                    const diff = par - elapsed;
-                                    let bonus = 0, message = "", color = "#fff";
-
-                                    if (diff >= SCORING_CONFIG.THRESHOLDS.BONUS) {
-                                        bonus = SCORING_CONFIG.REWARDS.BONUS;
-                                        message = "GREAT SPEED! BONUS!";
-                                        color = "#00ff00";
-                                    } else if (diff >= 0) {
-                                        bonus = SCORING_CONFIG.REWARDS.PAR;
-                                        message = "ON TIME";
-                                        color = "#ffff00";
-                                    } else {
-                                        bonus = SCORING_CONFIG.REWARDS.SLOW;
-                                        message = "SERVED";
-                                        color = "#ffffff";
-                                    }
-
-                                    this.money += bonus;
-                                    this.dailyMoneyEarned += bonus;
-                                    this.addFloatingText(message + ` ($${bonus})`, x, y, color);
-                                    this.stability = 100;
-                                    this.addFloatingText(`STABILITY FULL!`, x, y - 1, '#00ffff');
-                                    const ticketScore = this.orderSystem.calculateTicketScore(ticket);
-                                    this.score += ticketScore;
-                                    this.addXp(1); // Give 1 XP per ticket
-                                    if (this.score > this.highScore) {
-                                        this.highScore = this.score;
-                                        localStorage.setItem('burger_joint_highscore_v2', this.highScore);
-                                        if (this.score > 0) this.addFloatingText("NEW HIGH SCORE!", x, y - 2, '#ffcc00');
-                                    }
-                                    this.activeTickets.splice(matchedTicketIndex, 1);
-                                    this.orders = this.activeTickets.map(t => t.toDisplayFormat());
                                 }
                             }
                         }
@@ -1887,6 +1775,17 @@ export class Game {
             this.timeFreezeTimer = Math.max(0, this.timeFreezeTimer - dt);
         }
 
+        // --- NEW: Finalize Completed Tickets after clock resumes ---
+        if (this.timeFreezeTimer <= 0) {
+            for (let i = this.activeTickets.length - 1; i >= 0; i--) {
+                const ticket = this.activeTickets[i];
+                if (ticket.isComplete()) {
+                    const pos = ticket.finalizePos || { x: 3, y: 3 }; // Target default if pos lost
+                    this._finalizeTicket(ticket, i, pos.x, pos.y);
+                }
+            }
+        }
+
         this.updateFallingBoxes(dt);
 
         // Tutorials
@@ -1908,6 +1807,50 @@ export class Game {
         if (this.effects) {
             this.effects = this.effects.filter(e => (Date.now() - e.startTime) < e.duration);
         }
+    }
+
+    _finalizeTicket(ticket, index, x, y) {
+        this.powerupSystem.resumeTime();
+        const isDineIn = ticket.groups.some(g => g.containerType === 'plate');
+        if (isDineIn) {
+            this.pendingDirtyPlates.push({ timer: 3000, x: 12, y: 2 });
+        }
+        const par = ticket.parTime;
+        const elapsed = ticket.elapsedTime;
+        const diff = par - elapsed;
+        let bonus = 0, message = "", color = "#fff";
+
+        if (diff >= SCORING_CONFIG.THRESHOLDS.BONUS) {
+            bonus = SCORING_CONFIG.REWARDS.BONUS;
+            message = "GREAT SPEED! BONUS!";
+            color = "#00ff00";
+        } else if (diff >= 0) {
+            bonus = SCORING_CONFIG.REWARDS.PAR;
+            message = "ON TIME";
+            color = "#ffff00";
+        } else {
+            bonus = SCORING_CONFIG.REWARDS.SLOW;
+            message = "SERVED";
+            color = "#ffffff";
+        }
+
+        this.money += bonus;
+        this.dailyMoneyEarned += bonus;
+        this.addFloatingText(message + ` ($${bonus})`, x, y, color);
+        this.stability = 100;
+        this.addFloatingText(`STABILITY FULL!`, x, y - 1, '#00ffff');
+        const ticketScore = this.orderSystem.calculateTicketScore(ticket);
+        this.score += ticketScore;
+        this.addXp(1); // Give 1 XP per ticket
+        if (this.score > this.highScore) {
+            this.highScore = this.score;
+            if (this.score > (parseInt(localStorage.getItem('burger_joint_highscore_v2')) || 0)) {
+                localStorage.setItem('burger_joint_highscore_v2', this.highScore);
+            }
+            if (this.score > 0) this.addFloatingText("NEW HIGH SCORE!", x, y - 2, '#ffcc00');
+        }
+        this.activeTickets.splice(index, 1);
+        this.orders = this.activeTickets.map(t => t.toDisplayFormat());
     }
 
     updateFallingBoxes(dt) {
@@ -2451,9 +2394,8 @@ export class Game {
 
     getAvailableToppingPool() {
         return this.TOPPING_POOL.filter(toppingId => {
-            const boxId = this.TOPPING_BOX_MAP[toppingId];
-            const shopItem = this.shopItems.find(i => i.id === boxId);
-            return shopItem && !shopItem.unlocked;
+            const charges = this.toppingCharges[toppingId] || 0;
+            return charges > 0;
         });
     }
 
@@ -2539,31 +2481,34 @@ export class Game {
         this.saveLevel();
     }
 
-    unlockTopping(toppingId) {
-        console.log(`[Game] Unlocking Topping: ${toppingId}`);
+    unlockTopping(toppingId, slotIndex = null) {
+        console.log(`[Game] Unlocking Topping: ${toppingId} for slot: ${slotIndex}`);
 
-        // Only add to menu if it's an actual topping (not an alt patty or side)
+        if (this.toppingCharges[toppingId] > 0) {
+            this.toppingCharges[toppingId]--;
+        }
+
         const def = DEFINITIONS[toppingId];
         const isTopping = def && (def.isTopping || def.category === 'topping' || toppingId.includes('cheese') || toppingId === 'bacon');
         const isAlt = toppingId === 'chicken_patty' || toppingId === 'sweet_potato_fries';
 
-        if (isTopping && !isAlt) {
-            this.menuSystem.addToppingToMenu(toppingId);
+        if (toppingId === 'chicken_patty') {
+            this.menuSystem.addChickenBurger();
+            // Refresh charges for all toppings for the new burger
+            this.TOPPING_POOL.forEach(id => {
+                const tDef = DEFINITIONS[id];
+                const tIsTopping = tDef && (tDef.isTopping || tDef.category === 'topping' || id.includes('cheese') || id === 'bacon');
+                if (tIsTopping && id !== 'chicken_patty') {
+                    this.toppingCharges[id] = (this.toppingCharges[id] || 0) + 1;
+                }
+            });
+        } else if (isTopping && !isAlt) {
+            this.menuSystem.addToppingToMenu(toppingId, slotIndex);
         }
 
         // Also unlock the corresponding supply box in shop
         // Map topping to box
-        const boxMap = {
-            'lettuce_leaf': 'lettuce_box',
-            'tomato_slice': 'tomato_box',
-            'pickle_slice': 'pickle_box',
-            'onion_slice': 'onion_box',
-            'cheddar_cheese': 'cheddar_box',
-            'swiss_cheese': 'swiss_box',
-            'bacon': 'bacon_box',
-            'chicken_patty': 'chicken_patty_box',
-            'sweet_potato_fries': 'sweet_potato_fry_box'
-        };
+        const boxMap = this.TOPPING_BOX_MAP;
 
         const boxId = boxMap[toppingId];
         if (boxId) {

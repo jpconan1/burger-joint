@@ -209,7 +209,8 @@ export const InteractionHandlers = {
             if (target instanceof ItemInstance || target.type === undefined) {
                 const def = target.definition || {};
                 const isCookedBacon = target.definitionId === 'bacon' && target.state.cook_level === 'cooked';
-                if (def.isSlice || def.category === 'topping' || def.category === 'patty' || isCookedBacon) {
+                const isSide = def.category === 'side' || def.category === 'side_prep';
+                if (def.isSlice || def.category === 'topping' || def.category === 'patty' || isCookedBacon || isSide) {
                     itemToTake = target;
                     updateSource = () => { cell.object = null; };
                 }
@@ -219,8 +220,9 @@ export const InteractionHandlers = {
                     const tempItem = new ItemInstance(prodId);
                     const def = tempItem.definition;
                     const isCookedBacon = tempItem.definitionId === 'bacon' && tempItem.state.cook_level === 'cooked';
+                    const isSide = def.category === 'side' || def.category === 'side_prep';
 
-                    if (def.isSlice || def.category === 'topping' || def.category === 'patty' || isCookedBacon) {
+                    if (def.isSlice || def.category === 'topping' || def.category === 'patty' || isCookedBacon || isSide) {
                         itemToTake = tempItem;
                         updateSource = () => {
                             // target.state.count--; // UNLIMITED BOXES
@@ -449,15 +451,49 @@ export const InteractionHandlers = {
             return true; // Block pickup if hands full
         }
 
-        // Generic Pickup falls through if hands empty? 
-        // Returning FALSE allows standard pickup to work.
+        // 3. Generic Combine (e.g. Patty to Bun)
+        if (player.heldItem) {
+            const result = InteractionHandlers._tryCombine(player.heldItem, friedItem);
+            if (result) {
+                player.heldItem = result;
+                cell.object = null;
+                cell.state.status = 'empty';
+                return true;
+            }
+        }
+
+        // Generic Pickup falls through if hands empty
+        if (!player.heldItem) {
+            player.heldItem = friedItem;
+            cell.object = null;
+            cell.state.status = 'empty';
+            return true;
+        }
+
         return false;
     },
 
     fryer_load: (player, cell) => {
         if (!player.heldItem) return false;
 
-        // Fry Bag
+        // 1. Fry from Box
+        if (player.heldItem.type === ItemType.Box) {
+            const box = player.heldItem;
+            const producesId = box.definition.produces;
+            if (producesId && box.state.count > 0) {
+                const tempItem = new ItemInstance(producesId);
+                const def = tempItem.definition;
+                if (def.cooking && def.cooking.stages?.raw?.cookMethod === 'fry') {
+                    cell.object = tempItem;
+                    box.state.isOpen = true;
+                    cell.state.status = 'down';
+                    cell.state.timer = 0;
+                    return true;
+                }
+            }
+        }
+
+        // 2. Fry Bag
         if (player.heldItem.definition && player.heldItem.definition.fryContent) {
             let bag = player.heldItem;
             if (bag.state.charges === undefined) {
@@ -769,6 +805,19 @@ export const InteractionHandlers = {
                 target.state.contents.push(held);
                 player.heldItem = null;
                 return true;
+            }
+
+            // 1b. Rule: Both are containers - transfer contents
+            if (count === 1 && held.definition && held.definition.useStackRender) {
+                const heldContents = held.state.contents || [];
+                if (heldContents.length > 0) {
+                    const lastItem = heldContents[heldContents.length - 1];
+                    if (InteractionHandlers._canContainerHoldItem(target, lastItem)) {
+                        if (!target.state.contents) target.state.contents = [];
+                        target.state.contents.push(heldContents.pop());
+                        return true;
+                    }
+                }
             }
         }
 
@@ -1093,6 +1142,19 @@ export const InteractionHandlers = {
                 }
             }
         }
+
+        // 4. Plate Combining (Ingredient to Plate, or Plate to Ingredient)
+        if (held.definitionId === 'plate' && InteractionHandlers._canContainerHoldItem(held, target)) {
+            if (!held.state.contents) held.state.contents = [];
+            held.state.contents.push(target);
+            return held;
+        }
+        if (target.definitionId === 'plate' && InteractionHandlers._canContainerHoldItem(target, held)) {
+            if (!target.state.contents) target.state.contents = [];
+            target.state.contents.push(held);
+            return target;
+        }
+
         return null;
     },
 
@@ -1487,7 +1549,8 @@ export const InteractionHandlers = {
 
         // Insert/Standard Rules: Multiple of same ingredient
         const isCookedBacon = target.definitionId === 'bacon' && targetState.cook_level === 'cooked';
-        if (targetDef.isSlice || targetDef.category === 'topping' || targetDef.category === 'patty' || isCookedBacon) {
+        const isSide = targetDef.category === 'side' || targetDef.category === 'side_prep';
+        if (targetDef.isSlice || targetDef.category === 'topping' || targetDef.category === 'patty' || isCookedBacon || isSide) {
             const contents = container.state.contents || [];
             if (contents.length >= 50) return false;
             // MIXING BLOCK:
@@ -1505,12 +1568,33 @@ export const InteractionHandlers = {
 
         const isBurger = held.category === 'burger' || held.definitionId.includes('burger');
         const isBun = held.category === 'bun';
-        return isBurger || isBun;
+        if (isBurger || isBun) return true;
+
+        if (InteractionHandlers._isStackableContainer(held) && held.definitionId !== 'dirty_plate') {
+            const contents = container.state.contents || [];
+            if (contents.length > 0) {
+                const first = contents[0];
+                return InteractionHandlers._canContainerHoldItem(held, first);
+            }
+        }
+        
+        if (held.definitionId === 'side_cup') {
+            const contents = container.state.contents || [];
+            if (contents.length > 0) {
+                const first = contents[0];
+                return first.state?.cook_level === 'cooked' && first.definition.result;
+            }
+        }
+        return false;
     },
 
     _applyIngredientToHeld: (held, ingredient) => {
         if (!held || !ingredient) return held;
         
+        // Try generic combine first (handles side_cup + fries, etc.)
+        const combined = InteractionHandlers._tryCombine(held, ingredient);
+        if (combined) return combined;
+
         const isBun = held.category === 'bun';
         let targetBurger = held;
         
