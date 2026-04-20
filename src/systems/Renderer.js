@@ -248,6 +248,8 @@ export class Renderer {
             }
         }
         for (let y = 0; y < gameState.grid.height; y++) {
+            const deferredDecorations = [];
+
             for (let x = 0; x < gameState.grid.width; x++) {
                 const cell = gameState.grid.getCell(x, y);
 
@@ -502,17 +504,20 @@ export class Renderer {
                                 overrideTexture = cell.object.definition.cookingTexture;
                             }
                         }
+                        const flatOnCounter = cell.object.definition?.flatOnCounter;
                         let yOffset = 0;
                         if (cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE') {
-                            yOffset = -29;
+                            yOffset = flatOnCounter ? -9 : -29;
                         }
 
                         let alpha = 1.0;
-                        if (cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE') {
+                        if (!flatOnCounter && (cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE')) {
                         if (gameState.player) {
                             const playerX = Math.round(gameState.player.visualX);
                             const playerY = Math.round(gameState.player.visualY);
-                            if (playerX === x && playerY === y - 1) {
+                            const spanWidth = ObjectRenderer.isLargeCounterObject(cell.object)
+                                ? (cell.object.definition.widthTiles || 1) : 1;
+                            if (playerX >= x && playerX < x + spanWidth && playerY === y - 1) {
                                 alpha = 0.5;
                             }
                         }
@@ -526,10 +531,13 @@ export class Renderer {
                             }
                         }
 
-                        this.ctx.globalAlpha = alpha;
-                        ObjectRenderer.drawObject(this, cell.object, x, y, overrideTexture, yOffset);
-
-                        this.ctx.globalAlpha = 1.0;
+                        if (ObjectRenderer.isLargeCounterObject(cell.object)) {
+                            deferredDecorations.push({ x, y, object: cell.object, alpha, yOffset });
+                        } else {
+                            this.ctx.globalAlpha = alpha;
+                            ObjectRenderer.drawObject(this, cell.object, x, y, overrideTexture, yOffset);
+                            this.ctx.globalAlpha = 1.0;
+                        }
                     }
 
                     // Cooking Progress Bar (Stove)
@@ -635,6 +643,14 @@ export class Renderer {
                 ObjectRenderer.drawPlayer(this, gameState);
             }
 
+            // Draw large decorations (e.g. board_rack_double) after all tiles in this row
+            // so they appear on top of adjacent counter tiles they overlap
+            deferredDecorations.forEach(d => {
+                this.ctx.globalAlpha = d.alpha;
+                ObjectRenderer.drawObject(this, d.object, d.x, d.y, null, d.yOffset);
+                this.ctx.globalAlpha = 1.0;
+            });
+
         }
 
 
@@ -718,11 +734,6 @@ export class Renderer {
         if (gameState.gameState === 'COMPUTER_ORDERING') {
             // this.renderComputerScreen(gameState);
         }
-        if (gameState.gameState === 'RENO_SHOP') {
-            ScreenRenderer.renderRenoScreen(this, gameState);
-        }
-
-
         if (gameState.gameState === 'APPLIANCE_SWAP' && gameState.swappingState) {
             this.ctx.save();
             this.ctx.translate(this.offsetX, this.offsetY); // transform to grid
@@ -924,11 +935,6 @@ export class Renderer {
     }
 
 
-    drawDispenser(object, x, y, yOffset = 0) {
-        ObjectRenderer.drawDispenser(this, object, x, y, yOffset);
-    }
-
-
     drawObject(object, x, y, overrideTexture = null, yOffset = 0) {
         ObjectRenderer.drawObject(this, object, x, y, overrideTexture, yOffset);
     }
@@ -1121,11 +1127,6 @@ export class Renderer {
 
 
 
-
-
-    renderRenoScreen(gameState) {
-        ScreenRenderer.renderRenoScreen(this, gameState);
-    }
 
 
     drawServiceHint(x, y, gameState, cellObject, yOffset = 0, ticketIndex = 0) {

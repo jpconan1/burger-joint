@@ -394,17 +394,9 @@ export class AlertSystem {
                     </div>` : '';
 
                 let labelText = btnConfig.label || btnConfig.text || 'OK';
-                let subLabel = '';
-                
-                if (isLevelUp && btnConfig.action === 'dismiss') {
-                    const pickedCount = this.activeAlert.data.pickedCount || 0;
-                    if (pickedCount === 0) {
-                        labelText = 'Lock Menu';
-                        subLabel = 'Ticket Speed ++';
-                    }
-                }
+                let subLabel = btnConfig.subLabel || '';
 
-                const showLabel = !btnConfig.boxImage || labelText === 'OK' || labelText === 'Lock Menu';
+                const showLabel = !btnConfig.boxImage || labelText === 'OK';
 
                 btn.innerHTML = `
                     ${imgHTML}
@@ -524,15 +516,12 @@ export class AlertSystem {
     }
 
     executeAction(action) {
-        if (action === 'dismiss') {
-            if (this.activeAlert.id === 'level_up') {
-                const pickedCount = this.activeAlert.data.pickedCount || 0;
-                if (pickedCount === 0) {
-                    this.game.lockMenu();
-                    this.close();
-                    return;
-                }
+        if (action === 'faster_tickets' || action === 'more_complexity') {
+            if (this.activeAlert.data?.onChoice) {
+                this.activeAlert.data.onChoice(action);
             }
+            this.close();
+        } else if (action === 'dismiss') {
             this.advance();
         } else if (action === 'reroll') {
             this.rerollToppings();

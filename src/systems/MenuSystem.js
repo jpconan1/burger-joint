@@ -62,53 +62,30 @@ export class MenuSystem {
     }
 
     /**
-     * Updates availability of sides/drinks based on unlocks.
+     * Updates sides/drinks/sauces on the menu based on what's available in the kitchen.
+     * Driven by game.allowedOrderItems, which is built by scanning the grid.
      */
     updateAvailableItems() {
-        if (!this.game || !this.game.shopItems) return;
+        if (!this.game) return;
+        const allowed = this.game.allowedOrderItems;
 
-        const checkUnlocked = (itemId) => {
-            const shopItem = this.game.shopItems.find(i => i.id === itemId);
-            if (shopItem) return shopItem.unlocked;
-
-            // Follow dependency map up to find the box/supply that unlocks this
-            let currentId = itemId;
-            let depth = 0;
-            while (depth < 5) {
-                const parentId = (this.game.itemDependencyMap && this.game.itemDependencyMap[currentId]);
-                if (!parentId) break;
-                const pShopItem = this.game.shopItems.find(i => i.id === parentId);
-                if (pShopItem) return pShopItem.unlocked;
-                currentId = parentId;
-                depth++;
-            }
-            return false;
-        };
-
-        // Auto-add unlocked sides to menu
         this.rawSides.forEach(s => {
-            if (checkUnlocked(s.id)) {
-                if (!this.sides.some(side => side.definitionId === s.id)) {
-                    this.sides.push({ definitionId: s.id });
-                    console.log(`[MenuSystem] Auto-added side: ${s.id}`);
-                }
+            if (allowed.has(s.id) && !this.sides.some(side => side.definitionId === s.id)) {
+                this.sides.push({ definitionId: s.id });
+                console.log(`[MenuSystem] Auto-added side: ${s.id}`);
             }
         });
 
-        // Auto-add unlocked drinks to menu
         this.rawDrinks.forEach(d => {
-            if (checkUnlocked(d.id)) {
-                if (!this.drinks.some(drink => drink.definitionId === d.id)) {
-                    this.drinks.push({ definitionId: d.id });
-                    console.log(`[MenuSystem] Auto-added drink: ${d.id}`);
-                }
+            if (allowed.has(d.id) && !this.drinks.some(drink => drink.definitionId === d.id)) {
+                this.drinks.push({ definitionId: d.id });
+                console.log(`[MenuSystem] Auto-added drink: ${d.id}`);
             }
         });
 
-        // Auto-add unlocked sauces to burgers as standard toppings
-        const sauces = ['mayo', 'ketchup', 'bbq', 'burger_sauce'];
+        const sauces = ['mayo', 'bbq', 'burger_sauce'];
         sauces.forEach(sauceId => {
-            if (checkUnlocked(sauceId)) {
+            if (allowed.has(sauceId)) {
                 this.addToppingToMenu(sauceId);
             }
         });

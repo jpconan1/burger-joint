@@ -370,10 +370,8 @@ export const DEFAULT_LEVEL = {
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
             {
-                "typeId": "CUTTING_BOARD",
-                "state": {
-                    "status": "empty"
-                },
+                "typeId": "COUNTER",
+                "state": {},
                 "object": null
             },
             {
@@ -663,8 +661,15 @@ export const DEFAULT_LEVEL = {
             },
             {
                 "typeId": "COUNTER",
-                "state": {},
-                "object": null
+                "state": {
+                    "facing": 0
+                },
+                "object": {
+                    "definitionId": "board_rack_double",
+                    "state": {
+                        "boardCount": 2
+                    }
+                }
             },
             {
                 "typeId": "COUNTER",

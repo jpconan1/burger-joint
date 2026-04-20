@@ -137,67 +137,32 @@ export class Player {
 
         if (!cell) return;
 
-        // 1. Check for Appliance Object (e.g. Dispenser on Counter)
-        if (cell.object) {
-            const obj = cell.object;
-            const shopItem = game.shopItems.find(i => i.id === obj.definitionId && i.type === 'appliance');
-
-            if (shopItem) {
-                const savedState = obj.state ? JSON.parse(JSON.stringify(obj.state)) : null;
-
-                this.heldAppliance = {
-                    id: shopItem.id,
-                    tileType: shopItem.tileType,
-                    savedState: savedState,
-                    attachedObject: null
-                };
-
-                cell.object = null;
-                game.updateCapabilities();
-                console.log("Picked up appliance object: " + shopItem.id);
-                game.addFloatingText("Picked Up!", this.x, this.y, '#ffffff');
-                return;
-            }
-
-            // If object exists but isn't an appliance, we block pickup of the underlying tile
-            game.addFloatingText("Remove item first!", targetX, targetY, '#ff0000');
-            console.log("Cannot pick up appliance. Item on top.");
-            return;
-        }
-
-        // 2. Check for Appliance Tile
+        // 1. Check for Appliance Tile
         const isAppliance = cell.type.id !== 'FLOOR' && cell.type.id !== 'WALL' && !cell.type.isDoor && !cell.type.isExit;
 
         if (isAppliance) {
             const tileTypeId = cell.type.id;
             const savedState = cell.state ? JSON.parse(JSON.stringify(cell.state)) : null;
 
-            // Find definition
-            const shopItem = game.shopItems.find(i => i.tileType === tileTypeId);
+            this.heldAppliance = {
+                id: tileTypeId,
+                tileType: tileTypeId,
+                savedState: savedState,
+                attachedObject: cell.object
+            };
 
-            if (shopItem) {
-                this.heldAppliance = {
-                    id: shopItem.id,
-                    tileType: tileTypeId,
-                    savedState: savedState,
-                    attachedObject: cell.object // Save item on top
-                };
+            grid.setTileType(targetX, targetY, TILE_TYPES.FLOOR);
+            if (cell.object) cell.object = null;
 
-                // Log what we are picking up
-                console.log("Picking up " + tileTypeId);
+            game.updateCapabilities();
+            console.log("Picked up appliance: " + tileTypeId);
+            game.addFloatingText("Picked Up!", this.x, this.y, '#ffffff');
+            return;
+        }
 
-                // Clear from Grid
-                grid.setTileType(targetX, targetY, TILE_TYPES.FLOOR);
-
-                // IMPORTANT: Clear the object from the grid so it moves with the cursor
-                if (cell.object) {
-                    cell.object = null;
-                }
-
-                game.updateCapabilities();
-                console.log("Picked up appliance: " + shopItem.id);
-                game.addFloatingText("Picked Up!", this.x, this.y, '#ffffff');
-            }
+        // 2. Object on a counter with no tile appliance underneath
+        if (cell.object) {
+            game.addFloatingText("Remove item first!", targetX, targetY, '#ff0000');
         }
     }
 

@@ -29,7 +29,11 @@ export function drawPlayer(renderer, gameState) {
 
         // Draw Held Item
         if (player.heldItem) {
+            renderer.ctx.save();
+            const nudge = 12;
+            renderer.ctx.translate(player.facing.x * nudge, player.facing.y * nudge);
             drawEntity(renderer, player.heldItem, vx, vy);
+            renderer.ctx.restore();
         }
 
         // Draw Held Appliance
@@ -55,15 +59,109 @@ export function drawPlayer(renderer, gameState) {
     }
 }
 
+/**
+ * Returns true if this object should be drawn as a multi-tile large counter decoration.
+ * Objects opt in by having widthTiles or heightTiles > 1 in their definition.
+ */
+export function isLargeCounterObject(object) {
+    if (!object?.definition) return false;
+    return (object.definition.widthTiles > 1) || (object.definition.heightTiles > 1);
+}
+
+/**
+ * Draws a large counter object that spans multiple tiles.
+ *
+ * Positioning: the bottom of the image aligns with the bottom of a standard 64px counter
+ * item. yOffset is the counter item lift (typically -29). For each extra tile of height
+ * beyond the first, we shift up by one TILE_SIZE so the image grows upward from the
+ * counter surface, not downward through the floor.
+ *
+ * To add a new large decoration:
+ *   1. Add the item definition to items.json with widthTiles / heightTiles set
+ *   2. Add its texture to ASSETS.OBJECTS in constants.js
+ *   3. Add a pickup: () => true entry to interactions.js so it can't be picked up
+ *   4. The render loop in Renderer.js will detect it automatically via isLargeCounterObject
+ */
+export function drawLargeCounterObject(renderer, object, x, y, yOffset = 0) {
+    const def = object.definition;
+    const widthTiles = def.widthTiles || 1;
+    const heightTiles = def.heightTiles || 1;
+    const img = renderer.assetLoader.get(object.texture);
+    if (!img) return;
+
+    const drawY = y * TILE_SIZE + yOffset - TILE_SIZE * (heightTiles - 1);
+    renderer.ctx.drawImage(img, x * TILE_SIZE, drawY, TILE_SIZE * widthTiles, TILE_SIZE * heightTiles);
+}
+
+export function drawBoardRack(renderer, rackObject, x, y, yOffset = 0) {
+    const boardCount = rackObject.state?.boardCount ?? 2;
+    let textureName;
+    if (boardCount >= 2) textureName = ASSETS.OBJECTS.BOARD_RACK_DOUBLE;
+    else if (boardCount === 1) textureName = ASSETS.OBJECTS.BOARD_RACK_SINGLE;
+    else textureName = ASSETS.OBJECTS.BOARD_RACK_EMPTY;
+
+    const def = rackObject.definition;
+    const widthTiles = def.widthTiles || 1;
+    const heightTiles = def.heightTiles || 1;
+    const img = renderer.assetLoader.get(textureName);
+    if (!img) return;
+
+    const drawY = y * TILE_SIZE + yOffset - TILE_SIZE * (heightTiles - 1);
+    renderer.ctx.drawImage(img, x * TILE_SIZE, drawY, TILE_SIZE * widthTiles, TILE_SIZE * heightTiles);
+}
+
+export function drawBoardItem(renderer, boardObject, x, y, yOffset = 0) {
+    let boardTexture = ASSETS.OBJECTS.BOARD;
+    if (boardObject.definitionId === 'board_tomatoed') boardTexture = ASSETS.OBJECTS.BOARD_TOMATOED;
+    else if (boardObject.definitionId === 'board_pickled') boardTexture = ASSETS.OBJECTS.BOARD_PICKLED;
+    const img = renderer.assetLoader.get(boardTexture);
+    if (img) {
+        renderer.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE + yOffset, TILE_SIZE, TILE_SIZE);
+    }
+
+    const heldItem = boardObject.state?.heldItem;
+    if (heldItem) {
+        let scale = (heldItem.definition && (heldItem.definition.isSlice || heldItem.definition.isTopping)) ? 1.0 : 0.5;
+        renderer.ctx.save();
+        if (scale !== 1.0) {
+            const cx = x * TILE_SIZE + TILE_SIZE / 2;
+            const cy = y * TILE_SIZE + TILE_SIZE / 2 + yOffset;
+            renderer.ctx.translate(cx, cy);
+            renderer.ctx.scale(scale, scale);
+            renderer.ctx.translate(-cx, -cy);
+        }
+        const itemImg = renderer.assetLoader.get(heldItem.texture);
+        if (itemImg) {
+            renderer.ctx.drawImage(itemImg, x * TILE_SIZE, y * TILE_SIZE + yOffset, TILE_SIZE, TILE_SIZE);
+        }
+        renderer.ctx.restore();
+
+        if (heldItem.state?.count > 1) {
+            renderer.drawTinyNumber(x, y, heldItem.state.count);
+        }
+    }
+}
+
 export function drawObject(renderer, object, x, y, overrideTexture = null, yOffset = 0) {
     if (!object) return;
 
-    if (object.definitionId === 'soda_fountain') {
-        drawSodaFountain(renderer, object, x, y, yOffset);
+    if (object.definitionId === 'board_rack_double') {
+        drawBoardRack(renderer, object, x, y, yOffset);
         return;
     }
-    if (object.definitionId === 'dispenser') {
-        drawDispenser(renderer, object, x, y, yOffset);
+
+    if (object.definitionId === 'board' || object.definitionId === 'board_tomatoed' || object.definitionId === 'board_pickled') {
+        drawBoardItem(renderer, object, x, y, yOffset);
+        return;
+    }
+
+    if (isLargeCounterObject(object)) {
+        drawLargeCounterObject(renderer, object, x, y, yOffset);
+        return;
+    }
+
+    if (object.definitionId === 'soda_fountain') {
+        drawSodaFountain(renderer, object, x, y, yOffset);
         return;
     }
     if (object.definitionId === 'bomb') {
@@ -124,28 +222,10 @@ export function drawSodaFountain(renderer, object, x, y, yOffset = 0) {
     }
 }
 
-export function drawDispenser(renderer, object, x, y, yOffset = 0) {
-    renderer.drawTile(ASSETS.TILES.DISPENSER_EMPTY, x, y, yOffset);
-
-    const status = object.state.status;
-    if (status === 'loaded' || status === 'has_mayo') {
-        let bagTexture = ASSETS.OBJECTS.MAYO_BAG;
-        if (object.state.bagId && DEFINITIONS[object.state.bagId]) {
-            bagTexture = DEFINITIONS[object.state.bagId].texture;
-        }
-        renderer.drawTile(bagTexture, x, y, yOffset);
-
-        const charges = object.state.charges;
-        let texture = ASSETS.TILES.DISPENSER_PARTIAL2;
-        if (charges > 10) texture = ASSETS.TILES.DISPENSER_FULL;
-        else if (charges > 5) texture = ASSETS.TILES.DISPENSER_PARTIAL1;
-
-        renderer.drawTile(texture, x, y, yOffset);
-    }
-}
 
 export function drawDishRack(renderer, rack, x, y, yOffset = 0) {
     const contents = rack.state.contents || [];
+    const boards = rack.state.boards || [];
     const bx = x * TILE_SIZE;
     const by = y * TILE_SIZE + yOffset;
 
@@ -156,21 +236,42 @@ export function drawDishRack(renderer, rack, x, y, yOffset = 0) {
         { dx: 12, dy: 28 }, { dx: 24, dy: 28 }, { dx: 36, dy: 28 }
     ];
 
-    for (let i = 0; i < Math.min(contents.length, 3); i++) {
-        const plate = contents[i];
-        const offset = plateOffsets[i];
-        drawDishRackPlate(renderer, plate, bx + offset.dx, by + offset.dy);
+    const row0Board = boards.find(b => b.row === 0);
+    const row1Board = boards.find(b => b.row === 1);
+    let plateIdx = 0;
+
+    // Row 0 — board takes the row, otherwise fill with plates
+    if (row0Board) {
+        _drawBoardInRackRow(renderer, row0Board.item, bx, by, 12);
+    } else {
+        for (let i = 0; i < 3 && plateIdx < contents.length; i++, plateIdx++) {
+            drawDishRackPlate(renderer, contents[plateIdx], bx + plateOffsets[i].dx, by + plateOffsets[i].dy);
+        }
     }
 
     renderer.drawTile(ASSETS.TILES.DISH_RACK_LAYER1, x, y, yOffset);
 
-    for (let i = 3; i < Math.min(contents.length, 6); i++) {
-        const plate = contents[i];
-        const offset = plateOffsets[i];
-        drawDishRackPlate(renderer, plate, bx + offset.dx, by + offset.dy);
+    // Row 1 — board takes the row, otherwise continue filling plates
+    if (row1Board) {
+        _drawBoardInRackRow(renderer, row1Board.item, bx, by, 28);
+    } else {
+        for (let i = 3; i < 6 && plateIdx < contents.length; i++, plateIdx++) {
+            drawDishRackPlate(renderer, contents[plateIdx], bx + plateOffsets[i].dx, by + plateOffsets[i].dy);
+        }
     }
 
     renderer.drawTile(ASSETS.TILES.DISH_RACK_LAYER2, x, y, yOffset);
+}
+
+function _drawBoardInRackRow(renderer, boardItem, bx, by, rowDy) {
+    let texKey = ASSETS.OBJECTS.BOARD;
+    if (boardItem.definitionId === 'board_tomatoed') texKey = ASSETS.OBJECTS.BOARD_TOMATOED;
+    else if (boardItem.definitionId === 'board_pickled') texKey = ASSETS.OBJECTS.BOARD_PICKLED;
+    const img = renderer.assetLoader.get(texKey);
+    if (img) {
+        // Draw the board spanning the row: from x+10 wide enough to cover 3 plate slots
+        renderer.ctx.drawImage(img, bx + 10, by + rowDy - 4, 48, 24);
+    }
 }
 
 function drawDishRackPlate(renderer, plate, px, py) {
@@ -203,8 +304,12 @@ export function drawBox(renderer, object, x, y, yOffset = 0) {
         return;
     }
 
+    const boxTexture = object.getTexture();
+    if (boxTexture) {
+        renderer.drawTile(boxTexture, x, y, yOffset);
+    }
+
     if (object.state.isOpen) {
-        renderer.drawTile(ASSETS.OBJECTS.OPEN_BOX, x, y, yOffset);
         const def = DEFINITIONS[object.definitionId];
         if (def && def.produces) {
             const productDef = DEFINITIONS[def.produces];
@@ -242,8 +347,6 @@ export function drawBox(renderer, object, x, y, yOffset = 0) {
                 }
             }
         }
-    } else {
-        renderer.drawTile(object.texture, x, y, yOffset);
     }
 }
 
@@ -462,6 +565,8 @@ export function drawEntity(renderer, itemOrTexture, x, y, scale = 1.0) {
             drawDishRack(renderer, item, x, y, 0);
         } else if (item.definitionId === 'insert' || (item.definition && item.definition.useStackRender)) {
             drawStackedItem(renderer, item, x, y, scale);
+        } else if (item.definitionId === 'board' || item.definitionId === 'board_tomatoed' || item.definitionId === 'board_pickled') {
+            drawBoardItem(renderer, item, x, y);
         } else {
             const img = renderer.assetLoader.get(item.texture);
             if (img) renderer.ctx.drawImage(img, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);

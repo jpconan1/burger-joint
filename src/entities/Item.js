@@ -167,7 +167,7 @@ export class ItemInstance {
             if (this.state.count <= 0) return 'empty-box.png';
 
             if (this.state.isOpen) {
-                return `${this.definitionId}-open.png`;
+                return this.definition.openTexture || 'box-open.png';
             }
 
             // Custom Closed Texture Support
@@ -242,4 +242,3 @@ export class ItemInstance {
         return item;
     }
 }
-

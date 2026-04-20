@@ -16,10 +16,6 @@ export const ASSETS = {
         CUTTING_BOARD_TOMATO: 'cutting_board-tomato.png',
         CUTTING_BOARD_SLICE: 'cutting_board-tomato-slice.png',
         CUTTING_BOARD_DIRTY: 'cutting_board-dirty.png',
-        DISPENSER_EMPTY: 'dispenser-empty.png',
-        DISPENSER_FULL: 'dispenser-full.png', // Overlay
-        DISPENSER_PARTIAL1: 'dispenser-partial1.png', // Overlay
-        DISPENSER_PARTIAL2: 'dispenser-partial2.png', // Overlay
         FRYER: 'fryer.png',
         FRYER_FRIES: 'fryer-fries.png',
         FRYER_BASKET_DOWN: 'fryer-down.png',
@@ -88,6 +84,10 @@ export const ASSETS = {
 
 
         PATTY_RAW: 'patty-raw.png',
+        CHICKEN_PATTY_RAW: 'chicken_patty-raw.png',
+        CHICKEN_PATTY_COOKED: 'chicken_patty-cooked.png',
+        CHICKEN_PATTY_PART: 'chicken_patty-part.png',
+        CHICKEN_PATTY_BOX_CLOSED: 'chicken_patty_box-closed.png',
         STOVETOP_PATTY_PART: 'stovetop-patty-part.png',
         STOVETOP_BACON_PART: 'stovetop-bacon-part.png',
         PATTY_COOKED: 'patty-cooked.png',
@@ -98,19 +98,17 @@ export const ASSETS = {
         TOMATO: 'tomato.png',
         TOMATO_PART: 'tomato-part.png',
         TOMATO_SLICE: 'tomato-slice.png',
-        MAYO_BOX_CLOSED: 'mayo_box-closed.png',
-        MAYO_BAG: 'mayo-bag.png',
+        MAYO_BOTTLE: 'mayo_bottle.png',
         MAYO_PART: 'mayo-part.png',
-        BBQ_BAG: 'bbq-bag.png',
+        BBQ_BOTTLE: 'bbq_bottle.png',
         BBQ_PART: 'bbq-part.png',
-        BURGER_SAUCE_BAG: 'burger_sauce-bag.png',
+        BURGER_SAUCE_BOTTLE: 'burger_sauce_bottle.png',
         BURGER_SAUCE_PART: 'burger_sauce-part.png',
         // Lettuce
         LETTUCE_BOX_CLOSED: 'lettuce_box-closed.png',
         LETTUCE_HEAD: 'lettuce-head.png',
         LETTUCE_LEAF: 'lettuce-leaf.png',
         LETTUCE_PART: 'lettuce-part.png',
-        BURGER_MAYO: 'burger-mayo.png',
         BURGER_MAYO: 'burger-mayo.png',
         BURGER_TOMATO_MAYO: 'burger-tomato-mayo.png',
         // Fries
@@ -164,7 +162,13 @@ export const ASSETS = {
         PLATE_DIRTY_PART2: 'plates/plate-dirty-part2.png',
         PLATE_DIRTY_PART3: 'plates/plate-dirty-part3.png',
         BOMB: 'bomb.png',
-        BOMB_OUTLINE: 'bomb-outline.png'
+        BOMB_OUTLINE: 'bomb-outline.png',
+        BOARD_RACK_DOUBLE: 'cutting_boards/board_rack-double.png',
+        BOARD_RACK_SINGLE: 'cutting_boards/board_rack-single.png',
+        BOARD_RACK_EMPTY: 'cutting_boards/board_rack-empty.png',
+        BOARD: 'cutting_boards/board.png',
+        BOARD_TOMATOED: 'cutting_boards/board-tomatoed.png',
+        BOARD_PICKLED: 'cutting_boards/board-pickled.png',
     },
     PLAYER: {
         NEUTRAL: 'player-neutral.png',
@@ -179,15 +183,6 @@ export const ASSETS = {
         ORDER_TICKET: 'ui/order_ticket.png',
         SELECTOR: 'ui/selector.png',
         BUY_BUTTON: 'buy_button.png',
-        RENO_BUILD_MODE: 'build-mode-button.png',
-        RENO_EXPAND: 'expand-button.png',
-        RENO_ITEM_BG: 'button-background.png',
-        RENO_ICON_COUNTER: 'counter-tile-trans.png',
-        RENO_ICON_CUTTING_BOARD: 'cutting_board-trans.png',
-        RENO_ICON_DISPENSER: 'dispenser-trans.png',
-        RENO_ICON_FRYER: 'fryer-trans.png',
-        RENO_ICON_SODA_FOUNTAIN: 'soda_fountain-trans.png',
-        RENO_MENU_BG: 'reno-menu-bg.png',
         MENU_BG: 'ui/menu_bg.png', // New background for Custom Menu
         MENU_LOGO: 'ui/menu_logo.png',
         ADD_BURGER_BUTTON: 'ui/add_burger_button.png',
@@ -226,7 +221,26 @@ export const ASSETS = {
         GAME_BORDER_RIGHT: 'ui/game_border-right-column.png',
         CRUMPLED_PAPER_BACKGROUND: 'ui/crumpled_paper_background.png',
         NEW_TICKET: 'ui/new_ticket.png',
+        SMALL_TICKET: 'ticket-assets/small_ticket.png',
+        MEDIUM_TICKET: 'ticket-assets/medium_ticket.png',
+        MEDIUM_TICKET_MOD: 'ticket-assets/medium_ticket-mod.png',
+        BIG_TICKET: 'ticket-assets/big_ticket.png',
+        BIG_TICKET_MOD: 'ticket-assets/big_ticket-mod.png',
         STABILITY_METER: 'sheets/stability-meter-sheet.png',
+        TICKET_TOPPINGS: {
+            BACON: 'ticket-assets/bacon-cooked-ticket.png',
+            CHEDDAR: 'ticket-assets/cheddar_slice-ticket.png',
+            LETTUCE: 'ticket-assets/lettuce-leaf-ticket.png',
+            ONION: 'ticket-assets/onion-slice-ticket.png',
+            PICKLE: 'ticket-assets/pickle-slice-ticket.png',
+            SWISS: 'ticket-assets/swiss_slice-ticket.png',
+            TOMATO: 'ticket-assets/tomato-slice-ticket.png',
+            PATTY: 'ticket-assets/beef_patty-ticket.png',
+            CHICKEN_PATTY: 'ticket-assets/chicken_patty-ticket.png',
+            MAYO: 'ticket-assets/mayo-ticket.png',
+            BBQ: 'ticket-assets/bbq-ticket.png',
+            BURGER_SAUCE: 'ticket-assets/burger_sauce-ticket.png'
+        }
     },
     AUDIO: {
         SONG1_INTRO: 'audio/song1-intro.wav',
@@ -353,12 +367,6 @@ export const TILE_TYPES = {
     },
     RENO: {
         id: 'RENO',
-        texture: ASSETS.TILES.RENO,
-        walkable: false,
-        holdsItems: false,
-    },
-    RENO_LOCKED: {
-        id: 'RENO_LOCKED',
         texture: ASSETS.TILES.RENO,
         walkable: false,
         holdsItems: false,

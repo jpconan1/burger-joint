@@ -1,6 +1,5 @@
 import { ASSETS, TILE_TYPES, GRID_WIDTH, GRID_HEIGHT } from './constants.js';
 import { CAPABILITY, DEFINITIONS } from './data/definitions.js';
-import { EXPANSIONS } from './data/expansions.js';
 
 import { SCORING_CONFIG } from './data/scoringConfig.js';
 import { AssetLoader } from './systems/AssetLoader.js';
@@ -17,12 +16,11 @@ import { AudioSystem } from './systems/AudioSystem.js';
 
 import { MenuSystem } from './systems/MenuSystem.js';
 import { TouchInputSystem } from './systems/TouchInputSystem.js';
-
+import { InputManager } from './systems/InputManager.js';
+import { ServiceCycle } from './systems/ServiceCycle.js';
 
 import { AlertSystem } from './systems/AlertSystem.js';
-import { AutomatedRewardSystem } from './systems/AutomatedRewardSystem.js';
 import { PowerupSystem } from './systems/PowerupSystem.js';
-import { CHUTE_TRIGGERS } from './data/chute_triggers.js';
 
 export class Game {
 
@@ -32,9 +30,13 @@ export class Game {
             'tomato_slice',
             'pickle_slice',
             'onion_slice',
+            'mushroom_slice',
             'cheddar_cheese',
             'swiss_cheese',
             'bacon',
+            'mayo',
+            'bbq',
+            'burger_sauce',
             'chicken_patty',
             'sweet_potato_fries'
         ];
@@ -44,9 +46,13 @@ export class Game {
             'tomato_slice': 'tomato_box',
             'pickle_slice': 'pickle_box',
             'onion_slice': 'onion_box',
+            'mushroom_slice': 'mushroom_box',
             'cheddar_cheese': 'cheddar_box',
             'swiss_cheese': 'swiss_box',
             'bacon': 'bacon_box',
+            'mayo': 'mayo_bottle',
+            'bbq': 'bbq_bottle',
+            'burger_sauce': 'burger_sauce_bottle',
             'chicken_patty': 'chicken_patty_box',
             'sweet_potato_fries': 'sweet_potato_fry_box'
         };
@@ -70,25 +76,16 @@ export class Game {
 
         this.menuSystem = new MenuSystem(this);
         this.touchInputSystem = new TouchInputSystem(this);
-        this.automatedRewardSystem = new AutomatedRewardSystem(this);
         this.powerupSystem = new PowerupSystem(this);
+        this.inputManager = new InputManager(this);
+        this.serviceCycle = new ServiceCycle(this);
 
-        this.gameState = 'TITLE'; // TITLE, PLAYING, PLACEMENT, SETTINGS
+        this.gameState = 'TITLE'; // TITLE, PLAYING, SETTINGS
         this.titleSelection = 0; // 0: New Game, 1: Settings
         this.settingsState = {
             selectedIndex: 0,
             rebindingAction: null
         };
-
-        // Bind input handlers
-        window.addEventListener('keydown', this.handleInput.bind(this));
-        window.addEventListener('keyup', (e) => {
-            if (this.keys) this.keys[e.code] = false;
-        });
-        window.addEventListener('mousedown', this.handleMouseDown.bind(this));
-        window.addEventListener('mousemove', this.handleMouseMove.bind(this));
-
-        this.keys = {};
         this.currentSongIndex = -1;
         this.isViewingOrders = false;
         this.orderSystem = new OrderSystem();
@@ -96,7 +93,6 @@ export class Game {
         this.orders = [];
         this.ticketQueue = [];    // Pending tickets to arrive
         this.activeTickets = [];  // Tickets currently on the rail
-        this.currentTicket = null; // Deprecated, use activeTickets logic
         this.ticketTimer = 0;     // Timer for next ticket arrival
         this.incomingTicket = null; // Ticket currently printing
         this.printingTimer = 0;     // Animation timer for printing
@@ -105,20 +101,11 @@ export class Game {
         this.currentRoomId = 'main';
         this.ticketWheelAnimStartTime = 0;
 
-        // Economy & Day Cycle
-        this.money = 0;
         this.isDayActive = false;
 
         // Visual Feedback
         this.floatingTexts = [];
         this.effects = [];
-
-        // Ordering System
-        this.shopItems = [];
-        this.pendingOrders = []; // Store for items ordered at night for morning delivery
-
-        // Daily Stats
-        this.dailyMoneyEarned = 0;
 
         // High Score System
         this.score = 0;
@@ -142,7 +129,6 @@ export class Game {
         this.xp = 0;
         this.level = 1;
         this.xpToNextLevel = 7;
-        this.menuLocked = false;
         this.ticketSpeedBonus = 0;
         
         // Bomb Breakdown Logic
@@ -152,123 +138,8 @@ export class Game {
 
 
 
-        // 1. Supplies (Dynamic from DEFINITIONS)
-        Object.keys(DEFINITIONS).forEach(defId => {
-            const def = DEFINITIONS[defId];
-            // Supply item identification: Check for type being Box/SauceContainer AND being in the SCORING_CONFIG prices
-            const hasScoringPrice = SCORING_CONFIG.PRICES && typeof SCORING_CONFIG.PRICES[defId] !== 'undefined';
-            const hasExplicitPrice = typeof def.price !== 'undefined';
-
-            if ((def.type === 'Box' || def.type === 'SauceContainer') && (hasExplicitPrice || hasScoringPrice)) {
-                // Determine 'unlocked' status based on explicit flag or default
-                // Essential items are always unlocked
-                const isEssential = !!def.isEssential;
-
-                // Check if this is a Reward Item (Topping/Side/Drink Provider) that should be LOCKED by default
-                let isRewardItem = false;
-
-                // Helper to check for topping/reward nature
-                // 1. Direct check (e.g. sauce box produces sauce bag)
-                if (def.produces) {
-                    const prod = DEFINITIONS[def.produces];
-                    if (prod) {
-                        // Check if the product itself is a topping, sauce, syrup, or side prep
-                        if (prod.category === 'sauce_refill' || prod.category === 'topping' || prod.isTopping ||
-                            prod.category === 'syrup' || prod.category === 'side_prep') {
-                            isRewardItem = true;
-                        }
-
-                        // Check if it creates a topping/side via slicing/processing
-                        if (prod.slicing && prod.slicing.result) {
-                            const res = DEFINITIONS[prod.slicing.result];
-                            if (res && (res.category === 'topping' || res.isTopping)) isRewardItem = true;
-                        }
-                        if (prod.process && prod.process.result) {
-                            const res = DEFINITIONS[prod.process.result];
-                            if (res && (res.category === 'topping' || res.isTopping)) isRewardItem = true;
-                        }
-
-                        // Check for variants (fryContent) or side-prep products
-                        if (prod.fryContent || prod.category === 'side_prep') isRewardItem = true;
-                    }
-                }
-
-                // Logic:
-                // 1. Essential -> Unlocked
-                // 2. Reward Item -> LOCKED (unless essential)
-                // 3. Others (Cups/Bags/etc) -> Follow existing unlockCondition or Default Unlocked
-
-                let isUnlocked = isEssential;
-
-                if (!isEssential) {
-                    if (typeof def.unlocked !== 'undefined') {
-                        isUnlocked = def.unlocked;
-                    } else if (def.unlockCondition) {
-                        isUnlocked = false; // Has specific condition (e.g. Appliance)
-                    } else if (isRewardItem) {
-                        isUnlocked = false; // LOCKED by default for Daily Reward
-                    } else {
-                        isUnlocked = true; // Default unlocked (e.g. random supplies if any)
-                    }
-                }
-
-                // Prefer non-zero price from definition, otherwise use SCORING_CONFIG, otherwise fallback to 0
-                const finalPrice = (def.price && def.price !== 0) ? def.price : (SCORING_CONFIG.PRICES[defId] || 0);
-
-                this.shopItems.push({
-                    id: defId,
-                    price: finalPrice, 
-                    type: 'supply',
-                    unlocked: isUnlocked, // Will be overridden by save data if present
-                    isEssential: isEssential,
-                    isReward: isRewardItem
-                });
-            }
-        });
-
-
-
-        // 2. Appliances & Actions (Hardcoded / Special Logic)
-        const appliancesAndActions = [
-            { id: 'expansion', price: SCORING_CONFIG.PRICES.expansion, type: 'action', unlocked: true, uiAsset: 'RENO_EXPAND' },
-
-            { id: 'counter', price: SCORING_CONFIG.PRICES.counter, type: 'appliance', unlocked: true, tileType: 'COUNTER', uiAsset: 'RENO_ICON_COUNTER' },
-            { id: 'cutting_board', price: SCORING_CONFIG.PRICES.cutting_board, type: 'appliance', unlocked: true, tileType: 'CUTTING_BOARD', uiAsset: 'RENO_ICON_CUTTING_BOARD' },
-            { id: 'dispenser', price: SCORING_CONFIG.PRICES.dispenser, type: 'appliance', unlocked: true, tileType: null, uiAsset: 'RENO_ICON_DISPENSER' },
-            { id: 'fryer', price: SCORING_CONFIG.PRICES.fryer, type: 'appliance', unlocked: true, tileType: 'FRYER', uiAsset: 'RENO_ICON_FRYER' },
-            { id: 'soda_fountain', price: SCORING_CONFIG.PRICES.soda_fountain, type: 'appliance', unlocked: true, tileType: 'SODA_FOUNTAIN', uiAsset: 'RENO_ICON_SODA_FOUNTAIN' },
-            { id: 'grill', price: SCORING_CONFIG.PRICES.grill, type: 'appliance', unlocked: true, tileType: 'GRILL' },
-            { id: 'dishwasher', price: SCORING_CONFIG.PRICES.dishwasher, type: 'appliance', unlocked: true, tileType: 'DISHWASHER' },
-        ];
-
-        this.shopItems.push({
-            id: 'insert',
-            price: 20, // Manual price as it's not a box
-            type: 'supply',
-            unlocked: true,
-            isEssential: false
-        });
-
-        this.shopItems = [...this.shopItems, ...appliancesAndActions];
-
-        // Cart for current order: { itemId: quantity }
-        // Cart for current order: { itemId: quantity }
-        this.cart = {};
-
-
-        this.selectedOrderItemIndex = 0;
-
-
-
-
         // Capabilities
         this.capabilities = new Set();
-
-        // Progression
-        this.appliedExpansions = new Set();
-
-        this.storage = {}; // Store for unplaced appliances: { 'counter': 2, 'fryer': 1 }
-        this.autoUpgradedAppliances = new Set();
 
         // Dependency Map for Ingredients (Child -> Parent)
         this.itemDependencyMap = {};
@@ -297,17 +168,10 @@ export class Game {
 
 
 
-    // Computer Item Selection (Deprecated)
-
     get isRushMode() {
         // RUSH if Day is Active AND Queue is NOT finished
         return this.isDayActive && !this.queueFinishedTime;
     }
-
-
-
-    // getInventoryCount(itemId) {
-    // }
 
 
 
@@ -329,32 +193,13 @@ export class Game {
 
             this.renderer = new Renderer('game-canvas', this.assetLoader);
 
-            this.setupLevel();
+            this.startNewGame();
 
             this.loop();
         } catch (error) {
             console.error('Initialization failed:', error);
             document.body.innerHTML = `<h1 style="color:red">${error.message}</h1>`;
         }
-    }
-
-    setupLevel() {
-        // Try to load full game state first
-        if (this.loadLevel()) {
-            console.log(`Loaded game from storage. Room: ${this.currentRoomId}`);
-            // Patch Office Room to ensure Reno tile is present (handling old saves)
-            if (this.rooms['office']) {
-                this.rooms['office'].setTileType(1, 0, TILE_TYPES.RENO);
-                // Also ensure computer is there
-                this.rooms['office'].setTileType(2, 0, TILE_TYPES.COMPUTER);
-            }
-
-
-            return;
-        }
-
-        // Initialize New Game (Default)
-        this.startNewGame();
     }
 
     startNewGame() {
@@ -409,72 +254,8 @@ export class Game {
 
         this.player.heldItem = null;
 
-        // Reset Economy
-        this.money = 120;
-        this.storage = {}; // Reset Storage
         this.dayNumber = 0;
-        this.appliedExpansions.clear();
-        this.autoUpgradedAppliances.clear();
-        this.menuLocked = false;
         this.ticketSpeedBonus = 0;
-
-        // Reset Shop Items (Unlocks)
-        this.shopItems.forEach(item => {
-            if (item.type === 'supply') {
-                const def = DEFINITIONS[item.id];
-
-                // Determine 'unlocked' status consistently with constructor
-                const isEssential = item.isEssential;
-
-                // Check if this is a Topping/Reward Provider
-                let isRewardItem = false;
-                if (def.produces) {
-                    const prod = DEFINITIONS[def.produces];
-                    if (prod) {
-                        if (prod.category === 'sauce_refill' || prod.category === 'topping' || prod.isTopping ||
-                            prod.category === 'syrup' || prod.category === 'side_prep') {
-                            isRewardItem = true;
-                        }
-                        if (prod.slicing && prod.slicing.result) {
-                            const res = DEFINITIONS[prod.slicing.result];
-                            if (res && (res.category === 'topping' || res.isTopping)) isRewardItem = true;
-                        }
-                        if (prod.process && prod.process.result) {
-                            const res = DEFINITIONS[prod.process.result];
-                            if (res && (res.category === 'topping' || res.isTopping)) isRewardItem = true;
-                        }
-                        // Check for variants (fryContent)
-                        if (prod.fryContent) isRewardItem = true;
-                    }
-                }
-
-                let isUnlocked = isEssential;
-                if (!isEssential) {
-                    if (typeof def.unlocked !== 'undefined') {
-                        isUnlocked = def.unlocked;
-                    } else if (def.unlockCondition) {
-                        isUnlocked = false;
-                    } else if (isRewardItem) {
-                        isUnlocked = false;
-                    } else {
-                        isUnlocked = true;
-                    }
-                }
-
-                item.unlocked = isUnlocked;
-                item.isReward = isRewardItem;
-            } else {
-                // Appliances and Actions default to unlocked
-                item.unlocked = true;
-            }
-        });
-        this.sortShopItems();
-
-        this.pendingOrders = [];
-
-
-        // Save this clean state immediately so if they refresh they get this
-        this.saveLevel();
 
         this.queueFinishedTime = null;
         this.isDayActive = false;
@@ -545,9 +326,9 @@ export class Game {
             }
         }
 
-        // CAPABILITY.ADD_COLD_SAUCE: Dispenser + Mayo (Box/Bag)
-        const hasMayo = activeDefIds.has('mayo_box') || activeDefIds.has('mayo_bag');
-        if (activeDefIds.has('dispenser') && hasMayo) {
+        // CAPABILITY.ADD_COLD_SAUCE: Any sauce bottle present
+        const hasSauceBottle = activeDefIds.has('mayo_bottle') || activeDefIds.has('bbq_bottle') || activeDefIds.has('burger_sauce_bottle');
+        if (hasSauceBottle) {
             this.capabilities.add(CAPABILITY.ADD_COLD_SAUCE);
         }
 
@@ -648,122 +429,6 @@ export class Game {
         return Array.from(this.capabilities);
     }
 
-    hasAppliance(tileTypeId) {
-        for (const room of Object.values(this.rooms)) {
-            for (let y = 0; y < room.height; y++) {
-                for (let x = 0; x < room.width; x++) {
-                    const cell = room.getCell(x, y);
-                    if (cell.type && cell.type.id === tileTypeId) return true;
-                }
-            }
-        }
-        return false;
-    }
-
-
-
-
-
-    applyExpansion(exp) {
-        console.log(`Applying Expansion: ${exp.name}`);
-
-        if (exp.layout) {
-            // 1. Capture existing objects and tiles from the current grid (Preserve State)
-            const currentObjMap = [];
-            const currentGrid = this.rooms['main'];
-
-            // Capture Dimensions
-            const oldWidth = currentGrid.width;
-            const oldHeight = currentGrid.height;
-
-            if (currentGrid) {
-                for (let y = 0; y < currentGrid.height; y++) {
-                    for (let x = 0; x < currentGrid.width; x++) {
-                        const cell = currentGrid.getCell(x, y);
-                        // Save object, tile type, and state
-                        if (cell) {
-                            currentObjMap.push({
-                                x,
-                                y,
-                                object: cell.object,
-                                tile: cell.type,
-                                state: JSON.parse(JSON.stringify(cell.state || {})) // Deep copy state
-                            });
-                        }
-                    }
-                }
-            }
-
-            // Apply new layout
-            // This replaces the current 'main' room grid
-            const newGrid = new Grid(exp.layout.width, exp.layout.height);
-            newGrid.deserialize(exp.layout);
-            this.rooms['main'] = newGrid;
-            this.grid = this.rooms['main']; // Update active grid
-
-            // 2. Restore objects and tiles to the new grid
-            currentObjMap.forEach(item => {
-                let newX = item.x;
-                let newY = item.y;
-
-                // Edge Detection: Relative Mapping
-                // If item was on the far right, map to new far right
-                if (item.x === oldWidth - 1) {
-                    newX = newGrid.width - 1;
-                }
-                // If item was on the bottom, map to new bottom
-                if (item.y === oldHeight - 1) {
-                    newY = newGrid.height - 1;
-                }
-
-                // Check if the target cell exists
-                const targetCell = newGrid.getCell(newX, newY);
-
-                if (targetCell) {
-                    // Identify preserve-worthy tiles (Appliances/User placed)
-                    const preservedTiles = ['COUNTER', 'SERVICE', 'GRILL', 'CUTTING_BOARD', 'DISPENSER', 'FRYER', 'SODA_FOUNTAIN', 'COMPUTER'];
-                    // Identify structural tiles that should NOT be overwritten
-                    // Note: FLOOR is overwritable, so not included here.
-                    const structuralTiles = ['WALL', 'SHUTTER_DOOR', 'OFFICE_DOOR', 'OFFICE_DOOR_CLOSED', 'EXIT_DOOR', 'GARBAGE'];
-
-                    // 1. Restore the Tile (Appliance) if applicable
-                    // Checks:
-                    // - Old tile was an appliance
-                    // - Target slot is not a structural element (Wall/Door) in the new layout
-                    if (preservedTiles.includes(item.tile.id) && !structuralTiles.includes(targetCell.type.id)) {
-                        targetCell.type = item.tile;
-                        targetCell.state = item.state; // Restore state (branding, cooking progress, etc.)
-                    }
-
-                    // 2. Restore the Object
-                    if (item.object) {
-                        // Only place object if the (potentially restored) tile supports it
-                        // Or strictly force it if we trust the old state?
-                        if (targetCell.type.holdsItems || targetCell.type.id === 'FLOOR') {
-                            targetCell.object = item.object;
-                        } else {
-                            console.warn(`Could not restore object at ${newX},${newY} - Tile ${targetCell.type.id} does not hold items.`);
-                        }
-                    }
-                } else {
-                    console.warn(`Could not restore item at ${item.x},${item.y} -> ${newX},${newY} (Cell invalid)`);
-                }
-            });
-
-            // Reset player position safely
-            this.player.x = 2;
-            this.player.y = 4;
-        } else {
-            // Fallback to old heuristic or do nothing
-            console.log("No layout defined for expansion, using legacy expansion.");
-            const currentGrid = this.rooms['main'];
-            currentGrid.expandInterior(currentGrid.width - 1, currentGrid.height - 1);
-        }
-
-        this.appliedExpansions.add(exp.id);
-        this.addFloatingText(`Kitchen Expanded: ${exp.name}!`, this.player.x, this.player.y, '#00ff00');
-        this.saveLevel();
-    }
 
 
 
@@ -774,26 +439,10 @@ export class Game {
 
 
 
-    // Helper to sort shop items
 
 
-    unlockAllCheat() {
-        console.log("CHEAT: Unlocking ALL items and appliances.");
-        this.addFloatingText("CHEAT: Unlocked Everything!", this.player.x, this.player.y, '#ff00ff');
 
-        this.shopItems.forEach(item => {
-            item.unlocked = true;
-            item.justUnlocked = true;
-            // Mark as reward
-            item.isReward = true;
-        });
 
-        if (this.menuSystem) {
-            this.menuSystem.updateAvailableItems();
-        }
-
-        this.sortShopItems();
-    }
 
     cleanAppliances() {
         console.log("Cleaning appliances...");
@@ -861,7 +510,7 @@ export class Game {
 
 
         // 1. Handle Morning Orders via Trigger System
-        this.triggerChute('START_DAY');
+        this.serviceCycle.triggerChute('START_DAY');
 
         // 2. Update Capabilities (Now that supplies are in the world/truck)
         this.updateCapabilities();
@@ -903,12 +552,6 @@ export class Game {
             kShutter.state.isOpen = true;
         }
 
-        // Cart Reset
-        this.shopItems.forEach(item => this.cart[item.id] = 0);
-
-        // Clear unlocking notifications
-        this.shopItems.forEach(i => i.justUnlocked = false);
-
         this.playNextSong();
 
         // --- PREP TIME REMOVED ---
@@ -923,7 +566,6 @@ export class Game {
         this.timeoutAlertShown = false; // Reset fail state tracker
 
         // Reset Daily Stats
-        this.dailyMoneyEarned = 0;
         this.dailyBagsSold = 0;
 
         // Ensure player is in Main Room (Kitchen) to start the day
@@ -934,7 +576,6 @@ export class Game {
             this.player.x = 2; // Center-ish
             this.player.y = 3;
             this.player.snap();
-            this.saveLevel();
         }
 
         // Initialize Loop Timers
@@ -974,12 +615,7 @@ export class Game {
         this.audioSystem.setMuffled(false);
     }
 
-    onClosingTime() {
-        console.log('Restaurant Closing (Queue Finished).');
-        this.queueFinishedTime = Date.now();
-        this.audioSystem.setMuffled(true);
-        this.isDayActive = false; // Stop timers
-    }
+    onClosingTime() { this.serviceCycle.onClosingTime(); }
 
 
     // Called when player exits the door
@@ -992,464 +628,19 @@ export class Game {
 
         this.startDay();
         this.gameState = 'PLAYING';
-        this.saveLevel();
         this.audioSystem.setMuffled(true);
-        console.log(`End of Day. Remaining Money: $${this.money}`);
     }
 
 
 
 
-    handleInput(event) {
-        if (!this.keys) this.keys = {};
-        this.keys[event.code] = true;
-
-        // Bomb Cheat (Cmd+B)
-        if (event.code === 'KeyB' && (event.metaKey || event.ctrlKey)) {
-            console.log("CHEAT: Spawning Bomb Powerup Early");
-            this.powerupSystem.spawnPowerup({ id: 'bomb' });
-            this.powerupSystem.bombSpawned = true;
-            event.preventDefault();
-            return;
-        }
-
-        if (this.alertSystem?.isVisible) return this.alertSystem.handleInput(event.code);
-        this.audioSystem?.resume();
-
-        // 1. Cheats (Shift / Command + Key)
-        if ((event.shiftKey || event.metaKey) && this.handleCheatInput(event)) return;
-
-        // 2. Global Key overrides
-        if (event.code === 'KeyO') return this.handleCheatInput(event);
-
-        if (event.code === 'Escape' && (this.gameState === 'PLAYING' || this.gameState === 'PAUSED')) {
-            this.gameState = this.gameState === 'PLAYING' ? 'PAUSED' : 'PLAYING';
-            if (this.gameState === 'PAUSED') this.audioSystem.setMuffled(true);
-            else this.audioSystem.setMuffled(false);
-            return;
-        }
-
-        // 3. State-specific input
-        switch (this.gameState) {
-            case 'TITLE':
-            case 'SETTINGS':
-                return this.handleMenuInput(event);
-            case 'APPLIANCE_SWAP':
-                return this.handleApplianceSwapInput(event);
-            case 'PAUSED':
-                return; // No input during pause except Escape (handled above)
-        }
+    // Input handling moved to src/systems/InputManager.js
 
 
-        // 5. Normal Gameplay
-        this.handleGameplayInput(event);
-    }
-
-    handleCheatInput(event) {
-        const { code, shiftKey } = event;
-        if (shiftKey) {
-            if (code === 'KeyP') {
-                console.log("--- EXPORTED LAYOUT ---", JSON.stringify(this.grid.serialize(), null, 4));
-                this.addFloatingText("Layout exported to Console!", this.player.x, this.player.y, '#00ff00');
-                return true;
-            }
-            if (code === 'KeyC') {
-                this.money += 500;
-                return true;
-            }
-            if (code === 'KeyA' || code === 'KeyU') {
-                const rewards = [DEFINITIONS['bacon_box'], DEFINITIONS['cheddar_box'], DEFINITIONS['tomato_box']];
-                if (code === 'KeyU') rewards.push(DEFINITIONS['onion_box'], DEFINITIONS['pickle_box']);
-                this.alertSystem.trigger('unlock_alert', () => { }, { rewards });
-                return true;
-            }
-        }
-        
-        // Command + X (Meta Key) for XP Cheat
-        if (event.metaKey && code === 'KeyX') {
-            this.addXp(1);
-            this.addFloatingText("+1 XP (CHEAT)", this.player.x, this.player.y, '#ffd700');
-            return true;
-        }
-        if (code === 'KeyO') {
-            const cell = this.player.getTargetCell(this.grid);
-            if (cell?.type.id === 'COUNTER' && !cell.object) {
-                const stack = new ItemInstance('dirty_plate');
-                stack.state.count = 9;
-                cell.object = stack;
-                this.addFloatingText("Cheat: 9 Dirty Plates!", this.player.x, this.player.y, '#ff0000');
-                return true;
-            }
-        }
-        return false;
-    }
-
-    handleMenuInput(event) {
-        const action = this.settings.getAction(event.code);
-        const SELECT = ['Enter', 'Space'];
-        const isSelect = action === ACTIONS.INTERACT || SELECT.includes(event.code);
-
-        if (this.gameState === 'TITLE') {
-            if (action === ACTIONS.MOVE_UP) this.titleSelection = this.titleSelection === 0 ? 1 : 0;
-            else if (action === ACTIONS.MOVE_DOWN) this.titleSelection = this.titleSelection === 1 ? 0 : 1;
-            else if (isSelect) {
-                if (this.titleSelection === 0) {
-                    this.startNewGame();
-                    this.startDay();
-                    this.gameState = 'PLAYING';
-                    this.alertSystem.trigger('welcome_alert');
-                } else {
-                    this.gameState = 'SETTINGS';
-                    this.settingsState = { selectedIndex: 0, rebindingAction: null };
-                }
-            }
-            return;
-        }
-
-        if (this.gameState === 'SETTINGS') {
-            if (this.settingsState.rebindingAction) {
-                if (event.code === 'Escape') this.settingsState.rebindingAction = null;
-                else {
-                    this.settings.setBinding(this.settingsState.rebindingAction, event.code);
-                    this.settingsState.rebindingAction = null;
-                }
-                return;
-            }
-
-            const keyActions = ['MOVE_UP', 'MOVE_DOWN', 'MOVE_LEFT', 'MOVE_RIGHT', 'INTERACT', 'PICK_UP', 'VIEW_ORDERS', 'EQUIP_1', 'EQUIP_2', 'EQUIP_3', 'EQUIP_4'];
-            const totalItems = 2 + keyActions.length;
-
-            if (action === ACTIONS.MOVE_UP) this.settingsState.selectedIndex = (this.settingsState.selectedIndex - 1 + totalItems) % totalItems;
-            else if (action === ACTIONS.MOVE_DOWN) this.settingsState.selectedIndex = (this.settingsState.selectedIndex + 1) % totalItems;
-            else if (isSelect) {
-                const idx = this.settingsState.selectedIndex;
-                if (idx < 2) {
-                    const pref = idx === 0 ? 'musicEnabled' : 'sfxEnabled';
-                    this.settings.preferences[pref] = !this.settings.preferences[pref];
-                    this.settings.save();
-                    this.audioSystem.updateVolumesFromSettings();
-                } else this.settingsState.rebindingAction = keyActions[idx - 2];
-            } else if (event.code === 'Escape') this.gameState = 'TITLE';
-        }
-    }
-
-    handleGameplayInput(event) {
-        const action = this.settings.getAction(event.code);
-        let dx = 0, dy = 0;
-
-        if (action === ACTIONS.MOVE_UP) dy = -1;
-        else if (action === ACTIONS.MOVE_DOWN) dy = 1;
-        else if (action === ACTIONS.MOVE_LEFT) dx = -1;
-        else if (action === ACTIONS.MOVE_RIGHT) dx = 1;
-
-        if (dx !== 0 || dy !== 0) {
-            if (this.player.move(dx, dy, this.grid)) {
-                const cell = this.grid.getCell(this.player.x, this.player.y);
-                const isDoor = cell && (cell.type.isDoor || cell.type.id === 'EXIT_DOOR');
-                if (!isDoor) this.addEffect({ type: 'dust', x: this.player.x - dx, y: this.player.y - dy, rotation: Math.atan2(dy, dx) - Math.PI, startTime: Date.now(), duration: 300 });
-                if (cell && cell.type.isDoor) this.handleDoorTraversal(cell);
-                else if (cell?.type.id === 'EXIT_DOOR') this.endDay();
-            } else {
-                const currentCell = this.grid.getCell(this.player.x, this.player.y);
-                if (currentCell?.type.isDoor) {
-                    const targetX = this.player.x + dx, targetY = this.player.y + dy;
-                    if (targetX < 0 || targetX >= this.grid.width || targetY < 0 || targetY >= this.grid.height) this.handleDoorTraversal(currentCell);
-                }
-            }
-            return;
-        }
-
-        if (action === ACTIONS.PICK_UP && !event.repeat && !this.pickupActionTriggered) {
-            if (this.isViewingOrders) {
-                const penalty = this.activeTickets.length * 20;
-                this.money -= penalty;
-                if (penalty > 0) this.addFloatingText(`Given Up: -$${penalty}`, this.player.x, this.player.y, '#ff0000');
-                this.ticketQueue = []; this.activeTickets = []; this.incomingTicket = null;
-                this.addFloatingText("Service Terminated", this.player.x, this.player.y, '#ff0000');
-            } else this.player.actionPickUp(this.grid, this);
-            return;
-        }
-
-        if (action === ACTIONS.INTERACT && !event.repeat) {
-            const facingCell = this.player.getTargetCell(this.grid);
-            if (facingCell?.type.id === 'RENO') {
-                this.addFloatingText("Build Mode Disabled", this.player.x, this.player.y, '#ff0000');
-            } else if (facingCell?.type.id === 'MENU') {
-                if (this.isEndgameUnlocked) {
-                    this.gameState = 'MENU_CUSTOM';
-                } else this.addFloatingText("Locked!", this.player.x, this.player.y, '#ff0000');
-            } else if (facingCell?.type.id === 'SERVICE_WINDOW') {
-                if (this.isPrepTime) {
-                    this.isPrepTime = false; 
-                    this.ticketTimer = 10000;
-                    this.addFloatingText("Service Started!", this.player.x, this.player.y, '#00ff00');
-                }
-            } else this.player.actionInteract(this.grid, this);
-        }
-    }
-    
-    handleMouseDown(event) {
-        if (this.alertSystem?.isVisible) return;
-        if (!this.renderer?.canvas) return;
-
-        const rect = this.renderer.canvas.getBoundingClientRect();
-        const mouseX = event.clientX - rect.left;
-        const mouseY = event.clientY - rect.top;
-
-        // Global Pause Check
-        if (this.renderer.pauseButtonRect) {
-            const p = this.renderer.pauseButtonRect;
-            if (mouseX >= p.x && mouseX <= p.x + p.width && mouseY >= p.y && mouseY <= p.y + p.height) {
-                this.gameState = this.gameState === 'PAUSED' ? 'PLAYING' : 'PAUSED';
-                if (this.gameState === 'PAUSED') this.audioSystem.setMuffled(true);
-                else this.audioSystem.setMuffled(false);
-                return;
-            }
-        }
-
-        if (this.gameState === 'PAUSED') {
-            this.gameState = 'PLAYING';
-            this.audioSystem.setMuffled(false);
-            return;
-        }
-
-        if (this.gameState === 'TITLE') {
-            const centerX = this.renderer.canvas.width / 2;
-            const startY = this.renderer.canvas.height / 2 + 30;
-            const spacing = 60;
-
-            // Check "New Game"
-            if (mouseX > centerX - 150 && mouseX < centerX + 150 &&
-                mouseY > startY - 30 && mouseY < startY + 30) {
-                this.titleSelection = 0;
-                this.startNewGame();
-                this.startDay();
-                this.gameState = 'PLAYING';
-            }
-            // Check "Settings"
-            else if (mouseX > centerX - 150 && mouseX < centerX + 150 &&
-                mouseY > startY + spacing - 30 && mouseY < startY + spacing + 30) {
-                this.titleSelection = 1;
-                this.gameState = 'SETTINGS';
-                this.settingsState = { selectedIndex: 0, rebindingAction: null };
-            }
-        } else if (this.gameState === 'SETTINGS') {
-            const idx = this.getSettingsIndexAt(mouseX, mouseY);
-            if (idx !== -1) {
-                if (this.settingsState.rebindingAction) {
-                    // Currently rebinding, ignore mouse clicks for selection
-                    return;
-                }
-                
-                this.settingsState.selectedIndex = idx;
-                if (idx < 2) {
-                    const pref = idx === 0 ? 'musicEnabled' : 'sfxEnabled';
-                    this.settings.preferences[pref] = !this.settings.preferences[pref];
-                    this.settings.save();
-                    this.audioSystem.updateVolumesFromSettings();
-                } else {
-                    const keyActions = ['MOVE_UP', 'MOVE_DOWN', 'MOVE_LEFT', 'MOVE_RIGHT', 'INTERACT', 'PICK_UP', 'VIEW_ORDERS', 'EQUIP_1', 'EQUIP_2', 'EQUIP_3', 'EQUIP_4'];
-                    this.settingsState.rebindingAction = keyActions[idx - 2];
-                }
-            }
-        } else if (this.gameState === 'RENO_SHOP') {
-            // Reno shop disabled
-        }
-    }
-
-    handleMouseMove(event) {
-        if (this.alertSystem?.isVisible) return;
-        if (!this.renderer?.canvas) return;
-        
-        const rect = this.renderer.canvas.getBoundingClientRect();
-        const mouseX = event.clientX - rect.left;
-        const mouseY = event.clientY - rect.top;
-
-        if (this.gameState === 'TITLE') {
-            const centerX = this.renderer.canvas.width / 2;
-            const startY = this.renderer.canvas.height / 2 + 30;
-            const spacing = 60;
-
-            if (mouseX > centerX - 150 && mouseX < centerX + 150) {
-                if (mouseY > startY - 30 && mouseY < startY + 30) {
-                    this.titleSelection = 0;
-                } else if (mouseY > startY + spacing - 30 && mouseY < startY + spacing + 30) {
-                    this.titleSelection = 1;
-                }
-            }
-        } else if (this.gameState === 'SETTINGS') {
-            const idx = this.getSettingsIndexAt(mouseX, mouseY);
-            if (idx !== -1 && !this.settingsState.rebindingAction) {
-                this.settingsState.selectedIndex = idx;
-            }
-        } else if (this.gameState === 'RENO_SHOP') {
-            // Reno shop disabled
-        }
-    }
-
-    getRenoIndexAt(mouseX, mouseY) {
-        if (!this.renderer?.canvas) return -1;
-        const renoItems = this.shopItems.filter(i => i.type === 'appliance' || i.type === 'action');
-        if (renoItems.length === 0) return -1;
-
-        const startY = 120;
-        const buttonH = 120;
-        const gap = 30;
-        const cols = 3;
-        const gridSize = 120;
-        const gridW = cols * gridSize + (cols - 1) * gap;
-        const startX = (this.renderer.canvas.width - gridW) / 2;
-
-        for (let i = 0; i < renoItems.length; i++) {
-            let x, y, w, h;
-            if (i === 0) {
-                x = startX; y = startY; w = gridSize * 2 + gap; h = buttonH;
-            } else if (i === 1) {
-                x = startX + (gridSize * 2 + gap) + gap; y = startY; w = gridSize; h = buttonH;
-            } else {
-                const gridIdx = i - 2;
-                const col = gridIdx % cols;
-                const row = Math.floor(gridIdx / cols);
-                x = startX + col * (gridSize + gap);
-                y = startY + buttonH + gap + row * (gridSize + gap);
-                w = gridSize; h = gridSize;
-            }
-
-            if (mouseX > x && mouseX < x + w && mouseY > y && mouseY < y + h) return i;
-        }
-        return -1;
-    }
-
-    getBuildMenuIndexAt(mouseX, mouseY, menu) {
-        if (!this.renderer) return -1;
-        const screenX = this.renderer.offsetX + (menu.x * 64) + 64; 
-        const screenY = this.renderer.offsetY + (menu.y * 64);
-        
-        // Match Renderer.js calculation
-        const height = menu.options.length * 30 + 10;
-        const width = 200; // Minimum width used in renderer
-
-        if (mouseX > screenX && mouseX < screenX + width &&
-            mouseY > screenY && mouseY < screenY + height) {
-            const relY = mouseY - screenY - 5;
-            const idx = Math.floor(relY / 30);
-            if (idx >= 0 && idx < menu.options.length) return idx;
-        }
-        return -1;
-    }
-
-    getSettingsIndexAt(mouseX, mouseY) {
-        if (!this.renderer?.canvas) return -1;
-        const width = this.renderer.canvas.width;
-        if (mouseX < 100 || mouseX > width - 100) return -1;
-
-        // Audio settings start at 140
-        let currentY = 140;
-        const rowHeight = 40;
-
-        for (let i = 0; i < 2; i++) {
-            if (mouseY > currentY - 25 && mouseY < currentY + 15) return i;
-            currentY += rowHeight;
-        }
-
-        currentY += 60; // Spacer (20) + Header (40)
-        for (let i = 0; i < 11; i++) {
-            if (mouseY > currentY - 25 && mouseY < currentY + 15) return i + 2;
-            currentY += rowHeight;
-        }
-
-        return -1;
-    }
-
-    handleDoorTraversal(cell) {
-        const state = cell.state;
-
-        // Play SFX
-        this.audioSystem.playSFX(ASSETS.AUDIO.DOOR);
-
-        if (state && state.targetRoom && state.targetDoorId) {
-            const targetRoomId = state.targetRoom;
-            const targetDoorId = state.targetDoorId;
-
-            const targetGrid = this.rooms[targetRoomId];
-            if (targetGrid) {
-                // Find target door in target grid
-                let targetX = -1;
-                let targetY = -1;
-
-                for (let y = 0; y < targetGrid.height; y++) {
-                    for (let x = 0; x < targetGrid.width; x++) {
-                        const c = targetGrid.getCell(x, y);
-                        // Check state ID match
-                        if (c.state && c.state.id === targetDoorId) {
-                            targetX = x;
-                            targetY = y;
-                            break;
-                        }
-                    }
-                    if (targetX !== -1) break;
-                }
-
-                if (targetX !== -1) {
-                    // TELEPORT PLAYER
-                    this.currentRoomId = targetRoomId;
-                    this.grid = targetGrid;
-                    this.player.x = targetX;
-                    this.player.y = targetY;
-
-                    // Automatically step 'off' the door in the direction it faces (or towards center?)
-                    // For now, just placing on the door is fine. The move logic handles moving off.
-                    // But to prevent immediate re-trigger, we might want to push them 1 tile.
-                    // Let's assume Doors are on edges.
-                    // If x=0, move Right. If x=width-1, move Left.
-                    // If y=0, move Down. If y=height-1, move Up.
-                    if (targetX === 0) this.player.x += 1;
-                    else if (targetX === targetGrid.width - 1) this.player.x -= 1;
-                    else if (targetY === 0) this.player.y += 1;
-                    else if (targetY === targetGrid.height - 1) this.player.y -= 1;
-
-                    // Save state
-                    this.player.snap();
-                    this.saveLevel();
-                } else {
-                    console.error("Target door not found:", targetDoorId);
-                }
-            } else {
-                console.error("Target room not found:", targetRoomId);
-            }
-        }
-    }
-
-
-
-    getCurrentTicketInterval(cyclePos) {
-        const config = SCORING_CONFIG.GAME_PACING;
-        const halfCycle = config.HALF_CYCLE_DURATION;
-        const peakWidth = config.PEAK_WIDTH; // Sigma
-
-        // peak times
-        const dayPeak = halfCycle * config.DAY_PEAK_TIME_RATIO;
-        const nightPeak = halfCycle + (halfCycle * config.NIGHT_PEAK_TIME_RATIO);
-
-        // Gaussian
-        const dayIntensity = config.DAY_PEAK_INTENSITY * Math.exp(-Math.pow(cyclePos - dayPeak, 2) / (2 * Math.pow(peakWidth, 2)));
-        const nightIntensity = config.NIGHT_PEAK_INTENSITY * Math.exp(-Math.pow(cyclePos - nightPeak, 2) / (2 * Math.pow(peakWidth, 2)));
-
-        const intensity = Math.max(dayIntensity, nightIntensity);
-
-        // Lerp
-        // 0 -> SLOW
-        // 1 -> FAST
-        const baseInterval = config.SLOW_TICKET_INTERVAL - (intensity * (config.SLOW_TICKET_INTERVAL - config.FAST_TICKET_INTERVAL));
-        
-        // Apply Speed Bonus (e.g. 1.2x speed means interval / 1.2)
-        return baseInterval / (1.0 + this.ticketSpeedBonus);
-    }
 
     update(dt) {
         if (!dt) return;
 
-        // Breakdown Logic (Visual Timer)
         if (this.bombEffectActive) {
             this.bombEffectTimer -= dt;
             if (this.bombEffectTimer <= 0) {
@@ -1460,297 +651,11 @@ export class Game {
 
         this.updateSystems(dt);
         this.updateWorldState(dt);
-        this.updateServiceCycle(dt);
-        this.updateAppliances(dt);
-
-        // Dynamically update Office State (Door & Reno Tile)
+        this.serviceCycle.update(dt);
         this.updateOfficeState();
     }
 
-    updateServiceCycle(dt) {
-        if (!this.isDayActive || this.timeFreezeTimer > 0) return;
-
-        // 0. Update Day/Night Cycle (Continuous Loop)
-        if (!this.isPrepTime) {
-            this.dayTimer += dt / 1000;
-            const halfCycle = SCORING_CONFIG.GAME_PACING.HALF_CYCLE_DURATION;
-            const fullCycle = halfCycle * 2;
-            const cyclePos = this.dayTimer % fullCycle;
-
-            // Calculate Lighting Intensity
-            if (cyclePos <= halfCycle) {
-                this.lightingIntensity = 0;
-                if (this.currentShift !== 'DAY') {
-                    this.currentShift = 'DAY';
-                    this.shiftCount++;
-                    // this.automatedRewardSystem.processShiftChange(this.shiftCount);
-                }
-            } else {
-                if (this.currentShift !== 'NIGHT') {
-                    this.currentShift = 'NIGHT';
-                    this.shiftCount++;
-                    // this.automatedRewardSystem.processShiftChange(this.shiftCount);
-                }
-                const nightElapsed = cyclePos - halfCycle;
-                const nightProgress = nightElapsed / halfCycle;
-                const peakRatio = SCORING_CONFIG.GAME_PACING.NIGHT_PEAK_TIME_RATIO;
-
-                if (nightProgress <= peakRatio) {
-                    this.lightingIntensity = nightProgress / peakRatio;
-                } else {
-                    const remaining = 1.0 - peakRatio;
-                    const progressPastPeak = nightProgress - peakRatio;
-                    this.lightingIntensity = 1.0 - (progressPastPeak / remaining);
-                }
-            }
-
-            // Ticket Generation Loop
-            this.ticketSpawnTimer += dt / 1000;
-            const freq = this.getCurrentTicketInterval(cyclePos);
-            this.timeToNextTicket = Math.max(0, freq - this.ticketSpawnTimer);
-
-            if (this.ticketSpawnTimer >= freq) {
-                this.ticketSpawnTimer = 0;
-                let newTicket;
-                if (this.dayNumber === 1 && this.ticketsGeneratedToday < 5) {
-                    newTicket = this.orderSystem.generateTutorialTicket(this.ticketsGeneratedToday + 1);
-                } else {
-                    const unlockedIds = this.shopItems.filter(i => i.unlocked).map(i => i.id);
-                    newTicket = this.orderSystem.createTicketFromCustomers(
-                        [this.orderSystem.generateCustomerProfile(this.menuSystem.getMenu(), unlockedIds)],
-                        this.ticketsGeneratedToday + 1
-                    );
-                }
-                newTicket.calculateParTime();
-                this.ticketsGeneratedToday++;
-                this.ticketQueue.push(newTicket);
-                console.log("New Ticket Generated via Continuous Spawner");
-            }
-        }
-
-        // Ticket Arrival Logic
-        if (this.isPrepTime) {
-            this.prepTime -= dt / 1000;
-            if (this.prepTime <= 0) {
-                this.isPrepTime = false;
-                this.prepTime = 0;
-                this.ticketTimer = 10000;
-                console.log("Prep Time Over! Service starting...");
-            }
-        } else {
-            this.ticketTimer += dt;
-        }
-
-        // 1. Check if we can start a new print
-        if (this.ticketTimer >= 2000 && !this.incomingTicket && this.ticketQueue.length > 0) {
-            this.ticketTimer = 0;
-            this.incomingTicket = this.ticketQueue.shift();
-            this.printingTimer = 0;
-
-            if (this.incomingTicket.chuteDrop && this.incomingTicket.chuteDrop.length > 0) {
-                this.incomingTicket.chuteDrop.forEach(itemId => {
-                    this.dropInChute(new ItemInstance(itemId));
-                });
-            }
-
-            // Printer logic removed, handled by new hanging tickets in Renderer.
-            this.audioSystem.playSFX(ASSETS.AUDIO.PRINTER);
-
-            if (!this.testAlertShown) {
-                this.alertSystem.trigger('test_alert');
-                this.testAlertShown = true;
-            }
-            console.log("Ticket started printing...");
-        }
-
-        // 2. Handle Printing Process -> Arrival on Wheel
-        if (this.incomingTicket) {
-            this.printingTimer += dt;
-            if (this.printingTimer >= 2250) {
-                this.activeTickets.push(this.incomingTicket);
-                this.serviceTimer += this.incomingTicket.parTime;
-                this.orders = this.activeTickets.map(t => t.toDisplayFormat());
-                console.log("Ticket arrived on wheel!");
-                this.incomingTicket = null;
-            }
-        }
-
-        this.activeTickets.forEach(t => t.elapsedTime += dt / 1000);
-
-        // Stability Logic
-        if (this.activeTickets.length > 0) {
-            let drainRate = 0;
-            const count = this.activeTickets.length;
-            if (count <= 1) drainRate = 0.2;
-            else if (count === 2) drainRate = 0.6;
-            else if (count === 3) drainRate = 1.0;
-            else drainRate = 2.0 + (count - 4);
-
-            if (this.timeFreezeTimer <= 0) {
-                this.stability -= (drainRate * (dt / 1000));
-            }
-
-            if (this.stability <= 0 && !this.timeoutAlertShown) {
-                this.timeoutAlertShown = true;
-                this.currentDayPerfect = false;
-
-                // Play Death Jingle
-                this.audioSystem.stopMusic();
-                this.audioSystem.playSFX(ASSETS.AUDIO.DEATH_JINGLE);
-
-                this.alertSystem.trigger('ticket_timeout');
-            }
-        } else if (this.ticketQueue.length > 0) {
-            this.stability = Math.min(this.stability + (5 * (dt / 1000)), 100);
-        } else {
-            this.stability = Math.min(this.stability + (10 * (dt / 1000)), 100);
-        }
-    }
-
-    updateAppliances(dt) {
-        Object.values(this.rooms).forEach(room => {
-            if (!room) return;
-            for (let y = 0; y < room.height; y++) {
-                for (let x = 0; x < room.width; x++) {
-                    const cell = room.getCell(x, y);
-                    if (!cell) continue;
-
-                    // Grill Logic
-                    if (cell.type.id === 'GRILL') {
-                        const item = cell.object;
-                        if (item && item.definition.cooking && item.definition.cooking.stages) {
-                            const currentStage = item.state.cook_level || 'raw';
-                            const stageDef = item.definition.cooking.stages[currentStage];
-                            if (stageDef && this.timeFreezeTimer <= 0) {
-                                item.state.cookingProgress = (item.state.cookingProgress || 0) + dt;
-                                const requiredTime = stageDef.duration || cell.state.cookingSpeed || 2000;
-                                if (item.state.cookingProgress >= requiredTime) {
-                                    item.state.cook_level = stageDef.next;
-                                    item.state.cookingProgress = 0;
-                                }
-                            }
-                        }
-                    }
-
-                    // Fryer Logic
-                    if (cell.type.id === 'FRYER' && cell.state) {
-                        if (cell.state.status === 'down' && this.timeFreezeTimer <= 0) {
-                            cell.state.timer = (cell.state.timer || 0) + dt;
-                            let max = cell.state.cookingSpeed || 2000;
-                            if (cell.object && cell.object.definition && cell.object.definition.cooking) {
-                                const stage = cell.object.state.cook_level || 'raw';
-                                const stageDef = cell.object.definition.cooking.stages[stage];
-                                if (stageDef && stageDef.duration) max = stageDef.duration;
-                            }
-                            if (cell.state.timer >= max) {
-                                cell.state.status = 'done';
-                                cell.state.timer = 0;
-                            }
-                        }
-                        const item = cell.object;
-                        if (item && item.definition.cooking && item.definition.cooking.stages) {
-                            const currentStage = item.state.cook_level || 'raw';
-                            const stageDef = item.definition.cooking.stages[currentStage];
-                            if (stageDef && stageDef.cookMethod === 'fry' && this.timeFreezeTimer <= 0) {
-                                item.state.cookingProgress = (item.state.cookingProgress || 0) + dt;
-                                const requiredTime = stageDef.duration || 2000;
-                                if (item.state.cookingProgress >= requiredTime) {
-                                    item.state.cook_level = stageDef.next;
-                                    item.state.cookingProgress = 0;
-                                }
-                            }
-                        }
-                    }
-
-                    if (cell.type.id === 'DISHWASHER' && cell.state) {
-                        if (cell.state.status === 'washing') {
-                            if (this.timeFreezeTimer <= 0) {
-                                cell.state.timer = (cell.state.timer || 0) - dt;
-                            }
-                            if (cell.state.timer <= 0) {
-                                const count = cell.state.dishCount || 0;
-                                cell.state.status = 'idle';
-                                cell.state.dishCount = 0;
-                                cell.state.timer = 0;
-                                cell.state.isOpen = true;
-                                const cleanRack = new ItemInstance('dish_rack');
-                                cleanRack.state.contents = Array.from({ length: count }, () => new ItemInstance('plate'));
-                                cell.object = cleanRack;
-                                console.log("Dishwasher finished wash.");
-                            }
-                        }
-                    }
-
-                    // Soda Fountain Logic
-                    if (cell.type.id === 'SODA_FOUNTAIN' && cell.state) {
-                        if (cell.state.status === 'filling' && this.timeFreezeTimer <= 0) {
-                            cell.state.timer = (cell.state.timer || 0) + dt;
-                            const max = cell.state.fillDuration || 3000;
-                            if (cell.state.timer >= max) {
-                                cell.state.status = 'done';
-                                cell.state.timer = 0;
-                            }
-                        }
-                    }
-                    if (cell.object && (cell.object.definitionId === 'soda_fountain' || cell.object.tileType === 'SODA_FOUNTAIN')) {
-                        const obj = cell.object;
-                        if (obj.state && obj.state.status === 'filling') {
-                            obj.state.timer = (obj.state.timer || 0) + dt;
-                            const max = obj.state.fillDuration || 3000;
-                            if (obj.state.timer >= max) {
-                                obj.state.status = 'done';
-                                obj.state.timer = 0;
-                            }
-                        }
-                    }
-
-                    // Service Counter Logic
-                    if (cell.type.id === 'SERVICE' && cell.object && (cell.object.definitionId === 'bag' || cell.object.definitionId === 'magic_bag' || cell.object.definitionId === 'plate')) {
-                        // Skip if already matched while frozen
-                        if (cell.object.state.isMatched) {
-                            if (!this.timeFreezeManual) {
-                                cell.object = null;
-                            }
-                            continue; // Use continue since we/re in a nested loop in the real file
-                        }
-
-                        if (this.activeTickets.length > 0) {
-                            let matchedTicketIndex = -1;
-                            let matchResult = null;
-                            for (let i = 0; i < this.activeTickets.length; i++) {
-                                const t = this.activeTickets[i];
-                                const res = t.verifyContainerItem(cell.object);
-                                if (res.matched) {
-                                    matchedTicketIndex = i;
-                                    matchResult = res;
-                                    break;
-                                }
-                            }
-
-                            if (matchedTicketIndex !== -1) {
-                                const ticket = this.activeTickets[matchedTicketIndex];
-                                this.money += matchResult.payout;
-                                this.dailyMoneyEarned += matchResult.payout;
-                                this.dailyBagsSold++;
-                                
-                                // If frozen, keep it on the counter visually
-                                if (this.timeFreezeManual) {
-                                    cell.object.state.isMatched = true;
-                                    ticket.finalizePos = { x, y };
-                                    this.addFloatingText("Matched!", x, y, '#00ffff');
-                                } else {
-                                    cell.object = null;
-                                    if (ticket.isComplete()) {
-                                        this._finalizeTicket(ticket, matchedTicketIndex, x, y);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
+    // Ticket spawning/stability/appliance updates moved to src/systems/ServiceCycle.js
 
     updateSystems(dt) {
         this.player.update(dt);
@@ -1780,25 +685,24 @@ export class Game {
             for (let i = this.activeTickets.length - 1; i >= 0; i--) {
                 const ticket = this.activeTickets[i];
                 if (ticket.isComplete()) {
-                    const pos = ticket.finalizePos || { x: 3, y: 3 }; // Target default if pos lost
-                    this._finalizeTicket(ticket, i, pos.x, pos.y);
+                    const pos = ticket.finalizePos || { x: 3, y: 3 };
+                    this.serviceCycle._finalizeTicket(ticket, i, pos.x, pos.y);
                 }
             }
         }
 
-        this.updateFallingBoxes(dt);
+        this.serviceCycle.updateFallingBoxes(dt);
 
         // Tutorials
         const isHoldingPattyBox = this.player.heldItem && (this.player.heldItem.definitionId === 'patty_box');
         if (isHoldingPattyBox && !this.pattyBoxTutorialShown) {
             this.pattyBoxTutorialShown = true;
             this.alertSystem.trigger('container_tutorial_1');
-            this.saveLevel();
         }
 
         // UI State
         const viewKey = this.settings.getBinding(ACTIONS.VIEW_ORDERS);
-        this.isViewingOrders = !!(this.keys && this.keys[viewKey]);
+        this.isViewingOrders = !!(this.inputManager.keys[viewKey]);
 
         // Feedback & Effects
         this.floatingTexts = this.floatingTexts.filter(ft => ft.life > 0);
@@ -1809,137 +713,7 @@ export class Game {
         }
     }
 
-    _finalizeTicket(ticket, index, x, y) {
-        this.powerupSystem.resumeTime();
-        const isDineIn = ticket.groups.some(g => g.containerType === 'plate');
-        if (isDineIn) {
-            this.pendingDirtyPlates.push({ timer: 3000, x: 12, y: 2 });
-        }
-        const par = ticket.parTime;
-        const elapsed = ticket.elapsedTime;
-        const diff = par - elapsed;
-        let bonus = 0, message = "", color = "#fff";
-
-        if (diff >= SCORING_CONFIG.THRESHOLDS.BONUS) {
-            bonus = SCORING_CONFIG.REWARDS.BONUS;
-            message = "GREAT SPEED! BONUS!";
-            color = "#00ff00";
-        } else if (diff >= 0) {
-            bonus = SCORING_CONFIG.REWARDS.PAR;
-            message = "ON TIME";
-            color = "#ffff00";
-        } else {
-            bonus = SCORING_CONFIG.REWARDS.SLOW;
-            message = "SERVED";
-            color = "#ffffff";
-        }
-
-        this.money += bonus;
-        this.dailyMoneyEarned += bonus;
-        this.addFloatingText(message + ` ($${bonus})`, x, y, color);
-        this.stability = 100;
-        this.addFloatingText(`STABILITY FULL!`, x, y - 1, '#00ffff');
-        const ticketScore = this.orderSystem.calculateTicketScore(ticket);
-        this.score += ticketScore;
-        this.addXp(1); // Give 1 XP per ticket
-        if (this.score > this.highScore) {
-            this.highScore = this.score;
-            if (this.score > (parseInt(localStorage.getItem('burger_joint_highscore_v2')) || 0)) {
-                localStorage.setItem('burger_joint_highscore_v2', this.highScore);
-            }
-            if (this.score > 0) this.addFloatingText("NEW HIGH SCORE!", x, y - 2, '#ffcc00');
-        }
-        this.activeTickets.splice(index, 1);
-        this.orders = this.activeTickets.map(t => t.toDisplayFormat());
-    }
-
-    updateFallingBoxes(dt) {
-        if (!this.fallingBoxes || this.fallingBoxes.length === 0) return;
-
-        const gravity = 0.00001;
-        const groundY = 9;
-        const stackOffset = 0.37; // Adjusted for tight overlap
-
-        // Chute is always in 'main' kitchen
-        const kitchen = this.rooms['main'];
-        if (!kitchen) return;
-
-        const landingCell = kitchen.getCell(0, 9);
-        const isLandingOccupied = landingCell ? !!landingCell.object : false;
-
-        for (let i = 0; i < this.fallingBoxes.length; i++) {
-            const box = this.fallingBoxes[i];
-
-            // Calculate target Y based on stack position
-            let limitY = groundY;
-            if (i > 0) {
-                limitY = this.fallingBoxes[i - 1].y - stackOffset;
-            } else if (isLandingOccupied) {
-                limitY = groundY - stackOffset;
-            }
-
-            if (box.y < limitY) {
-                box.vy += gravity * dt;
-                box.y += box.vy * dt;
-
-                if (box.y >= limitY) {
-                    box.y = limitY;
-                    box.vy = 0;
-                }
-            } else if (box.y > limitY) {
-                // Adjust if box below moved down
-                box.y = limitY;
-                box.vy = 0;
-            }
-        }
-
-        // Potential landing: Move box 0 to grid if it's at groundY and grid is clear
-        if (this.fallingBoxes.length > 0) {
-            const firstBox = this.fallingBoxes[0];
-            // Allow a small epsilon for float comparison
-            if (firstBox.y >= groundY - 0.01 && !isLandingOccupied) {
-                if (landingCell) {
-                    landingCell.object = firstBox.item;
-                    this.fallingBoxes.shift();
-                }
-            }
-        }
-    }
-
-    triggerChute(triggerId, data = null) {
-        const trigger = CHUTE_TRIGGERS.find(t => t.id === triggerId);
-        if (!trigger) {
-            console.warn(`Chute trigger '${triggerId}' not found.`);
-            return;
-        }
-
-        if (trigger.condition && !trigger.condition(this, data)) {
-            return;
-        }
-
-        const itemsToDrop = trigger.getItems(this, data);
-        if (!itemsToDrop || itemsToDrop.length === 0) return;
-
-        console.log(`Chute Triggered: ${triggerId}. Dropping ${itemsToDrop.length} items.`);
-
-        itemsToDrop.forEach(order => {
-            for (let i = 0; i < (order.qty || 1); i++) {
-                const instance = new ItemInstance(order.id);
-                if (order.id === 'insert') instance.state.count = 3;
-                this.dropInChute(instance);
-            }
-        });
-    }
-
-    dropInChute(itemInstance) {
-        if (!this.fallingBoxes) this.fallingBoxes = [];
-        this.fallingBoxes.push({
-            x: 0,
-            y: -1 - this.fallingBoxes.length,
-            vy: 0,
-            item: itemInstance
-        });
-    }
+    // _finalizeTicket, updateFallingBoxes, triggerChute, dropInChute moved to ServiceCycle.js
 
     updateOfficeState() {
         const hasActiveOrders = (this.activeTickets.length > 0) ||
@@ -1948,18 +722,6 @@ export class Game {
 
         // 1. Office Door Logic: (Removed per user request)
 
-        // 2. Reno Tile Logic: Locked if active orders
-        const officeRoom = this.rooms['office'];
-        if (officeRoom) {
-            // Reno tile is at (1, 0) by default definition, but let's scan or check (1,0)
-            const cell = officeRoom.getCell(1, 0);
-            if (cell && (cell.type.id === 'RENO' || cell.type.id === 'RENO_LOCKED')) {
-                const desiredType = hasActiveOrders ? TILE_TYPES.RENO_LOCKED : TILE_TYPES.RENO;
-                if (cell.type.id !== desiredType.id) {
-                    cell.type = desiredType;
-                }
-            }
-        }
     }
 
     loop(timestamp) {
@@ -1986,50 +748,7 @@ export class Game {
                     }
                     
                     if (this.gameState !== 'PAUSED') {
-                        // After Hours Interaction Check
-                        // "after the resturant closes, the player gets a new ability"
-                        // Condition: Queue Finished (After Hours)
-                        // Note: isDayActive is false here, so we only check queueFinishedTime
-                        if (true) { // Restriction removed: Allow appliance interaction anytime
-                            const pickUpKeys = [this.settings.getBinding(ACTIONS.PICK_UP), 'Space'];
-                            const interactKey = this.settings.getBinding(ACTIONS.INTERACT);
-
-                            // 1. Pickup Appliance Check
-                            const isPickupHeld = Object.keys(this.keys || {}).some(k => this.keys[k] && (k === pickUpKeys[0] || k === 'Space'));
-
-                            if (isPickupHeld) {
-                                this.pickupKeyHeldDuration = (this.pickupKeyHeldDuration || 0) + dt;
-                                if (this.pickupKeyHeldDuration >= 500 && !this.pickupActionTriggered) {
-                                    console.log("Triggering Appliance Pickup!");
-                                    this.player.actionPickUpAppliance(this.grid, this);
-                                    this.pickupActionTriggered = true;
-                                }
-                            } else {
-                                this.pickupKeyHeldDuration = 0;
-                                this.pickupActionTriggered = false;
-                            }
-
-                            // 2. Change Appliance Check (Swap)
-                            const isInteractHeld = this.keys && this.keys[interactKey];
-                            if (isInteractHeld) {
-                                this.interactKeyHeldDuration = (this.interactKeyHeldDuration || 0) + dt;
-                                if (this.interactKeyHeldDuration >= 500 && !this.swappingActionTriggered && this.gameState === 'PLAYING') {
-                                    console.log("Triggering Appliance Swap!");
-                                    this.initiateApplianceSwap();
-                                    this.swappingActionTriggered = true;
-                                }
-                            } else {
-                                this.interactKeyHeldDuration = 0;
-                                this.swappingActionTriggered = false;
-                            }
-
-                            // Clear waiting flag if in SWAP mode and key released
-                            if (this.gameState === 'APPLIANCE_SWAP' && this.swappingState && this.swappingState.waitingForRelease) {
-                                if (!isInteractHeld) {
-                                    this.swappingState.waitingForRelease = false;
-                                }
-                            }
-                        }
+                        this.inputManager.update(dt);
                     }
                 }
                 this.renderer.render(this);
@@ -2041,92 +760,7 @@ export class Game {
         requestAnimationFrame((t) => this.loop(t));
     }
 
-    initiateApplianceSwap() {
-        const grid = this.rooms[this.currentRoomId];
-        const targetX = this.player.x + this.player.facing.x;
-        const targetY = this.player.y + this.player.facing.y;
-        const cell = grid.getCell(targetX, targetY);
-
-        if (!cell) return;
-
-        // Restriction: Cannot swap if there is an item on top
-        if (cell.object) {
-            this.addFloatingText("Remove item first!", targetX, targetY, '#ff0000');
-            return;
-        }
-
-        // Define cyclable appliance types
-        const cyclable = [
-            'COUNTER',
-            'CUTTING_BOARD',
-            'FRYER',
-            'GRILL',
-            'DISHWASHER'
-        ];
-
-        if (cyclable.includes(cell.type.id)) {
-            this.gameState = 'APPLIANCE_SWAP';
-            this.swappingState = {
-                x: targetX,
-                y: targetY,
-                options: cyclable,
-                currentIndex: cyclable.indexOf(cell.type.id),
-                waitingForRelease: true
-            };
-
-            // Add visual feedback?
-            this.addFloatingText("Swap Mode!", targetX, targetY, '#ffff00');
-        }
-    }
-
-    handleApplianceSwapInput(event) {
-        if (!this.swappingState) {
-            this.gameState = 'PLAYING';
-            return;
-        }
-
-        const LEFT = this.settings.getBinding(ACTIONS.MOVE_LEFT);
-        const RIGHT = this.settings.getBinding(ACTIONS.MOVE_RIGHT);
-        const INTERACT = this.settings.getBinding(ACTIONS.INTERACT);
-
-        const isLeft = event.code === LEFT || event.code === 'ArrowLeft';
-        const isRight = event.code === RIGHT || event.code === 'ArrowRight';
-        const isSet = event.code === INTERACT || event.code === 'Enter';
-
-        if (event.type === 'keydown') {
-            if (isLeft || isRight) {
-                let idx = this.swappingState.currentIndex;
-                if (isLeft) idx--;
-                else idx++;
-
-                // Wrap
-                if (idx < 0) idx = this.swappingState.options.length - 1;
-                if (idx >= this.swappingState.options.length) idx = 0;
-
-                this.swappingState.currentIndex = idx;
-
-                // Apply Immediately
-                const newTypeId = this.swappingState.options[idx];
-                const grid = this.rooms[this.currentRoomId];
-
-                // Let's safe set:
-                const newType = TILE_TYPES[newTypeId];
-                if (newType) {
-                    grid.setTileType(this.swappingState.x, this.swappingState.y, newType);
-                    this.updateCapabilities();
-                }
-            } else if (isSet) {
-                // Prevent immediate set if holding from initiation
-                if (this.swappingState.waitingForRelease) return;
-
-                // Confirm and Exit
-                this.gameState = 'PLAYING';
-                this.swappingState = null;
-                this.addFloatingText("Set!", this.player.x, this.player.y, '#00ff00');
-            }
-
-        }
-    }
+    // initiateApplianceSwap, handleApplianceSwapInput moved to InputManager.js
 
     spawnDirtyPlate(x, y) {
         const grid = this.rooms['main'];
@@ -2192,139 +826,6 @@ export class Game {
         }
     }
 
-    saveLevel() {
-        try {
-            const saveData = {
-                version: 5,
-                currentRoomId: this.currentRoomId,
-                player: {
-                    x: this.player.x,
-                    y: this.player.y,
-                    facing: this.player.facing,
-                    currentTool: this.player.currentTool,
-                    heldItem: this.player.heldItem ? this.player.heldItem.serialize() : null
-                },
-                // Removed dayDuration
-                // Save Unlocks
-                unlockedItems: this.shopItems.filter(i => i.unlocked).map(i => i.id),
-                storage: this.storage,
-                money: this.money,
-                appliedExpansions: Array.from(this.appliedExpansions),
-                autoUpgradedAppliances: Array.from(this.autoUpgradedAppliances),
-                pendingOrders: this.pendingOrders,
-                pattyBoxTutorialShown: this.pattyBoxTutorialShown,
-                unlockMiniGameShown: this.unlockMiniGameShown,
-                xp: this.xp,
-                level: this.level,
-                xpToNextLevel: this.xpToNextLevel,
-                rooms: {}
-            };
-
-            for (const [id, grid] of Object.entries(this.rooms)) {
-                saveData.rooms[id] = grid.serialize();
-            }
-
-            localStorage.setItem('burger_joint_save_v5', JSON.stringify(saveData));
-            console.log('Game saved (v5).');
-        } catch (e) {
-            console.error('Failed to save level:', e);
-        }
-    }
-
-    loadLevel() {
-        try {
-            const json = localStorage.getItem('burger_joint_save_v5');
-            if (!json) return false;
-
-            const data = JSON.parse(json);
-
-            // Restore Rooms
-            this.rooms = {};
-            for (const [id, gridData] of Object.entries(data.rooms)) {
-                const grid = new Grid(gridData.width, gridData.height);
-                grid.deserialize(gridData);
-                this.rooms[id] = grid;
-            }
-
-            // Restore State
-            this.currentRoomId = data.currentRoomId || 'main';
-            this.grid = this.rooms[this.currentRoomId];
-
-            if (!this.grid) {
-                console.error(`Saved room '${this.currentRoomId}' not found!`);
-                // Fallback
-                this.currentRoomId = Object.keys(this.rooms)[0];
-                this.grid = this.rooms[this.currentRoomId];
-            }
-
-            if (data.player) {
-                this.player.x = data.player.x;
-                this.player.y = data.player.y;
-                this.player.snap();
-                if (data.player.facing) this.player.facing = data.player.facing;
-
-                // Restore Tool (before held item to avoid equip checks blocking)
-                if (data.player.currentTool) {
-                    this.player.equip(data.player.currentTool);
-                }
-
-                // Restore Held Item
-                if (data.player.heldItem) {
-                    this.player.heldItem = ItemInstance.deserialize(data.player.heldItem);
-                }
-            }
-
-            // Restore Global Settings
-            // Removed dayDuration restore
-
-            if (data.unlockedItems) {
-                data.unlockedItems.forEach(id => {
-                    const item = this.shopItems.find(i => i.id === id);
-                    if (item) item.unlocked = true;
-                });
-            }
-
-            if (data.storage) {
-                this.storage = data.storage;
-            } else {
-                this.storage = {};
-            }
-
-            if (data.pendingOrders) {
-                this.pendingOrders = data.pendingOrders;
-            } else {
-                this.pendingOrders = [];
-            }
-
-            if (Array.isArray(data.appliedExpansions)) {
-                this.appliedExpansions = new Set(data.appliedExpansions);
-            }
-            if (Array.isArray(data.autoUpgradedAppliances)) {
-                this.autoUpgradedAppliances = new Set(data.autoUpgradedAppliances);
-            }
-            if (typeof data.pattyBoxTutorialShown === 'boolean') {
-                this.pattyBoxTutorialShown = data.pattyBoxTutorialShown;
-            }
-            if (typeof data.unlockMiniGameShown === 'boolean') {
-                this.unlockMiniGameShown = data.unlockMiniGameShown;
-            }
-
-            if (data.xp !== undefined) this.xp = data.xp;
-            if (data.level !== undefined) this.level = data.level;
-            if (data.xpToNextLevel !== undefined) this.xpToNextLevel = data.xpToNextLevel;
-
-            // Re-sort shop items
-            this.sortShopItems();
-
-            this.updateCapabilities();
-            return true;
-        } catch (e) {
-            console.error('Failed to load level:', e);
-        }
-        return false;
-    }
-
-
     addFloatingText(text, gridX, gridY, color = '#fff') {
         // Convert grid coords to pixel coords estimation or store grid coords and let renderer handle it
         // Renderer handles Grid -> Pixel if we pass it correctly. 
@@ -2338,11 +839,6 @@ export class Game {
         });
     }
 
-    // handleComputerInput(event) {
-    //    if (result === 'START_DAY') {
-    //        this.startDay();
-    //    }
-    // }
 
 
 
@@ -2353,7 +849,6 @@ export class Game {
     }
 
     hasAppliance(itemId, tileTypeId) {
-        if (this.storage[itemId] > 0) return true;
         for (const room of Object.values(this.rooms)) {
             if (!room) continue;
             for (let y = 0; y < room.height; y++) {
@@ -2367,29 +862,12 @@ export class Game {
         return false;
     }
 
-    sortShopItems() {
-        this.shopItems.sort((a, b) => {
-            const getRank = (item) => {
-                if (item.type === 'action') return 0;
-                if (item.type === 'appliance') return 1;
-                if (item.unlocked) {
-                    if (item.id === 'bun_box') return 2.1;
-                    if (item.id === 'patty_box') return 2.2;
-                    return 2.5;
-                }
-                return 3;
-            };
-            return getRank(a) - getRank(b);
-        });
-    }
-
     addXp(amount) {
         this.xp += amount;
         if (this.xp >= this.xpToNextLevel) {
             this.xp -= this.xpToNextLevel;
             this.levelUp();
         }
-        this.saveLevel();
     }
 
     getAvailableToppingPool() {
@@ -2424,32 +902,40 @@ export class Game {
 
     levelUp() {
         this.level++;
-        this.xpToNextLevel = 7; // As per user request: "every 7 xp"
-
-        if (this.menuLocked) {
-            this.ticketSpeedBonus += SCORING_CONFIG.GAME_PACING.TICKET_SPEED_INCREMENT;
-            this.addFloatingText("LEVEL UP: TICKET SPEED ++", this.player.x, this.player.y, '#ffd700');
-            return;
-        }
-        
-        // Muffle music on level up alert
-        this.audioSystem.setMuffled(true);
+        this.xpToNextLevel = 7;
 
         const availablePool = this.getAvailableToppingPool();
 
         if (availablePool.length === 0) {
-            console.log("All toppings unlocked! Skipping level up alert.");
             this.addFloatingText("MAX LEVEL REACHED!", this.player.x, this.player.y, '#ffd700');
-            // Unmuffle if we skip the alert
-            this.audioSystem.setMuffled(false);
             return;
         }
 
-        // Shuffle and take 3 (or fewer if pool is small)
+        this.audioSystem.setMuffled(true);
+
+        let choice = null;
+        this.alertSystem.trigger('level_up_choice', () => {
+            if (choice === 'faster_tickets') {
+                this.applyTicketSpeedBoost();
+                this.audioSystem.setMuffled(false);
+                this.playNextSong();
+            } else {
+                this._showToppingPickerAlert(availablePool);
+            }
+        }, {
+            onChoice: (c) => { choice = c; }
+        });
+    }
+
+    applyTicketSpeedBoost() {
+        this.ticketSpeedBonus += SCORING_CONFIG.GAME_PACING.TICKET_SPEED_INCREMENT;
+        this.addFloatingText("TICKET SPEED ++", this.player.x, this.player.y, '#ffd700');
+    }
+
+    _showToppingPickerAlert(availablePool) {
         const shuffled = [...availablePool].sort(() => 0.5 - Math.random());
         const selected = shuffled.slice(0, 3);
 
-        // Add Reroll button (leftmost)
         const buttons = [{
             id: 'reroll_button',
             label: 'Reroll',
@@ -2458,27 +944,17 @@ export class Game {
             action: 'reroll'
         }];
 
-        // Add toppings
         buttons.push(...selected.map(id => this.getToppingButtonConfig(id)));
 
-        // Add OK button
         buttons.push({
             label: 'OK',
             image: '/assets/ui/button_background-boil.png',
             action: 'dismiss'
         });
 
-        // Trigger alert with callback to play newest song AFTER dismissal
         this.alertSystem.trigger('level_up', () => {
             this.playNextSong();
-        }, { buttons: buttons });
-    }
-
-    lockMenu() {
-        this.menuLocked = true;
-        this.ticketSpeedBonus += SCORING_CONFIG.GAME_PACING.TICKET_SPEED_INCREMENT;
-        this.addFloatingText("MENU LOCKED: TICKET SPEED ++", this.player.x, this.player.y, '#ffd700');
-        this.saveLevel();
+        }, { buttons });
     }
 
     unlockTopping(toppingId, slotIndex = null) {
@@ -2506,24 +982,13 @@ export class Game {
             this.menuSystem.addToppingToMenu(toppingId, slotIndex);
         }
 
-        // Also unlock the corresponding supply box in shop
-        // Map topping to box
-        const boxMap = this.TOPPING_BOX_MAP;
-
-        const boxId = boxMap[toppingId];
+        // Drop the supply box down the chute
+        const boxId = this.TOPPING_BOX_MAP[toppingId];
         if (boxId) {
-            const shopItem = this.shopItems.find(i => i.id === boxId);
-            if (shopItem) {
-                shopItem.unlocked = true;
-                shopItem.justUnlocked = true;
-                
-                // Drop the box down the chute!
-                this.dropInChute(new ItemInstance(boxId));
-            }
+            this.serviceCycle.dropInChute(new ItemInstance(boxId));
         }
 
         this.addFloatingText(`Unlocked: ${toppingId}!`, this.player.x, this.player.y, '#ffd700');
         this.updateCapabilities();
-        this.saveLevel();
     }
 }

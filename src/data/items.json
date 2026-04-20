@@ -144,6 +144,7 @@
                 "partTexture": "tomato-part.png",
                 "nudge": 2,
                 "isTopping": true,
+                "modChance": 0.20,
                 "isSlice": true,
                 "spoilable": true
             },
@@ -173,6 +174,10 @@
                     "tool": "HANDS",
                     "result": "lettuce_leaf",
                     "charges": 1
+                },
+                "slicing": {
+                    "result": "lettuce_leaf",
+                    "chargesBased": true
                 }
             },
             "slice": {
@@ -187,6 +192,7 @@
                 "partTexture": "lettuce-part.png",
                 "nudge": 2,
                 "isTopping": true,
+                "modChance": 0.10,
                 "isSlice": true,
                 "spoilable": true
             },
@@ -402,14 +408,12 @@
             "type": "complex_group",
             "items": [
                 {
-                    "id": "mayo_bag",
-                    "type": "SauceContainer",
-                    "price": 0,
-                    "maxCount": 1,
+                    "id": "mayo_bottle",
+                    "type": "Ingredient",
                     "produces": "mayo",
-                    "unlockCondition": "dispenser",
-                    "category": "sauce_refill",
-                    "texture": "mayo-bag.png"
+                    "category": "sauce_bottle",
+                    "isInfinite": true,
+                    "texture": "mayo_bottle.png"
                 },
                 {
                     "id": "mayo",
@@ -422,7 +426,8 @@
                     },
                     "partTexture": "mayo-part.png",
                     "texture": "mayo-part.png",
-                    "isTopping": true
+                    "isTopping": true,
+                    "modChance": 0.15
                 },
                 {
                     "id": "powerups",
@@ -548,12 +553,50 @@
                 "partTexture": "onion-part.png",
                 "nudge": 2,
                 "isTopping": true,
+                "modChance": 0.17,
                 "isSlice": true,
                 "spoilable": true
             },
             "spoilage": {
                 "id": "onion_old",
                 "texture": "onion-old.png"
+            }
+        },
+        {
+            "id": "mushroom",
+            "type": "produce",
+            "box": {
+                "id": "mushroom_box",
+                "maxCount": 25,
+                "price": 0,
+                "ages": false,
+                "unlocked": false,
+                "texture": "mushroom_box-closed.png",
+                "openTexture": "mushroom_box-open.png"
+            },
+            "item": {
+                "id": "mushroom",
+                "category": "ingredient",
+                "texture": "mushroom.png",
+                "sliceCount": 4,
+                "slicing": {
+                    "result": "mushroom_slice"
+                }
+            },
+            "slice": {
+                "id": "mushroom_slice",
+                "category": "topping",
+                "orderConfig": {
+                    "type": "topping",
+                    "value": 1.5,
+                    "capability": "CUT_TOPPINGS"
+                },
+                "texture": "mushroom_slice.png",
+                "nudge": 2,
+                "isTopping": true,
+                "modChance": 0.18,
+                "isSlice": true,
+                "spoilable": true
             }
         },
         {
@@ -587,6 +630,7 @@
                 "partTexture": "cheddar_slice-part.png",
                 "nudge": 2,
                 "isTopping": true,
+                "modChance": 0.10,
                 "isSlice": true,
                 "spoilable": true
             }
@@ -681,6 +725,7 @@
                 "partTexture": "pickle-part.png",
                 "nudge": 2,
                 "isTopping": true,
+                "modChance": 0.25,
                 "isSlice": true,
                 "spoilable": true
             }
@@ -690,14 +735,12 @@
             "type": "complex_group",
             "items": [
                 {
-                    "id": "bbq_bag",
-                    "type": "SauceContainer",
-                    "price": 0,
-                    "maxCount": 1,
+                    "id": "bbq_bottle",
+                    "type": "Ingredient",
                     "produces": "bbq",
-                    "unlocked": false,
-                    "category": "sauce_refill",
-                    "texture": "bbq-bag.png"
+                    "category": "sauce_bottle",
+                    "isInfinite": true,
+                    "texture": "bbq_bottle.png"
                 },
                 {
                     "id": "bbq",
@@ -710,7 +753,8 @@
                     },
                     "partTexture": "bbq-part.png",
                     "texture": "bbq-part.png",
-                    "isTopping": true
+                    "isTopping": true,
+                    "modChance": 0.08
                 },
                 {
                     "id": "powerups",
@@ -730,14 +774,12 @@
             "type": "complex_group",
             "items": [
                 {
-                    "id": "burger_sauce_bag",
-                    "type": "SauceContainer",
-                    "price": 0,
-                    "maxCount": 1,
+                    "id": "burger_sauce_bottle",
+                    "type": "Ingredient",
                     "produces": "burger_sauce",
-                    "unlocked": false,
-                    "category": "sauce_refill",
-                    "texture": "burger_sauce-bag.png"
+                    "category": "sauce_bottle",
+                    "isInfinite": true,
+                    "texture": "burger_sauce_bottle.png"
                 },
                 {
                     "id": "burger_sauce",
@@ -750,47 +792,8 @@
                     },
                     "partTexture": "burger_sauce-part.png",
                     "texture": "burger_sauce-part.png",
-                    "isTopping": true
-                },
-                {
-                    "id": "powerups",
-                    "type": "tool_supply",
-                    "item": {
-                        "id": "keroscene",
-                        "type": "Ingredient",
-                        "category": "powerup",
-                        "texture": "keroscene.png",
-                        "trashOnly": true
-                    }
-                }
-            ]
-        },
-        {
-            "id": "ketchup",
-            "type": "complex_group",
-            "items": [
-                {
-                    "id": "ketchup_bag",
-                    "type": "SauceContainer",
-                    "price": 0,
-                    "maxCount": 1,
-                    "produces": "ketchup",
-                    "unlocked": false,
-                    "category": "sauce_refill",
-                    "texture": "ketchup-bag.png"
-                },
-                {
-                    "id": "ketchup",
-                    "type": "Ingredient",
-                    "category": "topping",
-                    "orderConfig": {
-                        "type": "topping",
-                        "value": 1.5,
-                        "capability": "ADD_COLD_SAUCE"
-                    },
-                    "partTexture": "ketchup-part.png",
-                    "texture": "ketchup-part.png",
-                    "isTopping": true
+                    "isTopping": true,
+                    "modChance": 0.12
                 },
                 {
                     "id": "powerups",
@@ -1081,6 +1084,7 @@
                 "id": "bacon",
                 "category": "ingredient",
                 "isTopping": true,
+                "modChance": 0.08,
                 "texture": "bacon-raw.png",
                 "partTexture": "bacon-part.png",
                 "nudge": 2,
@@ -1144,6 +1148,7 @@
                 "partTexture": "swiss_slice-part.png",
                 "nudge": 2,
                 "isTopping": true,
+                "modChance": 0.10,
                 "isSlice": true,
                 "spoilable": true
             }
@@ -1328,11 +1333,6 @@
                     "id": "soda_fountain",
                     "type": "Container",
                     "texture": "soda_fountain-empty.png"
-                },
-                {
-                    "id": "dispenser",
-                    "type": "Container",
-                    "texture": "dispenser-empty.png"
                 }
             ]
         },
@@ -1389,6 +1389,54 @@
                 "category": "tool",
                 "texture": "dish_rack-base.png",
                 "maxCount": 6
+            }
+        },
+        {
+            "id": "board_rack_double",
+            "type": "tool_supply",
+            "item": {
+                "id": "board_rack_double",
+                "type": "Ingredient",
+                "category": "decoration",
+                "texture": "cutting_boards/board_rack-double.png",
+                "widthTiles": 2,
+                "heightTiles": 2,
+                "initialState": {
+                    "boardCount": 2
+                }
+            }
+        },
+        {
+            "id": "board",
+            "type": "tool_supply",
+            "item": {
+                "id": "board",
+                "type": "Ingredient",
+                "category": "tool",
+                "texture": "cutting_boards/board.png",
+                "flatOnCounter": true
+            }
+        },
+        {
+            "id": "board_tomatoed",
+            "type": "tool_supply",
+            "item": {
+                "id": "board_tomatoed",
+                "type": "Ingredient",
+                "category": "tool",
+                "texture": "cutting_boards/board-tomatoed.png",
+                "flatOnCounter": true
+            }
+        },
+        {
+            "id": "board_pickled",
+            "type": "tool_supply",
+            "item": {
+                "id": "board_pickled",
+                "type": "Ingredient",
+                "category": "tool",
+                "texture": "cutting_boards/board-pickled.png",
+                "flatOnCounter": true
             }
         }
     ]

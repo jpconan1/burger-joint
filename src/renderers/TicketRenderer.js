@@ -118,34 +118,111 @@ export function drawHangingTickets(renderer, gameState) {
     const ctx = renderer.ctx;
     const assetLoader = renderer.assetLoader;
 
-    const ticketImg = assetLoader.get(ASSETS.UI.NEW_TICKET);
-    if (!ticketImg) return;
+    if (!gameState.activeTickets || gameState.activeTickets.length === 0) return;
 
-    if (gameState.activeTickets && gameState.activeTickets.length > 0) {
-        gameState.activeTickets.forEach((ticket, i) => {
-            const x = (2 + i) * TILE_SIZE;
-            const y = 0;
+    gameState.activeTickets.forEach((ticket, i) => {
+        const icons = ticket.getDisplayIcons();
+        const hasSide = icons.some(ic => ic.type === 'side' || ic.type === 'drink');
+        const hasMod  = icons.some(ic => ic.type === 'mod');
 
-            ctx.drawImage(ticketImg, x, y);
+        let ticketAssetKey;
+        if (hasSide && hasMod)  ticketAssetKey = ASSETS.UI.BIG_TICKET_MOD;
+        else if (hasMod)        ticketAssetKey = ASSETS.UI.MEDIUM_TICKET_MOD;
+        else if (hasSide)       ticketAssetKey = ASSETS.UI.MEDIUM_TICKET;
+        else                    ticketAssetKey = ASSETS.UI.SMALL_TICKET;
 
-            const icons = ticket.getDisplayIcons();
-            const size = TILE_SIZE;
-            const ox = x;
-            const oy = y + 17;
+        const ticketImg = assetLoader.get(ticketAssetKey);
+        if (!ticketImg) return;
 
-            icons.forEach(icon => {
+        const x = (2 + i) * TILE_SIZE;
+        const y = 0;
+
+        ctx.drawImage(ticketImg, x, y);
+
+        // Slot y-positions based on how many slots this ticket has
+        let burgerSlotY, sideSlotY, modSlotY;
+        if (hasSide && hasMod) {
+            burgerSlotY = y + 21;
+            sideSlotY   = y + 58;
+            modSlotY    = y + 92;
+        } else if (hasSide) {
+            burgerSlotY = y + 21;
+            sideSlotY   = y + 58;
+        } else if (hasMod) {
+            burgerSlotY = y + 21;
+            modSlotY    = y + 58;
+        } else {
+            burgerSlotY = y + 21;
+        }
+
+        const toppingOffsetPerLayer = -4;
+        const pattyExtraOffset = 6;
+        const iconSize = 32;
+        const iconOx = x + 16 - 2;
+
+        // --- Pass 1: Sharp outline via cached black silhouette (no CSS filter) ---
+        const burgerIcons = icons.filter(ic => ic.type === 'patty' || ic.type === 'topping');
+        if (burgerIcons.length > 0 && !ticket._outlineCache) {
+            const stackDepth = (burgerIcons.length - 1) * Math.abs(toppingOffsetPerLayer);
+            const off = document.createElement('canvas');
+            off.width = iconSize;
+            off.height = iconSize + stackDepth + pattyExtraOffset;
+            const offCtx = off.getContext('2d');
+            let allLoaded = true;
+            burgerIcons.forEach((icon, idx) => {
                 const img = assetLoader.get(icon.texture);
-                if (!img) return;
-
-                if (icon.type === 'patty' || icon.type === 'topping') {
-                    ctx.drawImage(img, ox, oy, size, size);
-                } else if (icon.type === 'side' || icon.type === 'drink') {
-                    const sideSize = 48;
-                    const sox = x + (TILE_SIZE - sideSize) / 2;
-                    const soy = y + 57;
-                    ctx.drawImage(img, sox, soy, sideSize, sideSize);
-                }
+                if (!img) { allLoaded = false; return; }
+                const extra = icon.type === 'patty' ? pattyExtraOffset : 0;
+                offCtx.drawImage(img, 0, stackDepth + (idx * toppingOffsetPerLayer) + extra, iconSize, iconSize);
             });
+            if (allLoaded) {
+                offCtx.globalCompositeOperation = 'source-in';
+                offCtx.fillStyle = 'black';
+                offCtx.fillRect(0, 0, off.width, off.height);
+                ticket._outlineCache = { canvas: off, stackDepth };
+            }
+        }
+        if (ticket._outlineCache) {
+            const { canvas: outline, stackDepth } = ticket._outlineCache;
+            const outOx = iconOx;
+            const outOy = burgerSlotY - stackDepth;
+            const thickness = 3;
+            [
+                { dx: thickness, dy: 0 }, { dx: -thickness, dy: 0 },
+                { dx: 0, dy: thickness }, { dx: 0, dy: -thickness },
+                { dx: thickness, dy: thickness }, { dx: -thickness, dy: thickness },
+                { dx: thickness, dy: -thickness }, { dx: -thickness, dy: -thickness }
+            ].forEach(({ dx, dy }) => ctx.drawImage(outline, outOx + dx, outOy + dy));
+        }
+
+        // --- Pass 2: Render all icons ---
+        let burgerStackIndex = 0;
+        icons.forEach(icon => {
+            const img = assetLoader.get(icon.texture);
+            if (!img) return;
+
+            if (icon.type === 'patty' || icon.type === 'topping') {
+                const extra = icon.type === 'patty' ? pattyExtraOffset : 0;
+                const oy = burgerSlotY + (burgerStackIndex * toppingOffsetPerLayer) + extra;
+                ctx.drawImage(img, iconOx, oy, iconSize, iconSize);
+                burgerStackIndex++;
+            } else if (icon.type === 'side' || icon.type === 'drink') {
+                ctx.drawImage(img, iconOx, sideSlotY, iconSize, iconSize);
+            } else if (icon.type === 'mod') {
+                // Draw removed topping icon with a red X over it
+                ctx.drawImage(img, iconOx, modSlotY, iconSize, iconSize);
+                ctx.save();
+                ctx.strokeStyle = 'red';
+                ctx.lineWidth = 2.5;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(iconOx + 4, modSlotY + 4);
+                ctx.lineTo(iconOx + 28, modSlotY + 28);
+                ctx.moveTo(iconOx + 28, modSlotY + 4);
+                ctx.lineTo(iconOx + 4, modSlotY + 28);
+                ctx.stroke();
+                ctx.restore();
+            }
         });
-    }
+    });
 }

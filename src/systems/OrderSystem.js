@@ -22,13 +22,13 @@ const INGREDIENT_COSTS = {
     tomato_slice: 0.80,
     onion_slice: 0.80,
     pickle_slice: 0.50,
+    mushroom_slice: 0.80,
 
     // Meat
     bacon: 2.92,
 
     // Sauces (per squirt estimate)
     mayo: 0.25,
-    ketchup: 0.25,
     bbq: 0.25,
     burger_sauce: 0.25,
 
@@ -85,7 +85,7 @@ export class OrderSystem {
         return ticket;
     }
 
-    generateCustomerProfile(menuConfig, unlockedIds = []) {
+    generateCustomerProfile(menuConfig) {
         const order = {
             burger: null,
             items: []
@@ -99,42 +99,36 @@ export class OrderSystem {
 
         // 1. Pick a Burger from Menu
         const burgerDef = { ...menuConfig.burgers[Math.floor(Math.random() * menuConfig.burgers.length)] };
-        
-        // 2. Build Toppings (Standard Only - User: "every burger gets that topping from here out")
-        let mods = [];
-        if (burgerDef.toppings) {
-            // All toppings on the menu are now required
-            mods = Object.keys(burgerDef.toppings);
+
+        // 2. Build Toppings (all standard toppings on the menu slot are required)
+        let mods = burgerDef.toppings ? Object.keys(burgerDef.toppings) : [];
+
+        // Ensure at least one patty
+        if (!mods.some(m => m.includes('patty'))) {
+            mods.push('beef_patty');
         }
 
-        // 3. Handle Alternate Patties (50% chance for "Newest" Patty)
-        const allPatties = unlockedIds.filter(id => id.includes('patty') && !id.includes('box'));
-        const altPatties = allPatties.filter(id => id !== 'beef_patty');
-        
-        if (altPatties.length > 0 && Math.random() < 0.5) {
-            const newestPatty = altPatties[altPatties.length - 1];
-            // Swap beef for the newest patty
-            if (mods.includes('beef_patty') || mods.length === 0) {
-                mods = mods.filter(m => m !== 'beef_patty');
-                if (!mods.includes(newestPatty)) mods.push(newestPatty);
-                
-                // Update display name if it's a generic burger
-                if (burgerDef.name === 'Plain' || burgerDef.name === 'Burger' || !burgerDef.name) {
-                    let pName = newestPatty.replace('_patty', '');
-                    burgerDef.name = pName.charAt(0).toUpperCase() + pName.slice(1);
+        // Customer mod: occasionally request one topping be removed
+        let customerMod = null;
+        const nonPattyMods = mods.filter(m => !m.includes('patty'));
+        if (nonPattyMods.length >= 2) {
+            const shuffled = [...nonPattyMods].sort(() => Math.random() - 0.5);
+            for (const toppingId of shuffled) {
+                const def = DEFINITIONS[toppingId];
+                const chance = def?.modChance ?? 0;
+                if (Math.random() < chance) {
+                    customerMod = { type: 'remove', toppingId };
+                    mods = mods.filter(m => m !== toppingId);
+                    break;
                 }
-            }
-        } else {
-            // Ensure at least beef is there if no other mods have it
-            if (!mods.some(m => m.includes('patty'))) {
-                mods.push('beef_patty');
             }
         }
 
         order.burger = {
             base: burgerDef.name || 'Burger',
             bun: burgerDef.bun || 'plain_bun',
-            modifications: mods
+            modifications: mods,
+            customerMod
         };
 
         // 4. Sides (50% chance for a side)
@@ -244,7 +238,7 @@ export class OrderSystem {
                 // Complexity Scoring
                 if (['bacon'].includes(mod)) {
                     complexity += 2;
-                } else if (['mayo', 'ketchup', 'bbq', 'burger_sauce'].includes(mod)) {
+                } else if (['mayo', 'bbq', 'burger_sauce'].includes(mod)) {
                     complexity += 1; // Sauce is simple
                 } else {
                     complexity += 1.5; // Sliced/Prep items
@@ -379,7 +373,6 @@ export class Ticket {
                     let modName = mod.replace(/_slice|_leaf|_cheese/g, '');
                     modName = modName.charAt(0).toUpperCase() + modName.slice(1).replace(/_/g, ' ');
                     if (mod === 'mayo') modName = 'Mayo';
-                    if (mod === 'ketchup') modName = 'Ketchup';
                     if (mod === 'bbq') modName = 'BBQ';
                     if (mod === 'burger_sauce') modName = 'Secret Sauce';
                     lines.push(`${prefix}  + ${modName}`);
@@ -417,16 +410,34 @@ export class Ticket {
         const firstGroup = this.groups[0];
         if (!firstGroup) return icons;
 
+        const TICKET_TEXTURE_MAPPING = {
+            'bacon': 'ticket-assets/bacon-cooked-ticket.png',
+            'cheddar_cheese': 'ticket-assets/cheddar_slice-ticket.png',
+            'swiss_cheese': 'ticket-assets/swiss_slice-ticket.png',
+            'onion_slice': 'ticket-assets/onion-slice-ticket.png',
+            'pickle_slice': 'ticket-assets/pickle-slice-ticket.png',
+            'tomato_slice': 'ticket-assets/tomato-slice-ticket.png',
+            'lettuce_leaf': 'ticket-assets/lettuce-leaf-ticket.png',
+            'mayo': 'ticket-assets/mayo-ticket.png',
+            'bbq': 'ticket-assets/bbq-ticket.png',
+            'burger_sauce': 'ticket-assets/burger_sauce-ticket.png'
+        };
+
+        const FALLBACK_TEXTURE_MAPPING = {};
+
         // 1. Patty & Toppings (from first burger)
         const burger = firstGroup.burgers[0];
         if (burger) {
             // Patty
             let pattyId = (burger.modifications || []).find(m => m.includes('patty')) || 'beef_patty';
             let pattyDef = DEFINITIONS[pattyId];
-            let pattyTexture = 'patty-cooked.png'; // default
-
-            // Use the "cooked" texture from the definition if it exists
-            if (pattyDef && pattyDef.textures && pattyDef.textures.rules) {
+            let pattyTexture;
+            // Priority: Ticket-specific asset -> Definition rule -> fallback
+            if (pattyId === 'beef_patty') {
+                pattyTexture = 'ticket-assets/beef_patty-ticket.png';
+            } else if (pattyId === 'chicken_patty') {
+                pattyTexture = 'ticket-assets/chicken_patty-ticket.png'; // Assuming it follows convention
+            } else if (pattyDef && pattyDef.textures && pattyDef.textures.rules) {
                 const cookedRule = pattyDef.textures.rules.find(r => r.stateKey === 'cook_level' && r.value === 'cooked');
                 if (cookedRule) {
                     pattyTexture = cookedRule.texture;
@@ -436,25 +447,11 @@ export class Ticket {
 
             // Toppings
             if (burger.modifications) {
-                const SLICE_TEXTURE_MAPPING = {
-                    'bacon': 'bacon-cooked.png',
-                    'cheddar_cheese': 'cheddar_slice.png',
-                    'swiss_cheese': 'swiss_slice.png',
-                    'onion_slice': 'onion-slice.png',
-                    'pickle_slice': 'pickle-slice.png',
-                    'tomato_slice': 'tomato-slice.png',
-                    'lettuce_leaf': 'lettuce-leaf.png',
-                    'mayo': 'mayo-part.png',
-                    'bbq': 'bbq-part.png',
-                    'burger_sauce': 'burger_sauce-part.png',
-                    'ketchup': 'ketchup-part.png'
-                };
-
                 burger.modifications.forEach(modId => {
                     if (modId.includes('patty')) return;
                     const def = DEFINITIONS[modId];
                     if (def) {
-                        const tex = SLICE_TEXTURE_MAPPING[modId] || def.texture;
+                        const tex = TICKET_TEXTURE_MAPPING[modId] || FALLBACK_TEXTURE_MAPPING[modId] || def.texture;
                         if (tex) icons.push({ type: 'topping', texture: tex });
                     }
                 });
@@ -484,11 +481,22 @@ export class Ticket {
             }
         });
 
+        // 4. Customer mod (removed topping shown with X)
+        if (burger?.customerMod?.type === 'remove') {
+            const tId = burger.customerMod.toppingId;
+            const tex = TICKET_TEXTURE_MAPPING[tId] || FALLBACK_TEXTURE_MAPPING[tId] || DEFINITIONS[tId]?.texture;
+            if (tex) icons.push({ type: 'mod', texture: tex });
+        }
+
         return icons;
     }
 
     isComplete() {
         return this.groups.every(g => g.completed);
+    }
+
+    hasCustomerMod() {
+        return this.groups.some(g => g.burgers.some(b => b.customerMod != null));
     }
 
     // Returns true if the submitted container matches a pending group requirement
@@ -649,6 +657,12 @@ export class OrderGroup {
             return true;
         });
         if (missingMod) return false;
+
+        // Check customer mod: if a topping was requested removed, it must not be present
+        if (reqBurger.customerMod?.type === 'remove') {
+            const bannedId = reqBurger.customerMod.toppingId;
+            if (actualToppings.includes(bannedId)) return false;
+        }
 
         // Check for unauthorized extra toppings
         const validToppings = new Set(requestedMods);

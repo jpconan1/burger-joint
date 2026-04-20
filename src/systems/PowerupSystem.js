@@ -110,6 +110,9 @@ export class PowerupSystem {
             for (let x = 0; x < grid.width; x++) {
                 const cell = grid.getCell(x, y);
                 if (cell && cell.type && cell.type.id === 'COUNTER' && !cell.object) {
+                    // Skip cells that are visually covered by a large object in the left neighbor
+                    const leftCell = grid.getCell(x - 1, y);
+                    if (leftCell?.object?.definition?.widthTiles > 1) continue;
                     potentialCells.push(cell);
                 }
             }

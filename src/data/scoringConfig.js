@@ -39,7 +39,6 @@ export const SCORING_CONFIG = {
         counter: 10,
         floor: 5,
         cutting_board: 30,
-        dispenser: 125,
         fryer: 100,
         soda_fountain: 200,
         grill: 100,

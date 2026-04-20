@@ -79,5 +79,18 @@ export const ALERTS = {
                 buttons: [] // Dynamically populated
             }
         ]
+    },
+    'level_up_choice': {
+        frames: [
+            {
+                text: "LEVEL UP!<br>Pick your reward.",
+                position: 'center',
+                size: { width: '640px', height: '280px' },
+                buttons: [
+                    { label: 'Faster Tickets', subLabel: '+20% speed', image: '/assets/ui/button_background-boil.png', action: 'faster_tickets' },
+                    { label: 'More Complexity', image: '/assets/ui/button_background-boil.png', action: 'more_complexity' }
+                ]
+            }
+        ]
     }
 };
