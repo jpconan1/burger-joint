@@ -1,7 +1,8 @@
-import { generateMealConfig } from '../data/orderTemplates.js';
 import { SCORING_CONFIG } from '../data/scoringConfig.js';
 import { CAPABILITY, DEFINITIONS } from '../data/definitions.js';
-import SCORE_CONFIG from '../data/scoreConfig.json';
+import SCORE_CONFIG from '../data/scoreConfig.json' with { type: 'json' };
+import { Random } from '../utils/Random.js';
+import { shuffleWithRandom } from '../utils/Deterministic.js';
 
 const INGREDIENT_COSTS = {
     // Patties
@@ -40,8 +41,13 @@ const INGREDIENT_COSTS = {
 };
 
 export class OrderSystem {
-    constructor() {
+    constructor(random = new Random(1)) {
         // Difficulty settings or state can go here
+        this.random = random;
+    }
+
+    setRandom(random) {
+        this.random = random;
     }
 
     generateTutorialTicket(step) {
@@ -98,7 +104,7 @@ export class OrderSystem {
         }
 
         // 1. Pick a Burger from Menu
-        const burgerDef = { ...menuConfig.burgers[Math.floor(Math.random() * menuConfig.burgers.length)] };
+        const burgerDef = { ...this.random.pick(menuConfig.burgers) };
 
         // 2. Build Toppings (all standard toppings on the menu slot are required)
         let mods = burgerDef.toppings ? Object.keys(burgerDef.toppings) : [];
@@ -112,11 +118,11 @@ export class OrderSystem {
         let customerMod = null;
         const nonPattyMods = mods.filter(m => !m.includes('patty'));
         if (nonPattyMods.length >= 2) {
-            const shuffled = [...nonPattyMods].sort(() => Math.random() - 0.5);
+            const shuffled = shuffleWithRandom(nonPattyMods, this.random);
             for (const toppingId of shuffled) {
                 const def = DEFINITIONS[toppingId];
                 const chance = def?.modChance ?? 0;
-                if (Math.random() < chance) {
+                if (this.random.chance(chance)) {
                     customerMod = { type: 'remove', toppingId };
                     mods = mods.filter(m => m !== toppingId);
                     break;
@@ -133,13 +139,13 @@ export class OrderSystem {
 
         // 4. Sides (50% chance for a side)
         if (menuConfig.sides && menuConfig.sides.length > 0) {
-            if (Math.random() < 0.50) {
+            if (this.random.chance(0.50)) {
                 const newestSide = menuConfig.sides[menuConfig.sides.length - 1];
                 let choice;
-                if (Math.random() < 0.5) {
+                if (this.random.chance(0.5)) {
                     choice = newestSide;
                 } else {
-                    choice = menuConfig.sides[Math.floor(Math.random() * menuConfig.sides.length)];
+                    choice = this.random.pick(menuConfig.sides);
                 }
                 order.items.push(choice);
             }
@@ -147,8 +153,8 @@ export class OrderSystem {
 
         // 5. Drinks (33% chance)
         if (menuConfig.drinks && menuConfig.drinks.length > 0) {
-            if (Math.random() < 0.33) {
-                const choice = menuConfig.drinks[Math.floor(Math.random() * menuConfig.drinks.length)];
+            if (this.random.chance(0.33)) {
+                const choice = this.random.pick(menuConfig.drinks);
                 order.items.push(choice);
             }
         }
@@ -160,7 +166,7 @@ export class OrderSystem {
         const ticket = new Ticket(id);
 
         // Use provided type or decide (66% Dine-In vs 33% Takeout)
-        const finalizeDineIn = isDineIn !== null ? isDineIn : Math.random() < 0.66;
+        const finalizeDineIn = isDineIn !== null ? isDineIn : this.random.chance(0.66);
 
         if (finalizeDineIn) {
             // Dine-In: One plate per customer. 
@@ -414,6 +420,7 @@ export class Ticket {
             'bacon': 'ticket-assets/bacon-cooked-ticket.png',
             'cheddar_cheese': 'ticket-assets/cheddar_slice-ticket.png',
             'swiss_cheese': 'ticket-assets/swiss_slice-ticket.png',
+            'mushroom_slice': 'ticket-assets/grllled_mushroom-ticket.png',
             'onion_slice': 'ticket-assets/onion-slice-ticket.png',
             'pickle_slice': 'ticket-assets/pickle-slice-ticket.png',
             'tomato_slice': 'ticket-assets/tomato-slice-ticket.png',
@@ -657,6 +664,11 @@ export class OrderGroup {
             return true;
         });
         if (missingMod) return false;
+
+        if (requestedMods.includes('mushroom_slice')) {
+            const mushroom = burgerToppings.find(t => (typeof t === 'string' ? t : t.definitionId) === 'mushroom_slice');
+            if (!mushroom || typeof mushroom === 'string' || mushroom.state?.cook_level !== 'cooked') return false;
+        }
 
         // Check customer mod: if a topping was requested removed, it must not be present
         if (reqBurger.customerMod?.type === 'remove') {

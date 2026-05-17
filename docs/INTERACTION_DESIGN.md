@@ -21,8 +21,8 @@ The interaction system is designed to be "smart" and context-aware to ensure flu
     *   *Example*: Placing one patty on a grill, one basket of fries in a fryer, or one insert onto a counter from a stack.
 
 ## Implementation Notes
-*   **Location**: `src/systems/InteractionSystem.js` and `src/systems/InteractionHandlers.js`
-*   **`handle_container_deal`**: This handler in `InteractionHandlers.js` is the core logic for "dealing one item". It handles:
+*   **Location**: `src/systems/InteractionSystem.js` and `src/systems/interactions/ContainerHandlers.js`
+*   **`handle_container_deal`**: This handler in `ContainerHandlers.js` is the core logic for "dealing one item". It handles:
     *   Generating the item (from Box `produces`, Insert stack `pop`, etc.).
     *   Initializing state on appliances (e.g., setting Fryer status to 'down').
     *   **Important**: This handler supports stacks of inserts (dealing from the top defacto).

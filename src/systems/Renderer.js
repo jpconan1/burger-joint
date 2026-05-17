@@ -321,40 +321,6 @@ export class Renderer {
                     tileTexture = null;
                 }
 
-
-
-                if (cell.type.id === 'CUTTING_BOARD') {
-                    // 1. Manually Draw the Base Board
-                    this.drawTile(ASSETS.TILES.CUTTING_BOARD, x, y);
-
-                    // 2. Draw the Held Item on top
-                    if (cell.state && cell.state.heldItem) {
-                        const item = cell.state.heldItem;
-                        let scale = 0.5;
-                        if (item.definition && (item.definition.isSlice || item.definition.isTopping)) {
-                            // Slices remain full size (assuming they are small enough or intended to match burger size)
-                            scale = 1.0;
-                        }
-                        this.drawEntity(item, x, y, scale);
-                        if (item.state && item.state.count > 1) {
-                            this.drawTinyNumber(x, y, item.state.count);
-                        }
-                    } else if (cell.state) {
-                        // Migration/Legacy Fallback
-                        if (cell.state.status === 'has_tomato') {
-                            const t = this.assetLoader.get(ASSETS.TILES.CUTTING_BOARD_TOMATO);
-                            if (t) this.ctx.drawImage(t, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                        } else if (cell.state.status === 'has_slice') {
-                            const t = this.assetLoader.get(ASSETS.TILES.CUTTING_BOARD_SLICE);
-                            if (t) this.ctx.drawImage(t, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                        }
-                    }
-
-                    // 3. Cancel the standard drawTile loop at the end so we don't draw over our work
-                    tileTexture = null;
-                }
-
-
                 if (cell.type.id === 'FRYER' && cell.state) {
                     // Check for Item Cooking (Patty or Fries)
                     let isItemCooking = false;
@@ -497,7 +463,14 @@ export class Renderer {
                     if (!isFrying) {
                         let overrideTexture = null;
                         // Check for Stove Cooking Texture Override
-                        if (cell.type.id === 'GRILL' && cell.object && cell.object.definition.cookingTexture) {
+                        if (cell.type.id === 'GRILL' && cell.object?.definitionId === 'insert' && cell.object.state?.isGrillBatch) {
+                            overrideTexture = cell.object.state.cook_level === 'cooked'
+                                ? 'grilled_mushroom.png'
+                                : 'grlll-mushroom-part.png';
+                            cell.object.state.renderTexture = overrideTexture;
+                            cell.object.state.renderPartTexture = null;
+                            cell.object.state.showTinyNumber = true;
+                        } else if (cell.type.id === 'GRILL' && cell.object && cell.object.definition.cookingTexture) {
                             // Only use override if currently "raw" (cooking process uses this state)
                             // If cooked, it usually switches to 'patty-cooked.png' via internal rules
                             if (cell.object.state.cook_level === 'raw') {
@@ -543,9 +516,14 @@ export class Renderer {
                     // Cooking Progress Bar (Stove)
                     if (cell.type.id === 'GRILL') {
                         const item = cell.object;
-                        if (item.state && item.state.cookingProgress > 0 && item.state.cook_level === 'raw') {
+                        if (item?.state && item.state.cookingProgress > 0 && item.state.cook_level === 'raw') {
                             let max = cell.state.cookingSpeed || 2000;
-                            if (item.definition && item.definition.cooking && item.definition.cooking.stages) {
+                            if (item.definitionId === 'insert' && item.state?.isGrillBatch && item.state.contents?.[0]?.definition?.cooking?.stages) {
+                                const stageDef = item.state.contents[0].definition.cooking.stages[item.state.cook_level];
+                                if (stageDef && stageDef.duration) {
+                                    max = stageDef.duration;
+                                }
+                            } else if (item.definition && item.definition.cooking && item.definition.cooking.stages) {
                                 const stageDef = item.definition.cooking.stages[item.state.cook_level];
                                 if (stageDef && stageDef.duration) {
                                     max = stageDef.duration;
@@ -719,7 +697,9 @@ export class Renderer {
 
 
         // Draw Stability Meter
-        drawStabilityMeter(this, gameState);
+        if (!gameState.isTutorialMode) {
+            drawStabilityMeter(this, gameState);
+        }
 
         // 5. Draw HUD (Screen Space)
         UIRenderer.drawHUD(this, gameState);
@@ -1018,6 +998,10 @@ export class Renderer {
 
     renderTitleScreen(selection = 0) {
         ScreenRenderer.renderTitleScreen(this, selection);
+    }
+
+    renderTutorialMenu(selection = 0, lessons = []) {
+        ScreenRenderer.renderTutorialMenu(this, selection, lessons);
     }
 
 

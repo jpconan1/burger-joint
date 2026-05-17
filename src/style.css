@@ -530,6 +530,41 @@ canvas {
     text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.4);
 }
 
+.alert-recipe {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+}
+
+.alert-recipe-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    min-height: 74px;
+}
+
+.alert-recipe-img {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    image-rendering: pixelated;
+    filter: drop-shadow(3px 3px 0 #000);
+}
+
+.alert-recipe-symbol {
+    min-width: 28px;
+    font-size: 42px;
+    line-height: 1;
+    color: #fff;
+    text-shadow:
+        3px 3px 0 #000, -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000,
+        3px 0 0 #000, -3px 0 0 #000, 0 3px 0 #000, 0 -3px 0 #000;
+}
+
 .alert-next-btn {
     position: absolute;
     bottom: 10px;

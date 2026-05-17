@@ -28,6 +28,9 @@ export class Grid {
     setTileType(x, y, tileType) {
         const cell = this.getCell(x, y);
         if (cell) {
+            if (tileType?.id === 'CUTTING_BOARD') {
+                tileType = TILE_TYPES.COUNTER;
+            }
             cell.type = tileType;
             // Initialize Default State based on Type
             if (tileType.id === 'GRILL') {
@@ -50,7 +53,7 @@ export class Grid {
                     frameDuration: 750,
                     loopDelay: 5000
                 };
-            } else if (['COUNTER', 'CUTTING_BOARD', 'DELIVERY_TILE'].includes(tileType.id)) {
+            } else if (['COUNTER', 'DELIVERY_TILE'].includes(tileType.id)) {
                 cell.state = {
                     facing: 0
                 };
@@ -105,7 +108,8 @@ export class Grid {
                 const cellData = data.cells[y][x];
 
                 // Reconstruct Tile Type
-                let tileType = TILE_TYPES[cellData.typeId];
+                const tileTypeId = cellData.typeId === 'CUTTING_BOARD' ? 'COUNTER' : cellData.typeId;
+                let tileType = TILE_TYPES[tileTypeId];
                 if (!tileType) tileType = TILE_TYPES.FLOOR; // Fallback
 
                 // Reconstruct Object
@@ -198,5 +202,4 @@ export class Grid {
         this.cells = newCells;
     }
 }
-
 

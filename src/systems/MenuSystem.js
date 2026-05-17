@@ -35,6 +35,69 @@ export class MenuSystem {
         this.processItems(itemsData);
     }
 
+    resetMenu() {
+        this.menuSlots = Array(64).fill(null);
+        this.sides = [];
+        this.drinks = [];
+    }
+
+    getStarterBurgerOptions() {
+        return this.rawToppings
+            .filter(item => item.category === 'patty')
+            .map(item => ({
+                id: item.id,
+                name: this.getBurgerNameForPatty(item.id),
+                icon: this.getCookedTexture(item)
+            }));
+    }
+
+    getStarterSideOptions() {
+        return this.rawSides.map(item => ({
+            id: item.id,
+            name: item.name || this.formatName(item.id),
+            icon: item.texture
+        }));
+    }
+
+    setStarterMenu(burgerPattyId, sideId) {
+        this.resetMenu();
+
+        const patty = new ItemInstance(burgerPattyId);
+        patty.state.cook_level = 'cooked';
+
+        this.menuSlots[0] = {
+            type: 'Composite',
+            definitionId: 'burger',
+            name: this.getBurgerNameForPatty(burgerPattyId),
+            state: {
+                bun: new ItemInstance('plain_bun'),
+                toppings: [patty]
+            }
+        };
+
+        if (sideId) {
+            this.sides.push({ definitionId: sideId });
+        }
+    }
+
+    getBurgerNameForPatty(pattyId) {
+        const base = pattyId.replace(/_?patty$/, '');
+        return this.formatName(base);
+    }
+
+    formatName(id) {
+        return id
+            .split('_')
+            .filter(Boolean)
+            .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+    }
+
+    getCookedTexture(item) {
+        const cookedRule = item.textures?.rules?.find(rule => rule.stateKey === 'cook_level' && rule.value === 'cooked');
+        return cookedRule?.texture || item.texture || item.partTexture || null;
+    }
+
     processItems(data) {
         if (!data || !data.groups) return;
 
@@ -68,9 +131,14 @@ export class MenuSystem {
     updateAvailableItems() {
         if (!this.game) return;
         const allowed = this.game.allowedOrderItems;
+        const caps = this.getCaps();
 
         this.rawSides.forEach(s => {
-            if (allowed.has(s.id) && !this.sides.some(side => side.definitionId === s.id)) {
+            if (
+                allowed.has(s.id) &&
+                !this.sides.some(side => side.definitionId === s.id) &&
+                this.sides.length < caps.sides
+            ) {
                 this.sides.push({ definitionId: s.id });
                 console.log(`[MenuSystem] Auto-added side: ${s.id}`);
             }
@@ -83,18 +151,69 @@ export class MenuSystem {
             }
         });
 
-        const sauces = ['mayo', 'bbq', 'burger_sauce'];
-        sauces.forEach(sauceId => {
-            if (allowed.has(sauceId)) {
-                this.addToppingToMenu(sauceId);
-            }
+    }
+
+    getCaps() {
+        return this.game?.menuCaps || { burgers: 2, sides: 2, toppingsPerBurger: 4 };
+    }
+
+    getActiveBurgerSlots() {
+        return this.menuSlots.filter(slot => slot !== null);
+    }
+
+    getBurgerToppingCount(slot) {
+        if (!slot?.state?.toppings) return 0;
+        return slot.state.toppings.filter(t => {
+            const id = typeof t === 'string' ? t : (t.definitionId || (t.definition && t.definition.id));
+            const def = id ? DEFINITIONS[id] : null;
+            return def && def.category !== 'patty';
+        }).length;
+    }
+
+    burgerHasTopping(slot, toppingId) {
+        const toppings = slot?.state?.toppings || [];
+        return toppings.some(t => {
+            const tid = typeof t === 'string' ? t : (t.definitionId || (t.definition && t.definition.id));
+            return tid === toppingId;
         });
     }
 
-    addChickenBurger() {
-        if (this.menuSlots[1]) return; // Already exists
+    burgerCanTakeTopping(slot, toppingId) {
+        if (!slot) return false;
+        if (this.burgerHasTopping(slot, toppingId)) return false;
+        return this.getBurgerToppingCount(slot) < this.getCaps().toppingsPerBurger;
+    }
 
-        this.menuSlots[1] = {
+    canAddBurger() {
+        return this.getActiveBurgerSlots().length < this.getCaps().burgers;
+    }
+
+    canAddSide(sideId) {
+        if (this.sides.some(side => side.definitionId === sideId)) return false;
+        return this.sides.length < this.getCaps().sides;
+    }
+
+    addSideToMenu(sideId) {
+        if (!this.canAddSide(sideId)) return false;
+        this.sides.push({ definitionId: sideId });
+        console.log(`[MenuSystem] Added side '${sideId}' to menu`);
+        return true;
+    }
+
+    isMenuAtCap() {
+        const activeSlots = this.getActiveBurgerSlots();
+        const caps = this.getCaps();
+        if (activeSlots.length < caps.burgers) return false;
+        if (this.sides.length < caps.sides) return false;
+        return activeSlots.every(slot => this.getBurgerToppingCount(slot) >= caps.toppingsPerBurger);
+    }
+
+    addChickenBurger() {
+        if (!this.canAddBurger()) return false;
+        const targetIndex = this.menuSlots.findIndex(slot => slot === null);
+        if (targetIndex === -1) return false;
+
+        this.menuSlots[targetIndex] = {
             type: 'Composite',
             definitionId: 'burger',
             name: 'Chicken',
@@ -107,7 +226,8 @@ export class MenuSystem {
                 })()]
             }
         };
-        console.log("[MenuSystem] Added Chicken Burger to slot 1");
+        console.log(`[MenuSystem] Added Chicken Burger to slot ${targetIndex}`);
+        return true;
     }
 
     /**
@@ -159,26 +279,23 @@ export class MenuSystem {
         const toppingDef = DEFINITIONS[toppingId];
         if (!toppingDef || !(toppingDef.category === 'topping' || toppingDef.isTopping)) {
             console.log(`[MenuSystem] Skipping menu slot add for non-topping: ${toppingId}`);
-            return;
+            return false;
         }
 
-        const activeSlots = slotIndex !== null ? [this.menuSlots[slotIndex]].filter(s => s !== null) : this.menuSlots.filter(s => s !== null);
-        if (activeSlots.length === 0) return;
+        const activeSlots = slotIndex !== null ? [this.menuSlots[slotIndex]].filter(s => s !== null) : this.getActiveBurgerSlots();
+        if (activeSlots.length === 0) return false;
 
+        let added = false;
         activeSlots.forEach(slot => {
-            const toppings = slot.state.toppings || [];
-            const hasTopping = toppings.some(t => {
-                const tid = typeof t === 'string' ? t : (t.definitionId || (t.definition && t.definition.id));
-                return tid === toppingId;
-            });
-
-            if (!hasTopping) {
+            if (this.burgerCanTakeTopping(slot, toppingId)) {
                 const newTopping = new ItemInstance(toppingId);
                 slot.state.toppings = slot.state.toppings || [];
                 slot.state.toppings.push(newTopping);
                 console.log(`[MenuSystem] Added topping '${toppingId}' to burger slot '${slot.name}'`);
+                added = true;
             }
         });
+        return added;
     }
 
     /**
@@ -186,7 +303,7 @@ export class MenuSystem {
      * This is the source of truth for ticket generation.
      */
     getMenu() {
-        const activeSlots = this.menuSlots.filter(s => s !== null);
+        const activeSlots = this.getActiveBurgerSlots();
         if (activeSlots.length === 0) return null;
 
         const burgers = activeSlots.map(slot => {

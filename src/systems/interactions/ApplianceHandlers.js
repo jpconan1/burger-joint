@@ -4,6 +4,97 @@ import { TILE_TYPES } from '../../constants.js';
 import { _tryCombine, _addIngredientToBurger } from './CombineUtils.js';
 import { handle_container_deal, handle_container_collect } from './ContainerHandlers.js';
 
+const isMushroomBatchInsert = (item) => {
+    if (!item || item.definitionId !== 'insert' || !item.state?.isGrillBatch) return false;
+    const contents = item.state.contents || [];
+    return contents.length > 0 && contents.every(entry => entry.definitionId === 'mushroom_slice');
+};
+
+const tryDumpMushroomsFromInsertToGrill = (player, cell, game = null) => {
+    const held = player.heldItem;
+    if (!held || held.definitionId !== 'insert' || cell.object) return false;
+
+    const contents = held.state.contents || [];
+    if (contents.length === 0) return false;
+    if (!contents.every(entry => entry.definitionId === 'mushroom_slice')) return false;
+    if (!contents.every(entry => (entry.state?.cook_level || 'raw') === 'raw')) return false;
+
+    const batch = new ItemInstance('insert');
+    batch.state.contents = contents;
+    batch.state.isGrillBatch = true;
+    batch.state.grillBatchType = 'mushroom_slice';
+    batch.state.cook_level = 'raw';
+    batch.state.cookingProgress = contents[0]?.state?.cookingProgress || 0;
+
+    held.state.contents = [];
+    cell.object = batch;
+    if (game?.isTutorialMode) {
+        game.tutorialFlags.usedInsert = true;
+    }
+    return true;
+};
+
+const tryCollectMushroomsFromGrillToInsert = (player, cell) => {
+    const held = player.heldItem;
+    const batch = cell.object;
+    if (!held || held.definitionId !== 'insert' || !isMushroomBatchInsert(batch)) return false;
+
+    const contents = batch.state.contents || [];
+    if (contents.length === 0) {
+        cell.object = null;
+        return true;
+    }
+
+    const heldContents = held.state.contents || [];
+    if (heldContents.length > 0 && heldContents[0].definitionId !== 'mushroom_slice') return false;
+    if (heldContents.length + contents.length > 50) return false;
+
+    held.state.contents = [...heldContents, ...contents];
+    cell.object = null;
+    return true;
+};
+
+const tryTakeOneMushroomFromGrill = (player, cell) => {
+    const batch = cell.object;
+    if (!isMushroomBatchInsert(batch) || batch.state?.cook_level !== 'cooked') return false;
+
+    const held = player.heldItem;
+    if (held?.definitionId === 'insert') return false;
+
+    const contents = batch.state.contents || [];
+    if (contents.length === 0) {
+        cell.object = null;
+        return true;
+    }
+
+    const mushroom = contents[contents.length - 1];
+
+    if (!held) {
+        player.heldItem = contents.pop();
+    } else {
+        const result = _tryCombine(held, mushroom);
+        if (!result) return false;
+        contents.pop();
+        player.heldItem = result;
+    }
+
+    if (contents.length === 0) {
+        cell.object = null;
+    }
+    return true;
+};
+
+const canPlaceOnGrill = (item) => {
+    if (!item) return false;
+    const def = item.definition;
+    if (!def?.cookingTexture) return false;
+
+    const stage = item.state?.cook_level;
+    if (stage && stage !== 'raw') return false;
+
+    return true;
+};
+
 // Private: cutting board utility
 const _transferBoardToStackedContainer = (player, cell) => {
     const held = player.heldItem;
@@ -31,18 +122,15 @@ const _transferBoardToStackedContainer = (player, cell) => {
 
 // --- GRILL ---
 export const grill_interact = (player, cell, grid, game) => {
+    if (tryDumpMushroomsFromInsertToGrill(player, cell, game)) return true;
+    if (tryCollectMushroomsFromGrillToInsert(player, cell)) return true;
+    if (tryTakeOneMushroomFromGrill(player, cell)) return true;
+
     if (player.heldItem && cell.object) {
         if (handle_container_deal(player, cell)) return true;
 
         if (cell.object.state?.cook_level === 'cooked') {
             if (handle_container_collect(player, cell)) return true;
-        }
-
-        const result = _tryCombine(player.heldItem, cell.object);
-        if (result) {
-            cell.object = result;
-            player.heldItem = null;
-            return true;
         }
     }
 
@@ -51,6 +139,10 @@ export const grill_interact = (player, cell, grid, game) => {
 
 export const grill_pickup = (player, cell, grid, game) => {
     if (player.heldItem) {
+        if (tryDumpMushroomsFromInsertToGrill(player, cell, game)) return true;
+        if (tryCollectMushroomsFromGrillToInsert(player, cell)) return true;
+        if (tryTakeOneMushroomFromGrill(player, cell)) return true;
+
         if (player.heldItem.type === ItemType.Box) {
             const box = player.heldItem;
             const producesId = box.definition.produces;
@@ -59,11 +151,7 @@ export const grill_pickup = (player, cell, grid, game) => {
 
             if (!cell.object && box.state.count > 0 && producesId) {
                 const tempItem = new ItemInstance(producesId);
-                const def = tempItem.definition;
-                const isPatty = def.category === 'patty';
-                const isCookable = def.cooking && (!def.cooking.stages?.raw?.cookMethod || def.cooking.stages.raw.cookMethod !== 'fry');
-
-                if (isPatty || isCookable) {
+                if (canPlaceOnGrill(tempItem)) {
                     cell.object = tempItem;
                     return true;
                 }
@@ -71,24 +159,17 @@ export const grill_pickup = (player, cell, grid, game) => {
         }
 
         if (cell.object) {
-            if (cell.object.state?.cook_level === 'cooked') {
-                if (handle_container_collect(player, cell)) return true;
+            if (isMushroomBatchInsert(cell.object)) {
+                return tryTakeOneMushroomFromGrill(player, cell);
             }
 
-            const result = _tryCombine(player.heldItem, cell.object);
-            if (result) {
-                player.heldItem = result;
-                cell.object = null;
-                return true;
+            if (cell.object.state?.cook_level === 'cooked') {
+                if (handle_container_collect(player, cell)) return true;
             }
             return true;
         }
 
-        const def = player.heldItem.definition;
-        const isPatty = def.category === 'patty';
-        const isCookable = def.cooking && (!def.cooking.stages?.raw?.cookMethod || def.cooking.stages.raw.cookMethod !== 'fry');
-
-        if (isPatty || isCookable) {
+        if (canPlaceOnGrill(player.heldItem)) {
             cell.object = player.heldItem;
             player.heldItem = null;
             return true;
@@ -98,6 +179,10 @@ export const grill_pickup = (player, cell, grid, game) => {
     }
 
     if (cell.object) {
+        if (isMushroomBatchInsert(cell.object)) {
+            return tryTakeOneMushroomFromGrill(player, cell);
+        }
+
         const item = cell.object;
         if (item.state && item.state.cook_level === 'raw') {
             item.state.cookingProgress = 0;
@@ -152,12 +237,9 @@ export const fryer_pickup_cooked = (player, cell) => {
             cell.state.status = 'empty';
             return true;
         }
-        const burger = player.heldItem;
-        if (burger && (burger.category === 'burger' || burger.definitionId.includes('burger'))) {
-            const friedOnion = new ItemInstance('fried_onion');
-            const newBurger = burger.clone();
-            _addIngredientToBurger(newBurger, friedOnion);
-            player.heldItem = newBurger;
+        const result = _tryCombine(player.heldItem, new ItemInstance('fried_onion'));
+        if (result) {
+            player.heldItem = result;
             cell.object = null;
             cell.state.status = 'empty';
             return true;
@@ -251,126 +333,6 @@ export const fryer_load = (player, cell) => {
             player.heldItem = null;
             cell.state.status = 'down';
             cell.state.timer = 0;
-            return true;
-        }
-    }
-    return false;
-};
-
-// --- CUTTING BOARD ---
-export const cutting_board_interact = (player, cell) => {
-    if (_transferBoardToStackedContainer(player, cell)) return true;
-
-    const cbState = cell.state || {};
-    const heldItem = cbState.heldItem;
-
-    if (!heldItem && player.heldItem) {
-        const held = player.heldItem;
-        let itemToDispense = null;
-        let consumeAction = null;
-
-        if (held.type === ItemType.Box) {
-            if (held.state.count > 0 && held.definition.produces) {
-                itemToDispense = new ItemInstance(held.definition.produces);
-                consumeAction = () => {
-                    held.state.isOpen = true;
-                };
-            }
-        } else if (held.definition.useStackRender) {
-            if (held.state.contents?.length > 0) {
-                itemToDispense = held.state.contents[held.state.contents.length - 1];
-                consumeAction = () => {
-                    held.state.contents.pop();
-                };
-            }
-        } else if (held.definitionId === 'bag' || held.definitionId === 'magic_bag') {
-            if (held.state.contents?.length > 0) {
-                itemToDispense = held.state.contents[held.state.contents.length - 1];
-                consumeAction = () => {
-                    held.state.contents.pop();
-                };
-            }
-        }
-
-        if (itemToDispense && itemToDispense.definition.slicing) {
-            cbState.heldItem = itemToDispense;
-            consumeAction();
-            return true;
-        }
-    }
-
-    if (heldItem) {
-        const itemDef = DEFINITIONS[heldItem.definitionId];
-        if (itemDef && itemDef.slicing) {
-            if (itemDef.slicing.mode === 'dispense') {
-                if (!player.heldItem) {
-                    const slice = new ItemInstance(itemDef.slicing.result);
-                    player.heldItem = slice;
-                    if (heldItem.state.charges === undefined) {
-                        const initial = itemDef.initialState ? itemDef.initialState.charges : 18;
-                        heldItem.state.charges = initial;
-                    }
-                    heldItem.state.charges -= 1;
-                    if (heldItem.state.charges <= 0) cbState.heldItem = null;
-                    return true;
-                }
-            }
-            if (itemDef.slicing.result) {
-                if (heldItem.definitionId !== itemDef.slicing.result) {
-                    const newItem = new ItemInstance(itemDef.slicing.result);
-                    if (itemDef.sliceCount) {
-                        newItem.state.count = itemDef.sliceCount;
-                    } else if (itemDef.slicing.chargesBased) {
-                        newItem.state.count = heldItem.state.charges || 1;
-                    }
-                    cbState.heldItem = newItem;
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-};
-
-export const cutting_board_pickup = (player, cell) => {
-    if (_transferBoardToStackedContainer(player, cell)) return true;
-
-    const cbState = cell.state || {};
-    if (player.heldItem) {
-        if (!cbState.heldItem) {
-            if (player.heldItem.definition.slicing) {
-                cell.state.heldItem = player.heldItem;
-                player.heldItem = null;
-                return true;
-            }
-        } else {
-            const boardItem = cbState.heldItem;
-            if (boardItem.category === 'topping' || boardItem.definition.isTopping) {
-                if (player.heldItem.category === 'burger') {
-                    const result = _tryCombine(player.heldItem, boardItem);
-                    if (result) {
-                        player.heldItem = result;
-
-                        if (boardItem.state.count && boardItem.state.count > 1) {
-                            boardItem.state.count--;
-                        } else {
-                            cell.state.heldItem = null;
-                        }
-                        return true;
-                    }
-                }
-            }
-        }
-    } else {
-        if (cbState.heldItem) {
-            if (cbState.heldItem.state.count && cbState.heldItem.state.count > 1) {
-                const oneItem = new ItemInstance(cbState.heldItem.definitionId);
-                player.heldItem = oneItem;
-                cbState.heldItem.state.count--;
-                return true;
-            }
-            player.heldItem = cbState.heldItem;
-            cell.state.heldItem = null;
             return true;
         }
     }
@@ -508,7 +470,7 @@ export const board_item_interact = (player, boardObject, cell, game) => {
         const itemDef = DEFINITIONS[heldItem.definitionId];
 
         // Burger + topping combine
-        if ((heldItem.category === 'topping' || heldItem.definition?.isTopping) && player.heldItem?.category === 'burger') {
+        if (player.heldItem && (heldItem.category === 'topping' || heldItem.definition?.isTopping)) {
             const result = _tryCombine(player.heldItem, heldItem);
             if (result) {
                 player.heldItem = result;
@@ -540,6 +502,7 @@ export const board_item_interact = (player, boardObject, cell, game) => {
                     const slicedId = heldItem.definitionId;
                     const newItem = new ItemInstance(itemDef.slicing.result);
                     if (itemDef.sliceCount) newItem.state.count = itemDef.sliceCount;
+                    else if (itemDef.slicing.chargesBased) newItem.state.count = heldItem.state.charges || 1;
                     boardState.heldItem = newItem;
                     _dirtyBoard(boardObject, slicedId);
                     return true;

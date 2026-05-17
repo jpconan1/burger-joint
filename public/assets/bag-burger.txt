@@ -1,4 +1,0 @@
-[Bag] with a Burger
-One lonely Burger. Take it out with [interact_key]. 
-Interact with: Hands
-Pick up with: Hands

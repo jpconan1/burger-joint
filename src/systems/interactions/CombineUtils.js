@@ -1,6 +1,22 @@
 import { ItemInstance } from '../../entities/Item.js';
 import { ItemType, DEFINITIONS } from '../../data/definitions.js';
 
+const _isCookedPatty = (item) => item.category === 'patty' && item.state?.cook_level === 'cooked';
+
+const _isBurgerToppingReady = (item) => {
+    if (!item) return false;
+    if (item.category === 'sauce') return true;
+    if (item.category === 'topping') {
+        if (item.definition?.cooking) return item.state?.cook_level === 'cooked';
+        return true;
+    }
+    if (item.definition?.isTopping) {
+        if (item.definition.cooking) return item.state?.cook_level === 'cooked';
+        return true;
+    }
+    return false;
+};
+
 export const _addIngredientToBurger = (burgerItem, feedItem) => {
     if (!burgerItem.state.toppings) burgerItem.state.toppings = [];
     const alreadyHas = burgerItem.state.toppings.some(t => t.definitionId === feedItem.definitionId);
@@ -73,19 +89,22 @@ export const _canContainerDispenseTo = (container, held) => {
     if (!container || !held) return false;
     if (['plate', 'dirty_plate'].includes(container.definitionId)) return false;
 
+    const contents = container.state.contents || [];
+    const candidate = contents.length > 0 ? contents[contents.length - 1] : null;
+
     const isBurger = held.category === 'burger' || held.definitionId.includes('burger');
     const isBun = held.category === 'bun';
-    if (isBurger || isBun) return true;
+    if (isBurger || isBun) {
+        return !!candidate && (_isBurgerToppingReady(candidate) || _isCookedPatty(candidate));
+    }
 
     if (_isStackableContainer(held) && held.definitionId !== 'dirty_plate') {
-        const contents = container.state.contents || [];
         if (contents.length > 0) {
             return _canContainerHoldItem(held, contents[0]);
         }
     }
 
     if (held.definitionId === 'side_cup') {
-        const contents = container.state.contents || [];
         if (contents.length > 0) {
             const first = contents[0];
             return first.state?.cook_level === 'cooked' && first.definition.result;
@@ -99,6 +118,10 @@ export const _applyIngredientToHeld = (held, ingredient) => {
 
     const combined = _tryCombine(held, ingredient);
     if (combined) return combined;
+
+    if (!_isBurgerToppingReady(ingredient) && !_isCookedPatty(ingredient)) {
+        return held;
+    }
 
     const isBun = held.category === 'bun';
     let targetBurger = held;
@@ -118,6 +141,22 @@ export const _applyIngredientToHeld = (held, ingredient) => {
 export const _tryCombine = (held, target) => {
     const isBurger = (i) => i.category === 'burger';
     const isWrapper = (i) => i.definitionId === 'wrapper';
+    const isPlate = (i) => i.definitionId === 'plate' && (i.state?.count || 1) === 1;
+
+    const tryPlateBurgerCombine = (plate, item) => {
+        if (!isPlate(plate) || !item || ['plate', 'dirty_plate'].includes(item.definitionId)) return null;
+
+        const contents = plate.state.contents || [];
+        const burgerIdx = contents.findIndex(c => (c.category === 'burger' || c.definitionId.includes('burger')) && !c.state?.isWrapped);
+        if (burgerIdx < 0) return null;
+
+        const combinedBurger = _tryCombine(contents[burgerIdx], item);
+        if (!combinedBurger) return null;
+
+        contents[burgerIdx] = combinedBurger;
+        plate.state.contents = contents;
+        return plate;
+    };
 
     // 1. Wrapping
     if (isBurger(held) && isWrapper(target)) {
@@ -129,23 +168,24 @@ export const _tryCombine = (held, target) => {
         return target;
     }
 
-    // 2. Burger Assembly
+    // 2. Reach burger inside single plate
+    const platedHeld = tryPlateBurgerCombine(held, target);
+    if (platedHeld) return platedHeld;
+
+    const platedTarget = tryPlateBurgerCombine(target, held);
+    if (platedTarget) return platedTarget;
+
+    // 3. Burger Assembly
     const isBun = (i) => i.category === 'bun';
-    const isCookedPatty = (i) => i.category === 'patty' && i.state.cook_level === 'cooked';
     const isTopping = (i) => {
-        if (i.category === 'topping' || i.category === 'sauce') return true;
-        if (i.definition && i.definition.isTopping) {
-            if (i.definition.cooking) return i.state.cook_level === 'cooked';
-            return true;
-        }
-        return false;
+        return _isBurgerToppingReady(i);
     };
 
     let burgerBase = null, itemToAdd = null, bunBase = null;
 
-    if (isBurger(held) && (isTopping(target) || isCookedPatty(target))) {
+    if (isBurger(held) && (isTopping(target) || _isCookedPatty(target))) {
         burgerBase = held; itemToAdd = target;
-    } else if ((isTopping(held) || isCookedPatty(held)) && isBurger(target)) {
+    } else if ((isTopping(held) || _isCookedPatty(held)) && isBurger(target)) {
         itemToAdd = held; burgerBase = target;
     }
 
@@ -155,9 +195,9 @@ export const _tryCombine = (held, target) => {
         return newBurger;
     }
 
-    if (isBun(held) && (isCookedPatty(target) || isTopping(target))) {
+    if (isBun(held) && (_isCookedPatty(target) || isTopping(target))) {
         bunBase = held; itemToAdd = target;
-    } else if ((isCookedPatty(held) || isTopping(held)) && isBun(target)) {
+    } else if ((_isCookedPatty(held) || isTopping(held)) && isBun(target)) {
         bunBase = target; itemToAdd = held;
     }
 
@@ -169,7 +209,7 @@ export const _tryCombine = (held, target) => {
         return burger;
     }
 
-    // 3. Side Cup + Cooked Fries/Sides
+    // 4. Side Cup + Cooked Fries/Sides
     const isCup = (i) => i.definitionId === 'side_cup';
     const isCookedSideReady = (i) => i.state && i.state.cook_level === 'cooked' && i.definition.result;
 
@@ -181,7 +221,7 @@ export const _tryCombine = (held, target) => {
         return new ItemInstance(cookedSide.definition.result);
     }
 
-    // 4. Stacked Container Stacking
+    // 5. Stacked Container Stacking
     if (held.definition.useStackRender && target.definition.useStackRender && held.definitionId === target.definitionId) {
         const heldContents = held.state.contents || [];
         const targetContents = target.state.contents || [];
@@ -193,7 +233,7 @@ export const _tryCombine = (held, target) => {
         }
     }
 
-    // 5. Bag Packing
+    // 6. Bag Packing
     const isBag = (i) => i.definitionId === 'bag' || i.definitionId === 'magic_bag';
 
     let bagBox = null, itemToPack = null;
@@ -219,7 +259,7 @@ export const _tryCombine = (held, target) => {
         }
     }
 
-    // 6. Plate Combining
+    // 7. Plate Combining
     if (held.definitionId === 'plate' && _canContainerHoldItem(held, target)) {
         if (!held.state.contents) held.state.contents = [];
         held.state.contents.push(target);

@@ -1,7 +1,6 @@
 import {
     grill_interact, grill_pickup,
     fryer_interact, fryer_pickup,
-    cutting_board_interact, cutting_board_pickup,
     soda_fountain_interact, soda_fountain_pickup,
     garbage_action,
     dishwasher_interact, dishwasher_pickup,
@@ -25,7 +24,6 @@ export const INTERACTION_MAPPING = {
     TILES: {
         'FRYER':         { interact: fryer_interact,           pickup: fryer_pickup },
         'GRILL':         { interact: grill_interact,           pickup: grill_pickup },
-        'CUTTING_BOARD': { interact: cutting_board_interact,   pickup: cutting_board_pickup },
         'SODA_FOUNTAIN': { interact: soda_fountain_interact,   pickup: soda_fountain_pickup },
         'GARBAGE':       { interact: garbage_action,           pickup: garbage_action },
         'DISHWASHER':    { interact: dishwasher_interact,      pickup: dishwasher_pickup },

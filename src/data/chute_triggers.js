@@ -23,7 +23,7 @@ export const CHUTE_TRIGGERS = [
             }));
             
             // Day 1 Essentials Fallback: Ensure boxes drop even if startNewGame logic changes or is bypassed
-            if (game.dayNumber === 1) {
+            if (game.dayNumber === 1 && !game.starterSelectionComplete) {
                 if (!items.find(i => i.id === 'patty_box')) items.push({ id: 'patty_box', qty: 1 });
                 if (!items.find(i => i.id === 'bun_box')) items.push({ id: 'bun_box', qty: 1 });
             }

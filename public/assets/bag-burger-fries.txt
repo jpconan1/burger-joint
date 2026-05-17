@@ -1,4 +1,0 @@
-[Bag] with a Burger and Fries
-The classic combo. Take stuff out with [interact_key]. 
-Interact with: Hands
-Pick up with: Hands

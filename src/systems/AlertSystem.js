@@ -4,6 +4,17 @@ import { ACTIONS } from './Settings.js';
 import { DEFINITIONS } from '../data/definitions.js';
 import { ItemInstance } from '../entities/Item.js';
 import { drawBurgerPixels } from '../renderers/ObjectRenderer.js';
+import { assetUrl } from '../utils/assets.js';
+
+function resolveUiAsset(path) {
+    if (!path) return null;
+    if (/^(?:[a-z]+:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) {
+        return path;
+    }
+    if (path.startsWith('/')) return assetUrl(path.slice(1));
+    if (path.startsWith('assets/')) return assetUrl(path);
+    return assetUrl(`assets/ui/${path}`);
+}
 
 export class AlertSystem {
     constructor(game) {
@@ -40,7 +51,7 @@ export class AlertSystem {
 
     initButtonFrames() {
         const img = new Image();
-        img.src = '/assets/ui/button_background-boil.png';
+        img.src = assetUrl('assets/ui/button_background-boil.png');
         img.onload = () => {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -60,7 +71,7 @@ export class AlertSystem {
 
     initFrames() {
         const img = new Image();
-        img.src = '/assets/ui/alert_window_sheet.png';
+        img.src = assetUrl('assets/ui/alert_window_sheet.png');
         img.onload = () => {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -160,17 +171,15 @@ export class AlertSystem {
             const x = (e.clientX - rect.left) * (this.burgerCanvas.width / rect.width);
             
             // Check which burger was clicked
-            const activeSlots = this.game.menuSystem.menuSlots.filter(s => s !== null);
-            const cardWidth = 160;
-            const gutter = 20;
-            const totalWidth = activeSlots.length * cardWidth + (activeSlots.length - 1) * gutter;
-            const startX = (this.burgerCanvas.width - totalWidth) / 2;
+            const { displayBurgerSlots, cardWidth, gutter, startX } = this.getLevelUpPreviewLayout();
 
-            activeSlots.forEach((slot, i) => {
+            displayBurgerSlots.forEach((slot, i) => {
+                if (!slot) return;
                 const cardX = startX + i * (cardWidth + gutter);
                 if (x >= cardX && x <= cardX + cardWidth) {
-                    this.game.unlockTopping(this.allocationMode.toppingId, i);
-                    this.finalizeToppingPick(this.allocationMode.buttonAction);
+                    if (this.game.unlockTopping(this.allocationMode.toppingId, i)) {
+                        this.finalizeToppingPick(this.allocationMode.buttonAction);
+                    }
                 }
             });
         };
@@ -276,7 +285,12 @@ export class AlertSystem {
                 }
             });
         }
-        this.contentText.innerHTML = text;
+        const recipeRows = this.activeAlert.data?.recipeRows || step.recipeRows;
+        if (recipeRows && recipeRows.length > 0) {
+            this.contentText.innerHTML = this.renderRecipeRows(recipeRows);
+        } else {
+            this.contentText.innerHTML = text;
+        }
 
         // Level-up Alert Special Logic: Show Burger Preview
         const isLevelUp = this.activeAlert.id === 'level_up';
@@ -319,6 +333,8 @@ export class AlertSystem {
         this.buttonsContainer.style.height = 'auto';
         this.buttonsContainer.style.display = 'flex';
         this.buttonsContainer.style.justifyContent = 'space-around';
+        this.buttonsContainer.style.alignItems = 'center';
+        this.buttonsContainer.style.gap = '0';
         this.buttonsContainer.style.paddingTop = '20px';
 
         // Create Buttons if present
@@ -328,6 +344,8 @@ export class AlertSystem {
             
             // Special layout for level_up alert
             const isLevelUp = this.activeAlert.id === 'level_up';
+            const isLevelUpChoice = this.activeAlert.id === 'level_up_choice';
+            const isStarterSelection = this.activeAlert.id === 'starter_selection';
             if (isLevelUp) {
                 this.buttonsContainer.style.position = 'absolute';
                 this.buttonsContainer.style.top = '0';
@@ -337,22 +355,37 @@ export class AlertSystem {
                 this.buttonsContainer.style.display = 'block'; // Use absolute positioning for children instead
                 this.buttonsContainer.style.paddingTop = '0';
                 this.buttonsContainer.style.pointerEvents = 'none';
+            } else if (isLevelUpChoice) {
+                this.buttonsContainer.style.justifyContent = 'center';
+                this.buttonsContainer.style.gap = '36px';
+                this.buttonsContainer.style.paddingTop = '36px';
+            } else if (isStarterSelection) {
+                this.buttonsContainer.style.position = 'absolute';
+                this.buttonsContainer.style.top = '105px';
+                this.buttonsContainer.style.left = '0';
+                this.buttonsContainer.style.width = '100%';
+                this.buttonsContainer.style.height = '360px';
+                this.buttonsContainer.style.display = 'block';
+                this.buttonsContainer.style.paddingTop = '0';
             }
 
             buttons.forEach((btnConfig, index) => {
                 const btn = document.createElement('div');
                 btn.className = 'alert-button';
                 // Inline styles for button visual
-                btn.style.position = isLevelUp ? 'absolute' : 'relative';
+                btn.style.position = (isLevelUp || isStarterSelection) ? 'absolute' : 'relative';
+                if (isLevelUpChoice) btn.style.position = 'relative';
                 const isSquareBtn = !!btnConfig.boxImage || (btnConfig.image && (btnConfig.image.includes('button-clean') || btnConfig.image.includes('button_background-boil')));
-                btn.style.width = isSquareBtn ? '128px' : '192px';
-                btn.style.height = isSquareBtn ? '128px' : '96px';
+                const isWideChoiceBtn = isLevelUpChoice;
+                const isStarterConfirm = btnConfig.action?.type === 'starter_confirm';
+                btn.style.width = isWideChoiceBtn ? '224px' : (isStarterConfirm ? '180px' : (isSquareBtn ? '128px' : '192px'));
+                btn.style.height = isWideChoiceBtn ? '132px' : (isStarterConfirm ? '92px' : (isSquareBtn ? '128px' : '96px'));
                 btn.style.display = 'flex';
                 btn.style.alignItems = 'center';
                 btn.style.justifyContent = 'center';
                 btn.style.fontFamily = "'Inter', sans-serif";
                 btn.style.fontWeight = '900';
-                btn.style.fontSize = isSquareBtn ? '18px' : '24px';
+                btn.style.fontSize = isWideChoiceBtn ? '24px' : (isSquareBtn ? '18px' : '24px');
                 btn.style.color = '#fff';
                 btn.style.textShadow = `
                     2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000,
@@ -362,6 +395,10 @@ export class AlertSystem {
                 btn.style.cursor = 'pointer';
                 btn.style.transition = 'transform 0.1s';
                 btn.style.pointerEvents = 'auto'; // Re-enable pointer events
+                if (isWideChoiceBtn) {
+                    btn.style.padding = '12px 16px';
+                    btn.style.boxSizing = 'border-box';
+                }
 
                 if (isLevelUp) {
                     if (btnConfig.action === 'dismiss') {
@@ -379,13 +416,32 @@ export class AlertSystem {
                         const startX = (parseFloat(step.size.width) - totalWidth) / 2;
                         btn.style.left = `${startX + topperIndex * 160 + 16}px`;
                     }
+                } else if (isStarterSelection) {
+                    const burgerButtons = buttons.filter(b => b.action?.type === 'starter_select' && b.action.group === 'burger');
+                    const sideButtons = buttons.filter(b => b.action?.type === 'starter_select' && b.action.group === 'side');
+                    const isBurger = btnConfig.action?.group === 'burger';
+                    const isSide = btnConfig.action?.group === 'side';
+                    const rowButtons = isBurger ? burgerButtons : sideButtons;
+                    const rowIndex = rowButtons.indexOf(btnConfig);
+                    const gap = 30;
+                    const rowWidth = rowButtons.length * 128 + Math.max(0, rowButtons.length - 1) * gap;
+                    const left = (parseFloat(step.size.width) - rowWidth) / 2 + rowIndex * (128 + gap);
+
+                    if (isBurger || isSide) {
+                        btn.style.left = `${left}px`;
+                        btn.style.top = isBurger ? '0px' : '150px';
+                    } else if (isStarterConfirm) {
+                        btn.style.left = `${(parseFloat(step.size.width) - 180) / 2}px`;
+                        btn.style.top = '302px';
+                    }
                 }
 
-                const imgPath = btnConfig.image ? (btnConfig.image.startsWith('/') ? btnConfig.image : `assets/ui/${btnConfig.image}`) : null;
+                const imgPath = btnConfig.image ? resolveUiAsset(btnConfig.image) : null;
                 const isBoil = btnConfig.image && btnConfig.image.includes('button_background-boil');
-                let initialImgSrc = isBoil ? '/assets/ui/button-clean.png' : imgPath;
+                let initialImgSrc = isBoil ? assetUrl('assets/ui/button-clean.png') : imgPath;
                 
-                if (isBoil && this.buttonBoilLoaded && index === this.selectedButtonIndex) {
+                const starterPicked = this.isStarterSelectionButtonPicked(btnConfig);
+                if (isBoil && this.buttonBoilLoaded && (index === this.selectedButtonIndex || starterPicked)) {
                     initialImgSrc = this.buttonBoilFrames[0];
                 }
 
@@ -396,14 +452,14 @@ export class AlertSystem {
                 let labelText = btnConfig.label || btnConfig.text || 'OK';
                 let subLabel = btnConfig.subLabel || '';
 
-                const showLabel = !btnConfig.boxImage || labelText === 'OK';
+                const showLabel = !btnConfig.boxImage || labelText === 'OK' || isStarterSelection;
 
                 btn.innerHTML = `
                     ${imgHTML}
-                    <div style="position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; width:100%;">
+                    <div style="position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; width:100%; padding:${isWideChoiceBtn ? '12px' : '0'}; box-sizing:border-box;">
                         ${btnConfig.boxImage ? `
                             <div style="width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; margin-bottom: 5px;">
-                                <img src="${btnConfig.boxImage.startsWith('/') ? btnConfig.boxImage : '/' + btnConfig.boxImage}" 
+                                <img src="${resolveUiAsset(btnConfig.boxImage)}" 
                                      style="width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated;">
                             </div>
                         ` : ''}
@@ -432,12 +488,14 @@ export class AlertSystem {
                 // If this topping was already picked, hide it
                 if (this.activeAlert.id === 'level_up' && btnConfig.action && btnConfig.action.type === 'unlock_topping') {
                     const alreadyPicked = this.activeAlert.data.unlockedToppings && this.activeAlert.data.unlockedToppings.has(btnConfig.action.toppingId);
-                    if (alreadyPicked) {
+                    const isAvailable = this.isUnlockActionAvailable(btnConfig.action);
+                    if (alreadyPicked || !isAvailable) {
                         btn.style.display = 'none';
                         btn.style.pointerEvents = 'none';
                     }
                 }
             });
+            this.selectedButtonIndex = this.getNextVisibleButton(this.selectedButtonIndex, 1);
             this.updateButtonSelection();
         } else {
             this.nextBtn.style.display = 'block';
@@ -453,7 +511,7 @@ export class AlertSystem {
 
         // Update Portrait
         if (step.portrait) {
-            this.portrait.src = step.portrait.startsWith('/') ? step.portrait : `/${step.portrait}`;
+            this.portrait.src = resolveUiAsset(step.portrait);
             this.portrait.style.display = 'block';
 
             const hPos = step.portraitSide || 'left';
@@ -471,16 +529,37 @@ export class AlertSystem {
         }
     }
 
+    renderRecipeRows(rows) {
+        const renderToken = (token) => {
+            if (!token) return '';
+            if (token.type === 'image') {
+                return `<img class="alert-recipe-img" src="${resolveUiAsset(token.src)}" alt="">`;
+            }
+            if (token.type === 'symbol') {
+                return `<span class="alert-recipe-symbol">${token.value || ''}</span>`;
+            }
+            return '';
+        };
+
+        return `<div class="alert-recipe">${rows.map(tokens => `
+            <div class="alert-recipe-row">${tokens.map(renderToken).join('')}</div>
+        `).join('')}</div>`;
+    }
+
     updateButtonSelection() {
         this.buttons.forEach((b, i) => {
             const img = b.element.querySelector('img');
             const isLevelUpOKDisabled = false; // Always enabled now
+            const starterData = this.activeAlert?.id === 'starter_selection' ? this.activeAlert.data : null;
+            const isStarterConfirm = b.config.action?.type === 'starter_confirm';
+            const isStarterPicked = this.isStarterSelectionButtonPicked(b.config);
+            const isStarterConfirmDisabled = starterData && isStarterConfirm && (!starterData.selectedBurgerId || !starterData.selectedSideId);
 
             const isSelected = i === this.selectedButtonIndex;
             const isHidden = b.element.style.display === 'none';
 
             // Special handling for Level Up OK button visibility/usability
-            if (isLevelUpOKDisabled) {
+            if (isLevelUpOKDisabled || isStarterConfirmDisabled) {
                 b.element.style.opacity = '0.5';
                 b.element.style.filter = 'grayscale(1)';
                 b.element.style.cursor = 'default';
@@ -492,7 +571,10 @@ export class AlertSystem {
                 if (img) img.style.filter = 'none';
             }
 
-            if (isSelected && !isLevelUpOKDisabled && !isHidden) {
+            b.element.style.outline = 'none';
+            b.element.style.outlineOffset = '0';
+
+            if (isSelected && !isLevelUpOKDisabled && !isStarterConfirmDisabled && !isHidden) {
                 b.element.style.transform = 'scale(1.1)';
                 if (img) img.style.filter = 'brightness(1.2)';
             } else {
@@ -515,8 +597,35 @@ export class AlertSystem {
         return currentIndex;
     }
 
+    isUnlockActionAvailable(action) {
+        if (!action || action.type !== 'unlock_topping') return true;
+        return this.game.getUnlockAvailability(action.toppingId) > 0;
+    }
+
+    isStarterSelectionButtonPicked(btnConfig) {
+        const data = this.activeAlert?.id === 'starter_selection' ? this.activeAlert.data : null;
+        if (!data || btnConfig.action?.type !== 'starter_select') return false;
+        return (
+            (btnConfig.action.group === 'burger' && data.selectedBurgerId === btnConfig.action.id) ||
+            (btnConfig.action.group === 'side' && data.selectedSideId === btnConfig.action.id)
+        );
+    }
+
     executeAction(action) {
-        if (action === 'faster_tickets' || action === 'more_complexity') {
+        if (action?.type === 'starter_select') {
+            if (action.group === 'burger') {
+                this.activeAlert.data.selectedBurgerId = action.id;
+            } else if (action.group === 'side') {
+                this.activeAlert.data.selectedSideId = action.id;
+            }
+            this.updateButtonSelection();
+        } else if (action?.type === 'starter_confirm') {
+            const burgerId = this.activeAlert.data?.selectedBurgerId;
+            const sideId = this.activeAlert.data?.selectedSideId;
+            if (!burgerId || !sideId) return;
+            this.activeAlert.data.onStarterConfirm?.({ burgerId, sideId });
+            this.close();
+        } else if (action === 'faster_tickets' || action === 'more_complexity') {
             if (this.activeAlert.data?.onChoice) {
                 this.activeAlert.data.onChoice(action);
             }
@@ -534,24 +643,46 @@ export class AlertSystem {
 
             // SPECIAL CASE: Chicken Patty immediately unlocks the burger
             if (action.toppingId === 'chicken_patty') {
-                this.game.unlockTopping(action.toppingId);
-                this.finalizeToppingPick(action);
+                if (this.game.unlockTopping(action.toppingId)) {
+                    this.finalizeToppingPick(action);
+                } else {
+                    this.showCurrentStep();
+                }
                 return;
             }
 
             // Check if we need allocation
             const activeSlots = this.game.menuSystem.menuSlots.filter(s => s !== null);
             if (activeSlots.length > 1 && !this.isToppingSide(action.toppingId)) {
+                const validSlotIndexes = activeSlots
+                    .map((slot, index) => this.game.menuSystem.burgerCanTakeTopping(slot, action.toppingId) ? index : -1)
+                    .filter(index => index >= 0);
+                if (validSlotIndexes.length === 0) {
+                    this.showCurrentStep();
+                    return;
+                }
+
                 // ENTER ALLOCATION MODE
                 this.allocationMode = { toppingId: action.toppingId, buttonAction: action };
-                this.selectedBurgerIndex = 0; // Reset for keyboard choice
+                this.selectedBurgerIndex = validSlotIndexes[0];
                 this.showCurrentStep(); // Re-render to show allocation prompt
             } else {
                 // Immediate unlock (for sides or if only one burger)
-                this.game.unlockTopping(action.toppingId, 0);
-                this.finalizeToppingPick(action);
+                if (this.game.unlockTopping(action.toppingId, 0)) {
+                    this.finalizeToppingPick(action);
+                } else {
+                    this.showCurrentStep();
+                }
             }
         }
+    }
+
+    handleBackAction() {
+        const onBack = this.activeAlert?.data?.onBack;
+        if (!onBack) return false;
+        this.close();
+        onBack();
+        return true;
     }
 
     isToppingSide(id) {
@@ -692,6 +823,46 @@ export class AlertSystem {
         }
     }
 
+    getLevelUpPreviewLayout() {
+        const caps = this.game.menuCaps || { burgers: 2, sides: 2 };
+        const activeSlots = this.game.menuSystem.getActiveBurgerSlots();
+        const displayBurgerSlots = Array.from({ length: caps.burgers }, (_, i) => this.game.menuSystem.menuSlots[i] || null);
+        const cardWidth = 160;
+        const gutter = 20;
+        const totalWidth = displayBurgerSlots.length * cardWidth + Math.max(0, displayBurgerSlots.length - 1) * gutter;
+
+        const activeSides = this.game.menuSystem.sides || [];
+        const sessionUnlocks = this.activeAlert?.data?.unlockedToppings || new Set();
+        const sidesToDraw = [...activeSides.map(s => s.definitionId)];
+        if (!sidesToDraw.includes('fries')) {
+            sidesToDraw.unshift('fries');
+        }
+        sessionUnlocks.forEach(id => {
+            if (this.isToppingSide(id) && !sidesToDraw.includes(id) && sidesToDraw.length < caps.sides) {
+                sidesToDraw.push(id);
+            }
+        });
+
+        const displaySideSlots = Array.from({ length: caps.sides }, (_, i) => sidesToDraw[i] || null);
+        const sideColumnWidth = 118;
+        const contentWidth = totalWidth + sideColumnWidth;
+        const canvasWidth = Math.max(400, contentWidth + 60);
+        const startX = (canvasWidth - contentWidth) / 2;
+        const sideX = startX + totalWidth + 30;
+
+        return {
+            activeSlots,
+            displayBurgerSlots,
+            cardWidth,
+            gutter,
+            totalWidth,
+            startX,
+            sideX,
+            displaySideSlots,
+            canvasWidth
+        };
+    }
+
     update(dt) {
         if (!this.isVisible) return;
 
@@ -725,13 +896,17 @@ export class AlertSystem {
             this.buttons.forEach((b, i) => {
                 const isSelected = i === this.selectedButtonIndex;
                 const isLevelUpOKDisabled = false;
-                const canBoil = isSelected && !isLevelUpOKDisabled;
+                const starterData = this.activeAlert?.id === 'starter_selection' ? this.activeAlert.data : null;
+                const isStarterConfirmDisabled = starterData &&
+                    b.config.action?.type === 'starter_confirm' &&
+                    (!starterData.selectedBurgerId || !starterData.selectedSideId);
+                const canBoil = (isSelected || this.isStarterSelectionButtonPicked(b.config)) && !isLevelUpOKDisabled && !isStarterConfirmDisabled;
                 
                 const isBoilAsset = b.config.image && b.config.image.includes('button_background-boil');
                 const img = b.element.querySelector('.alert-btn-bg');
                 
                 if (img && isBoilAsset) {
-                    const targetSrc = canBoil ? this.buttonBoilFrames[this.currentFrame] : '/assets/ui/button-clean.png';
+                    const targetSrc = canBoil ? this.buttonBoilFrames[this.currentFrame] : assetUrl('assets/ui/button-clean.png');
                     if (img.src !== targetSrc) {
                         img.src = targetSrc;
                     }
@@ -748,23 +923,25 @@ export class AlertSystem {
     renderLevelUpBurger() {
         if (!this.activeAlert) return;
 
+        const layout = this.getLevelUpPreviewLayout();
+        if (this.burgerCanvas.width !== layout.canvasWidth) {
+            this.burgerCanvas.width = layout.canvasWidth;
+            this.burgerCtx = this.burgerCanvas.getContext('2d');
+            this.burgerCtx.imageSmoothingEnabled = false;
+        }
+
         const ctx = this.burgerCtx;
         const renderer = this.game.renderer;
         const scale = 1.5;
-        const tileSize = 64;
 
         ctx.clearRect(0, 0, this.burgerCanvas.width, this.burgerCanvas.height);
         ctx.imageSmoothingEnabled = false;
 
-        const activeSlots = this.game.menuSystem.menuSlots.filter(s => s !== null);
-        const cardWidth = 160;
+        const { displayBurgerSlots, cardWidth, gutter, totalWidth, startX, sideX, displaySideSlots } = layout;
         const cardHeight = 220;
-        const gutter = 20;
-        const totalWidth = activeSlots.length * cardWidth + (activeSlots.length - 1) * gutter;
-        const startX = (this.burgerCanvas.width - totalWidth) / 2;
         const startY = 60;
 
-        activeSlots.forEach((slot, i) => {
+        displayBurgerSlots.forEach((slot, i) => {
             const cardX = startX + i * (cardWidth + gutter);
             
             // DRAW DINER MENU CARD (Subtle)
@@ -812,24 +989,35 @@ export class AlertSystem {
             ctx.fillStyle = '#4a3c28';
             ctx.font = '900 18px "Inter", sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText(slot.name.toUpperCase(), cardX + cardWidth / 2, startY + 25);
-            ctx.fillText('BURGER', cardX + cardWidth / 2, startY + 45);
+            if (slot) {
+                ctx.fillText(slot.name.toUpperCase(), cardX + cardWidth / 2, startY + 25);
+                ctx.fillText('BURGER', cardX + cardWidth / 2, startY + 45);
 
-            // DRAW BURGER PIXELS
-            const burger = new ItemInstance(slot.definitionId || 'plain_burger');
-            if (slot.state) {
-                burger.state.bun = slot.state.bun;
-                burger.state.toppings = [...(slot.state.toppings || [])];
-                
-                // Add session preview topping if being allocated
-                if (this.allocationMode && this.selectedBurgerIndex === i) {
-                    burger.state.toppings.push(this.allocationMode.toppingId);
+                // DRAW BURGER PIXELS
+                const burger = new ItemInstance('plain_burger');
+                if (slot.state) {
+                    burger.state.bun = slot.state.bun;
+                    burger.state.toppings = [...(slot.state.toppings || [])];
+                    
+                    // Add session preview topping if being allocated
+                    if (this.allocationMode && this.selectedBurgerIndex === i) {
+                        burger.state.toppings.push(this.allocationMode.toppingId);
+                    }
                 }
+                
+                const bX = cardX + (cardWidth - 64 * scale) / 2;
+                const bY = startY + 60;
+                drawBurgerPixels(renderer, burger, bX, bY, scale, ctx);
+            } else {
+                ctx.fillText('EMPTY', cardX + cardWidth / 2, startY + 34);
+                ctx.fillText('BURGER SLOT', cardX + cardWidth / 2, startY + 56);
+                ctx.font = '900 46px "Inter", sans-serif';
+                ctx.fillStyle = '#c9b89c';
+                ctx.fillText('+', cardX + cardWidth / 2, startY + 148);
+                ctx.font = '900 18px "Inter", sans-serif';
+                ctx.fillStyle = '#7a6a50';
+                ctx.fillText('COMPLEXITY PICK', cardX + cardWidth / 2, startY + 188);
             }
-            
-            const bX = cardX + (cardWidth - 64 * scale) / 2;
-            const bY = startY + 60;
-            drawBurgerPixels(renderer, burger, bX, bY, scale, ctx);
 
             // Allocation Hover Check (simple)
             if (this.allocationMode) {
@@ -847,28 +1035,30 @@ export class AlertSystem {
             }
         });
 
-        // DRAW SIDES COLUMN (To the right of cards)
-        const activeSides = this.game.menuSystem.sides || [];
-        const sessionUnlocks = this.activeAlert.data.unlockedToppings || new Set();
-        const sidesToDraw = [...activeSides.map(s => s.definitionId)];
-        sessionUnlocks.forEach(id => {
-            if (this.isToppingSide(id) && !sidesToDraw.includes(id)) sidesToDraw.push(id);
-        });
+        // DRAW SIDE SLOTS
+        displaySideSlots.forEach((sideId, index) => {
+            const slotSize = 88;
+            const slotY = startY + index * (slotSize + 18);
 
-        if (sidesToDraw.length > 0) {
-            const sideX = startX + totalWidth + 30;
-            let currentSideY = startY;
-            sidesToDraw.forEach(sideId => {
-                let tex = sideId === 'fries' ? 'fries-done.png' : (sideId === 'sweet_potato_fries' ? 'sweet_potato_fries-done.png' : null);
-                if (tex) {
-                    const img = renderer.assetLoader.get(tex);
-                    if (img) {
-                        ctx.drawImage(img, sideX, currentSideY, 64, 64);
-                        currentSideY += 70;
-                    }
+            ctx.fillStyle = '#fff9f0';
+            ctx.strokeStyle = '#d4c4a8';
+            ctx.lineWidth = 2;
+            ctx.fillRect(sideX, slotY, slotSize, slotSize);
+            ctx.strokeRect(sideX, slotY, slotSize, slotSize);
+
+            if (sideId) {
+                const tex = sideId === 'fries' ? 'fries-done.png' : (sideId === 'sweet_potato_fries' ? 'sweet_potato_fries-done.png' : null);
+                const img = tex ? renderer.assetLoader.get(tex) : null;
+                if (img) {
+                    ctx.drawImage(img, sideX + 12, slotY + 12, 64, 64);
                 }
-            });
-        }
+            } else {
+                ctx.fillStyle = '#c9b89c';
+                ctx.font = '900 38px "Inter", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('+', sideX + slotSize / 2, slotY + 56);
+            }
+        });
     }
 
     // Input handling
@@ -886,26 +1076,66 @@ export class AlertSystem {
         const isInteract = action === ACTIONS.INTERACT || code === 'Enter' || code === 'Space';
         const isLeft = action === ACTIONS.MOVE_LEFT || code === 'ArrowLeft';
         const isRight = action === ACTIONS.MOVE_RIGHT || code === 'ArrowRight';
+        const isUp = action === ACTIONS.MOVE_UP || code === 'ArrowUp';
+        const isDown = action === ACTIONS.MOVE_DOWN || code === 'ArrowDown';
+        const isBack = code === 'Escape';
 
         if (this.allocationMode) {
+            if (isBack) {
+                this.allocationMode = null;
+                this.showCurrentStep();
+                return true;
+            }
+
+            const activeSlots = this.game.menuSystem.menuSlots.filter(s => s !== null);
+            const validSlotIndexes = activeSlots
+                .map((slot, index) => this.game.menuSystem.burgerCanTakeTopping(slot, this.allocationMode.toppingId) ? index : -1)
+                .filter(index => index >= 0);
+
+            if (validSlotIndexes.length === 0) {
+                this.allocationMode = null;
+                this.showCurrentStep();
+                return true;
+            }
+
             if (isRight) {
-                const activeSlots = this.game.menuSystem.menuSlots.filter(s => s !== null);
-                this.selectedBurgerIndex = (this.selectedBurgerIndex || 0) + 1;
-                if (this.selectedBurgerIndex >= activeSlots.length) this.selectedBurgerIndex = 0;
+                const currentPos = Math.max(0, validSlotIndexes.indexOf(this.selectedBurgerIndex));
+                this.selectedBurgerIndex = validSlotIndexes[(currentPos + 1) % validSlotIndexes.length];
                 this.showCurrentStep();
                 return true;
             } else if (isLeft) {
-                const activeSlots = this.game.menuSystem.menuSlots.filter(s => s !== null);
-                this.selectedBurgerIndex = (this.selectedBurgerIndex || 0) - 1;
-                if (this.selectedBurgerIndex < 0) this.selectedBurgerIndex = activeSlots.length - 1;
+                const currentPos = Math.max(0, validSlotIndexes.indexOf(this.selectedBurgerIndex));
+                this.selectedBurgerIndex = validSlotIndexes[(currentPos - 1 + validSlotIndexes.length) % validSlotIndexes.length];
                 this.showCurrentStep();
                 return true;
             } else if (isInteract) {
-                this.game.unlockTopping(this.allocationMode.toppingId, this.selectedBurgerIndex);
-                this.finalizeToppingPick(this.allocationMode.buttonAction);
+                if (this.game.unlockTopping(this.allocationMode.toppingId, this.selectedBurgerIndex)) {
+                    this.finalizeToppingPick(this.allocationMode.buttonAction);
+                }
                 return true;
             }
             return true; // Swallow while in allocation
+        }
+
+        if (isBack && this.activeAlert?.id === 'level_up') {
+            return this.handleBackAction();
+        }
+
+        if (this.activeAlert?.id === 'starter_selection' && this.buttons.length > 0) {
+            const current = this.buttons[this.selectedButtonIndex];
+            const currentGroup = current?.config?.action?.group || 'confirm';
+            const groups = ['burger', 'side', 'confirm'];
+            const currentRow = Math.max(0, groups.indexOf(currentGroup));
+
+            if (isUp || isDown) {
+                const nextRow = Math.max(0, Math.min(groups.length - 1, currentRow + (isDown ? 1 : -1)));
+                const nextIndex = this.buttons.findIndex(b => (b.config.action?.group || 'confirm') === groups[nextRow]);
+                if (nextIndex >= 0) {
+                    this.selectedButtonIndex = nextIndex;
+                    this.updateButtonSelection();
+                }
+                return true;
+            }
         }
 
         // Button Navigation

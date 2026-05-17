@@ -258,7 +258,7 @@ const isTicket4Active = (gameState) => {
     return gameState.activeTickets.some(t => t.id === 4);
 };
 
-export const TUTORIAL_STEPS = [
+const DISABLED_TUTORIAL_STEPS = [
     {
         id: 'pickup_patty',
         text: "Pick up!\n[PICK_UP]",
@@ -503,3 +503,4 @@ export const TUTORIAL_STEPS = [
 
 ];
 
+export const TUTORIAL_STEPS = [];

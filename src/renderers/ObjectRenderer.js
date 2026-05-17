@@ -439,6 +439,7 @@ export function drawStackedItem(renderer, item, x, y, scale = 1.0, yOffset = 0) 
     const def = item.definition;
     const count = item.state.count || 1;
     const contents = item.state.contents;
+    const isGrillBatch = !!item.state.isGrillBatch;
     const ctx = renderer.ctx;
     const assetLoader = renderer.assetLoader;
 
@@ -451,8 +452,8 @@ export function drawStackedItem(renderer, item, x, y, scale = 1.0, yOffset = 0) 
     const baseX = -TILE_SIZE / 2;
     const baseY = -TILE_SIZE / 2;
 
-    const partTexture = def.partTexture;
-    const fullTexture = def.texture;
+    const partTexture = item.state.renderPartTexture !== undefined ? item.state.renderPartTexture : def.partTexture;
+    const fullTexture = item.state.renderTexture !== undefined ? item.state.renderTexture : def.texture;
     const stackNudge = def.stackNudge || 6;
     const contentNudge = def.contentNudge || 12;
 
@@ -479,7 +480,7 @@ export function drawStackedItem(renderer, item, x, y, scale = 1.0, yOffset = 0) 
                 });
             }
 
-            if (contents && contents.length > 0) {
+            if (contents && contents.length > 0 && !isGrillBatch) {
                 if (def.id === 'plate' || def.id === 'dirty_plate') {
                     const burger = contents.find(c => (c.definition && (c.definition.category === 'burger' || c.definitionId.includes('burger'))) || c.category === 'burger');
                     const side = contents.find(c => c.definition && c.definition.category === 'side_prep');
@@ -538,7 +539,7 @@ export function drawStackedItem(renderer, item, x, y, scale = 1.0, yOffset = 0) 
     }
     ctx.restore();
 
-    if (contents && contents.length > 0 && !['plate', 'dirty_plate'].includes(def.id) && def.showLabel !== false) {
+    if (contents && contents.length > 0 && !['plate', 'dirty_plate'].includes(def.id) && item.state.showTinyNumber !== false && def.showLabel !== false) {
         renderer.drawTinyNumber(x, y, contents.length);
     }
 }

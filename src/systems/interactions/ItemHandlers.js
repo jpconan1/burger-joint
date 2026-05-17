@@ -9,23 +9,10 @@ export const sauce_bottle_interact = (player, target) => {
     const sauceId = target.definition?.produces;
     if (!sauceId) return false;
 
-    const held = player.heldItem;
-    const isBurger = held.category === 'burger' || held.definitionId.includes('burger');
-    const isBun = held.category === 'bun';
-    if (!isBurger && !isBun) return false;
+    const result = _tryCombine(player.heldItem, new ItemInstance(sauceId));
+    if (!result) return false;
 
-    let newBurger;
-    if (isBun) {
-        newBurger = new ItemInstance('plain_burger');
-        newBurger.state.bun = held;
-        newBurger.state.toppings = [];
-    } else {
-        newBurger = held.clone();
-    }
-
-    const sauceItem = new ItemInstance(sauceId);
-    _addIngredientToBurger(newBurger, sauceItem);
-    player.heldItem = newBurger;
+    player.heldItem = result;
     return true;
 };
 
@@ -33,13 +20,11 @@ export const sauce_bottle_interact = (player, target) => {
 export const lettuce_interact = (player, head, cell) => {
     if (!head || head.definitionId !== 'lettuce_head') return false;
 
-    const charges = head.state.charges !== undefined ? head.state.charges : 8;
+    const charges = head.state.charges !== undefined ? head.state.charges : 12;
     if (charges <= 0) return false;
 
     const held = player.heldItem;
-    const isBurger = held && (held.category === 'burger' || held.category === 'bun' || held.definitionId.includes('burger'));
-
-    if (isBurger) {
+    if (held) {
         const leaf = new ItemInstance('lettuce_leaf');
         const result = _tryCombine(held, leaf);
         if (result) {

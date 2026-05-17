@@ -55,7 +55,7 @@ export function renderTitleScreen(renderer, selection = 0) {
     const startY = canvas.height / 2 + 30; // Push down a bit
     const spacing = 60;
 
-    const options = ['New Game', 'Settings'];
+    const options = ['New Game', 'Tutorial', 'Settings'];
 
     options.forEach((opt, index) => {
         const y = startY + (index * spacing);
@@ -83,10 +83,62 @@ export function renderTitleScreen(renderer, selection = 0) {
     ctx.fillText(hintText2, centerX, hintY);
 }
 
+export function renderTutorialMenu(renderer, selection = 0, lessons = []) {
+    const ctx = renderer.ctx;
+    const canvas = renderer.canvas;
+    const assetLoader = renderer.assetLoader;
+
+    if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
+        renderer.resizeCanvas();
+    }
+
+    const bgImg = assetLoader.get(ASSETS.UI.CRUMPLED_PAPER_BACKGROUND);
+    if (bgImg) {
+        ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+    } else {
+        ctx.fillStyle = '#e1d2d2';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    const centerX = canvas.width / 2;
+
+    ctx.save();
+    ctx.font = '900 70px "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.lineWidth = 38;
+    ctx.strokeStyle = '#000';
+    ctx.fillStyle = '#fff';
+    ctx.strokeText('TUTORIAL', centerX, canvas.height / 3 - 55);
+    ctx.fillText('TUTORIAL', centerX, canvas.height / 3 - 55);
+
+    ctx.font = '900 40px "Inter", sans-serif';
+    ctx.lineWidth = 28;
+    const startY = canvas.height / 2 - 35;
+    const spacing = 58;
+
+    lessons.forEach((lesson, index) => {
+        const y = startY + index * spacing;
+        ctx.strokeText(lesson.label, centerX, y);
+        ctx.fillStyle = selection === index ? '#00FF7F' : '#fff';
+        ctx.fillText(lesson.label, centerX, y);
+    });
+
+    ctx.font = '900 18px "Inter", sans-serif';
+    ctx.lineWidth = 12;
+    ctx.fillStyle = '#fff';
+    ctx.strokeText('ESC', centerX, canvas.height - 40);
+    ctx.fillText('ESC', centerX, canvas.height - 40);
+    ctx.restore();
+}
+
 export function renderSettingsMenu(renderer, state, settings) {
     const ctx = renderer.ctx;
     const canvas = renderer.canvas;
     const assetLoader = renderer.assetLoader;
+    const highScore = parseInt(localStorage.getItem('burger_joint_highscore_v2')) || 0;
 
     // Ensure fullscreen
     if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
@@ -146,6 +198,27 @@ export function renderSettingsMenu(renderer, state, settings) {
         currentY += rowHeight;
     });
 
+    {
+        const isSelected = state.selectedIndex === 2;
+        if (isSelected) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(100, currentY - 25, canvas.width - 200, rowHeight);
+            ctx.fillStyle = '#d35400';
+        } else {
+            ctx.fillStyle = '#444';
+        }
+
+        ctx.font = '20px Monospace';
+        ctx.fillText('Reset High Score', 120, currentY);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#c0392b';
+        ctx.fillText(String(highScore), canvas.width - 120, currentY);
+        ctx.textAlign = 'left';
+
+        currentY += rowHeight;
+    }
+
     // 2. Key Bindings
     currentY += 20;
     ctx.font = '24px Arial';
@@ -163,7 +236,7 @@ export function renderSettingsMenu(renderer, state, settings) {
     ctx.font = '20px Monospace';
 
     displayOrder.forEach((action, i) => {
-        const globalIndex = i + 2;
+        const globalIndex = i + 3;
         const isSelected = (state.selectedIndex === globalIndex);
         const isRebinding = (action === state.rebindingAction);
 
@@ -260,4 +333,3 @@ export function renderPauseScreen(renderer, gameState) {
 
     ctx.restore();
 }
-

@@ -9,18 +9,25 @@ export class PowerupSystem {
         this.powerupConfigs = [
             { id: 'keroscene', interval: 60000, timer: 0 },
             { id: 'magic_bag', interval: 90000, timer: 0 },
-            { id: 'freeze_clock', interval: 150000, timer: 0 },
-            { id: 'bomb', interval: 999999, timer: 0 }
+            { id: 'freeze_clock', interval: 150000, timer: 0 }
         ];
+        this.AUTO_RESUME_DURATION = 45000; // 45 seconds
+        this.BOMB_STABILITY_THRESHOLD = 0.25;
+        this.resetRunState();
+    }
+
+    resetRunState() {
+        this.powerupConfigs.forEach(config => {
+            config.timer = 0;
+        });
         this.tutorialPowerupSpawned = false;
 
         // Freeze-clock tracking
-        this.freezeClockItem = null;       // reference to the active freeze_clock item
-        this.autoResumeTimer = 0;          // counts up while time is frozen
-        this.AUTO_RESUME_DURATION = 45000; // 45 seconds
-        
+        this.freezeClockItem = null; // reference to the active freeze_clock item
+        this.autoResumeTimer = 0; // counts up while time is frozen
+
         this.bombSpawned = false;
-        this.BOMB_THRESHOLD = 9;
+        this.wasStabilityRed = false;
     }
 
     update(dt) {
@@ -49,14 +56,13 @@ export class PowerupSystem {
             }
         });
 
-        // Bomb Spawning (Once per run, when tickets >= 9)
-        if (!this.bombSpawned) {
-            const totalTickets = this.game.activeTickets.length + this.game.ticketQueue.length;
-            if (totalTickets >= this.BOMB_THRESHOLD) {
-                this.spawnPowerup({ id: 'bomb' });
-                this.bombSpawned = true;
-            }
+        // Bomb spawns once per run, on the first transition into the red zone.
+        const stabilityPct = Math.max(0, this.game.stability / this.game.maxStability);
+        const isStabilityRed = stabilityPct <= this.BOMB_STABILITY_THRESHOLD;
+        if (!this.bombSpawned && !this.wasStabilityRed && isStabilityRed) {
+            this.bombSpawned = this.spawnPowerup({ id: 'bomb' });
         }
+        this.wasStabilityRed = isStabilityRed;
     }
 
     isPowerupPresent(id) {
@@ -102,7 +108,7 @@ export class PowerupSystem {
 
     spawnPowerup(config) {
         const grid = this.game.grid;
-        if (!grid) return;
+        if (!grid) return false;
 
         // Find all counters
         const potentialCells = [];
@@ -119,23 +125,28 @@ export class PowerupSystem {
         }
 
         if (potentialCells.length > 0) {
-            const randomCell = potentialCells[Math.floor(Math.random() * potentialCells.length)];
+            const randomCell = this.game.randPick(potentialCells);
             const powerup = new ItemInstance(config.id);
             randomCell.object = powerup;
             config.timer = 0; // Reset timer after successful spawn
             if (config.id === 'keroscene') this.tutorialPowerupSpawned = true;
             this.game.addFloatingText("Powerup Spawned!", randomCell.x, randomCell.y, '#ff00ff');
             console.log(`Spawned ${config.id} at ${randomCell.x},${randomCell.y}`);
+            return true;
         }
+        return false;
     }
 
     checkInteraction(item, cell) {
-        const config = this.powerupConfigs.find(c => c.id === item.definitionId);
-        if (config) {
-            const shouldRemove = this.activatePowerup(config.id, item);
+        const powerupId = item?.definitionId;
+        const isConfiguredPowerup = this.powerupConfigs.some(config => config.id === powerupId);
+        const isBombPowerup = powerupId === 'bomb';
+
+        if (isConfiguredPowerup || isBombPowerup) {
+            const shouldRemove = this.activatePowerup(powerupId, item);
             if (shouldRemove && cell) {
                 cell.object = null;
-                console.log(`Powerup ${config.id} removed from cell via PowerupSystem`);
+                console.log(`Powerup ${powerupId} removed from cell via PowerupSystem`);
             }
             return true; // Interaction handled
         }
@@ -219,14 +230,13 @@ export class PowerupSystem {
 
             // Spawn fire effects on affected items
             effectLocations.forEach(loc => {
-                this.game.addEffect({
+                this.game.addEffect(this.game.createEffect({
                     type: 'fire',
                     x: Math.floor(loc.x),
                     y: Math.floor(loc.y),
-                    rotation: Math.random() * Math.PI * 2,
-                    startTime: Date.now(),
+                    rotation: this.game.randFloat(0, Math.PI * 2),
                     duration: 250
-                });
+                }));
             });
         } else {
             this.game.addFloatingText("Powerup Used", this.game.player.x, this.game.player.y, '#aaaaaa');
@@ -285,7 +295,6 @@ export class PowerupSystem {
 
     _activateBomb() {
         console.log("ACTIVATE BOMB: Burn rail and 1.5s flash");
-        const now = Date.now();
 
         // 1. Spawn Fire Effects on the rail (2x scale)
         let railCount = this.game.activeTickets.length;
@@ -294,14 +303,13 @@ export class PowerupSystem {
         const effectiveCount = Math.max(railCount, 3);
         
         for (let i = 0; i < effectiveCount; i++) {
-            this.game.addEffect({
+            this.game.addEffect(this.game.createEffect({
                 type: 'fire',
                 x: 2 + i, // World X coordinate
                 y: 0.2,   // Slightly down from top
-                startTime: now,
                 duration: 250,
                 scale: 2.0
-            });
+            }));
         }
 
         // 2. Wipe everything
@@ -318,4 +326,3 @@ export class PowerupSystem {
         this.game.screenShake = 45; 
     }
 }
-

@@ -9,6 +9,7 @@ import { Player } from './entities/Player.js';
 import { ItemInstance } from './entities/Item.js';
 
 import { DEFAULT_LEVEL, DEFAULT_STORE_ROOM, DEFAULT_OFFICE_ROOM } from './data/defaultLevel.js';
+import { TUTORIAL_LESSONS } from './data/tutorialLessons.js';
 import { OrderSystem } from './systems/OrderSystem.js';
 import { getMenuForCapabilities } from './data/orderTemplates.js';
 import { Settings, ACTIONS } from './systems/Settings.js';
@@ -21,6 +22,10 @@ import { ServiceCycle } from './systems/ServiceCycle.js';
 
 import { AlertSystem } from './systems/AlertSystem.js';
 import { PowerupSystem } from './systems/PowerupSystem.js';
+import { GameClock } from './utils/GameClock.js';
+import { Random } from './utils/Random.js';
+import { shuffleWithRandom } from './utils/Deterministic.js';
+import { assetUrl } from './utils/assets.js';
 
 export class Game {
 
@@ -61,15 +66,24 @@ export class Game {
         this.grid = new Grid(GRID_WIDTH, GRID_HEIGHT);
         this.renderer = null;
         this.player = new Player(4, 4);
+        this.clock = new GameClock();
+        this.random = new Random(1);
+        this.runSeed = null;
 
 
         this.alertSystem = new AlertSystem(this);
         this.settings = new Settings();
         this.audioSystem = new AudioSystem(this.settings);
 
+        this.menuCaps = {
+            burgers: 2,
+            sides: 2,
+            toppingsPerBurger: 3
+        };
+
         this.toppingCharges = {};
         this.TOPPING_POOL.forEach(id => {
-            this.toppingCharges[id] = 1;
+            this.toppingCharges[id] = 0;
         });
 
         // Systems
@@ -80,15 +94,20 @@ export class Game {
         this.inputManager = new InputManager(this);
         this.serviceCycle = new ServiceCycle(this);
 
-        this.gameState = 'TITLE'; // TITLE, PLAYING, SETTINGS
-        this.titleSelection = 0; // 0: New Game, 1: Settings
+        this.gameState = 'TITLE'; // TITLE, TUTORIAL_MENU, PLAYING, SETTINGS
+        this.titleSelection = 0; // 0: New Game, 1: Tutorial, 2: Settings
+        this.tutorialSelection = 0;
+        this.isTutorialMode = false;
+        this.currentTutorialIndex = -1;
+        this.currentTutorialLesson = null;
+        this.tutorialFlags = {};
         this.settingsState = {
             selectedIndex: 0,
             rebindingAction: null
         };
         this.currentSongIndex = -1;
         this.isViewingOrders = false;
-        this.orderSystem = new OrderSystem();
+        this.orderSystem = new OrderSystem(this.random);
         this.dayNumber = 0;
         this.orders = [];
         this.ticketQueue = [];    // Pending tickets to arrive
@@ -204,8 +223,17 @@ export class Game {
 
     startNewGame() {
         console.log('Starting new game with default layout.');
+        this.isTutorialMode = false;
+        this.currentTutorialIndex = -1;
+        this.currentTutorialLesson = null;
+        this.tutorialFlags = {};
         this.pattyBoxTutorialShown = false;
         this.unlockMiniGameShown = false;
+        this.starterSelectionComplete = false;
+        this.starterSelection = null;
+        this.menuSystem.resetMenu();
+        this.resetDeterministicRuntime();
+        this.powerupSystem.resetRunState();
 
         // Continue Title Theme (Muffled) for Day 0 Setup
         this.audioSystem.setMuffled(true);
@@ -266,6 +294,107 @@ export class Game {
 
     }
 
+    openTutorialMenu() {
+        this.isTutorialMode = false;
+        this.currentTutorialIndex = -1;
+        this.currentTutorialLesson = null;
+        this.tutorialFlags = {};
+        this.alertSystem?.close();
+        this.audioSystem.setMuffled(false);
+        this.gameState = 'TUTORIAL_MENU';
+        this.tutorialSelection = Math.max(0, Math.min(this.tutorialSelection || 0, TUTORIAL_LESSONS.length - 1));
+    }
+
+    getTutorialLessonCount() {
+        return TUTORIAL_LESSONS.length;
+    }
+
+    startTutorialLesson(index = 0) {
+        const lesson = TUTORIAL_LESSONS[index];
+        if (!lesson) {
+            this.openTutorialMenu();
+            return;
+        }
+
+        this.isTutorialMode = true;
+        this.currentTutorialIndex = index;
+        this.currentTutorialLesson = lesson;
+        this.tutorialFlags = {};
+        this.resetDeterministicRuntime();
+        this.powerupSystem.resetRunState();
+        this.audioSystem.setMuffled(false);
+
+        this.rooms = {};
+        const tutorialGrid = new Grid(lesson.level.width, lesson.level.height);
+        tutorialGrid.deserialize(lesson.level);
+        this.rooms.main = tutorialGrid;
+        this.currentRoomId = 'main';
+        this.grid = tutorialGrid;
+
+        this.player.x = lesson.player.x;
+        this.player.y = lesson.player.y;
+        this.player.facing = { ...lesson.player.facing };
+        this.player.snap();
+        this.player.heldItem = null;
+
+        this.score = 0;
+        this.dayNumber = 0;
+        this.xp = 0;
+        this.level = 1;
+        this.xpToNextLevel = 7;
+        this.ticketSpeedBonus = 0;
+        this.stability = 100;
+        this.timeoutAlertShown = false;
+        this.currentDayPerfect = true;
+        this.isDayActive = true;
+        this.isPrepTime = false;
+        this.dayTimer = 0;
+        this.currentShift = 'DAY';
+        this.shiftCount = 0;
+        this.ticketQueue = [];
+        this.incomingTicket = null;
+        this.printingTimer = 0;
+        this.ticketTimer = 0;
+        this.ticketSpawnTimer = 0;
+        this.timeToNextTicket = undefined;
+        this.activeTickets = [lesson.ticket()];
+        this.orders = this.activeTickets.map(t => t.toDisplayFormat());
+        this.floatingTexts = [];
+        this.effects = [];
+        this.pendingDirtyPlates = [];
+        this.fallingBoxes = [];
+        this.lightingIntensity = 0;
+        this.gameState = 'PLAYING';
+        this.updateCapabilities();
+
+        this.alertSystem.trigger('tutorial_recipe', null, {
+            recipeRows: lesson.recipeRows
+        });
+    }
+
+    completeTutorialLesson() {
+        if (!this.isTutorialMode) return;
+
+        const nextIndex = this.currentTutorialIndex + 1;
+        if (nextIndex < TUTORIAL_LESSONS.length) {
+            this.startTutorialLesson(nextIndex);
+            return;
+        }
+
+        this.isTutorialMode = false;
+        this.currentTutorialIndex = -1;
+        this.currentTutorialLesson = null;
+        this.tutorialFlags = {};
+        this.activeTickets = [];
+        this.orders = [];
+        this.openTutorialMenu();
+    }
+
+    resetHighScore() {
+        this.highScore = 0;
+        localStorage.removeItem('burger_joint_highscore_v2');
+    }
+
 
     updateCapabilities() {
         this.capabilities.clear();
@@ -296,7 +425,11 @@ export class Game {
 
         // 2. Derive Capabilities based on Requirements
         // CAPABILITY.BASIC_BURGER: Stove + Patty (Box/Item) + Bun (Box/Item)
-        const hasPatty = activeDefIds.has('patty_box') || activeDefIds.has('beef_patty');
+        const hasPatty = Array.from(activeDefIds).some(id => {
+            const def = DEFINITIONS[id];
+            const producedDef = def?.produces ? DEFINITIONS[def.produces] : null;
+            return def?.category === 'patty' || producedDef?.category === 'patty';
+        });
         const hasBun = activeDefIds.has('bun_box') || activeDefIds.has('plain_bun');
         if (activeTileTypes.has('GRILL') && hasPatty && hasBun) {
             this.capabilities.add(CAPABILITY.BASIC_BURGER);
@@ -304,7 +437,7 @@ export class Game {
 
         // CAPABILITY.CUT_TOPPINGS: Cutting Board + Any Slicable Item
         // Check for items that are sliceable or boxes that produce sliceable items
-        if (activeTileTypes.has('CUTTING_BOARD')) {
+        if (activeDefIds.has('board') || activeDefIds.has('board_tomatoed') || activeDefIds.has('board_pickled') || activeDefIds.has('board_rack_double')) {
             const hasSlicable = Array.from(activeDefIds).some(id => {
                 const def = DEFINITIONS[id];
                 if (!def) return false;
@@ -340,7 +473,11 @@ export class Game {
         }
 
         // CAPABILITY.SERVE_FRIES: Fryer + Fry (Box/Bag) + Side Cup (Box/Item)
-        const hasFries = activeDefIds.has('fry_box') || activeDefIds.has('fry_bag') || activeDefIds.has('fry_bag_open');
+        const hasFries = Array.from(activeDefIds).some(id => {
+            const def = DEFINITIONS[id];
+            const producedDef = def?.produces ? DEFINITIONS[def.produces] : null;
+            return def?.fryContent || producedDef?.fryContent || def?.orderConfig?.type === 'side';
+        });
         const hasSideCup = activeDefIds.has('side_cup_box') || activeDefIds.has('side_cup');
         if (activeTileTypes.has('FRYER') && hasFries && hasSideCup) {
             this.capabilities.add(CAPABILITY.SERVE_FRIES);
@@ -423,6 +560,8 @@ export class Game {
         if (this.menuSystem) {
             this.menuSystem.updateAvailableItems();
         }
+
+        this.refreshUnlockAvailability();
     }
 
     getPlayerCapabilities() {
@@ -470,17 +609,7 @@ export class Game {
                         }
                         cell.object = null; // Clear pan/patty
                     }
-                    // 3. Cutting Board
-                    else if (cell.type.id === 'CUTTING_BOARD') {
-                        cell.object = null;
-                        // Reset internal state
-                        if (cell.state) {
-                            cell.state.status = 'empty';
-                        } else {
-                            cell.state = { status: 'empty' };
-                        }
-                    }
-                    // 4. Sauce Dispenser & Soda Fountain -> Do NOT reset
+                    // 3. Sauce Dispenser & Soda Fountain -> Do NOT reset
                 }
             }
         });
@@ -488,6 +617,7 @@ export class Game {
 
     startDay() {
         console.log('Starting Day...');
+        this.initializeRunSeed();
 
         // Create Clean Slate for Appliances
         this.cleanAppliances();
@@ -509,8 +639,12 @@ export class Game {
 
 
 
+        const needsStarterSelection = this.dayNumber === 1 && !this.starterSelectionComplete;
+
         // 1. Handle Morning Orders via Trigger System
-        this.serviceCycle.triggerChute('START_DAY');
+        if (!needsStarterSelection) {
+            this.serviceCycle.triggerChute('START_DAY');
+        }
 
         // 2. Update Capabilities (Now that supplies are in the world/truck)
         this.updateCapabilities();
@@ -528,7 +662,7 @@ export class Game {
         this.activeTickets = [];
         this.orders = [];
         this.gameState = 'PLAYING';
-        this.isDayActive = true;
+        this.isDayActive = !needsStarterSelection;
         this.isPrepTime = false;
         this.prepTime = 0;
         this.maxPrepTime = 0;
@@ -582,10 +716,106 @@ export class Game {
         this.dayTimer = 0; // Starts at 0 (Morning)
         this.currentShift = 'DAY';
         this.shiftCount = 0;
-        this.ticketSpawnTimer = 9999; // Force immediate ticket
+        this.ticketSpawnTimer = needsStarterSelection ? 0 : 9999; // Force immediate ticket after starter selection
         this.lightingIntensity = 0;
 
         console.log(`Starting Continuous Service Loop. Complexity: ${complexity})`);
+
+        if (needsStarterSelection) {
+            this.showStarterSelectionAlert();
+        }
+    }
+
+    showStarterSelectionAlert() {
+        const burgerOptions = this.getStarterBurgerOptions();
+        const sideOptions = this.getStarterSideOptions();
+
+        const selectedBurgerId = burgerOptions[0]?.id || 'beef_patty';
+        const selectedSideId = sideOptions[0]?.id || 'fries';
+
+        this.audioSystem.setMuffled(true);
+        this.alertSystem.trigger('starter_selection', null, {
+            selectedBurgerId,
+            selectedSideId,
+            buttons: this.getStarterSelectionButtonConfigs(burgerOptions, sideOptions),
+            onStarterConfirm: ({ burgerId, sideId }) => {
+                this.applyStarterSelection(burgerId, sideId);
+            }
+        });
+    }
+
+    getStarterBurgerOptions() {
+        return this.menuSystem.getStarterBurgerOptions();
+    }
+
+    getStarterSideOptions() {
+        return this.menuSystem.getStarterSideOptions();
+    }
+
+    getStarterSelectionButtonConfigs(burgerOptions = this.getStarterBurgerOptions(), sideOptions = this.getStarterSideOptions()) {
+        const makeIcon = (texture) => texture ? assetUrl(`assets/${texture}`) : null;
+
+        return [
+            ...burgerOptions.map(option => ({
+                label: option.name,
+                image: '/assets/ui/button_background-boil.png',
+                boxImage: makeIcon(option.icon),
+                action: { type: 'starter_select', group: 'burger', id: option.id }
+            })),
+            ...sideOptions.map(option => ({
+                label: option.name,
+                image: '/assets/ui/button_background-boil.png',
+                boxImage: makeIcon(option.icon),
+                action: { type: 'starter_select', group: 'side', id: option.id }
+            })),
+            {
+                label: 'Next',
+                image: '/assets/ui/button_background-boil.png',
+                action: { type: 'starter_confirm' }
+            }
+        ];
+    }
+
+    applyStarterSelection(burgerId, sideId) {
+        this.starterSelection = { burgerId, sideId };
+        this.starterSelectionComplete = true;
+        this.menuSystem.setStarterMenu(burgerId, sideId);
+
+        this.pendingOrders = this.getStarterSupplyOrders(burgerId, sideId);
+        this.serviceCycle.triggerChute('START_DAY');
+        this.updateCapabilities();
+
+        this.isDayActive = true;
+        this.ticketSpawnTimer = 9999;
+        this.audioSystem.setMuffled(false);
+        this.playNextSong();
+    }
+
+    findSupplyBoxForItem(itemId) {
+        const directBox = Object.values(DEFINITIONS).find(def => def.produces === itemId && def.type === 'Box');
+        if (directBox) return directBox.id;
+
+        const parentId = this.itemDependencyMap[itemId];
+        if (!parentId) return null;
+
+        const parentDef = DEFINITIONS[parentId];
+        if (parentDef?.type === 'Box') return parentId;
+
+        const parentBox = Object.values(DEFINITIONS).find(def => def.produces === parentId && def.type === 'Box');
+        return parentBox?.id || null;
+    }
+
+    getStarterSupplyOrders(burgerId, sideId) {
+        const ids = new Set(['bun_box']);
+        const burgerBox = this.findSupplyBoxForItem(burgerId);
+        const sideBox = this.findSupplyBoxForItem(sideId);
+
+        if (burgerBox) ids.add(burgerBox);
+        if (sideBox) {
+            ids.add(sideBox);
+        }
+
+        return [...ids].map(id => ({ id, qty: 1 }));
     }
 
     playNextSong() {
@@ -655,6 +885,13 @@ export class Game {
         this.updateOfficeState();
     }
 
+    simulateTick(dt) {
+        this.update(dt);
+        if (this.gameState !== 'PAUSED') {
+            this.inputManager.update(dt);
+        }
+    }
+
     // Ticket spawning/stability/appliance updates moved to src/systems/ServiceCycle.js
 
     updateSystems(dt) {
@@ -693,13 +930,6 @@ export class Game {
 
         this.serviceCycle.updateFallingBoxes(dt);
 
-        // Tutorials
-        const isHoldingPattyBox = this.player.heldItem && (this.player.heldItem.definitionId === 'patty_box');
-        if (isHoldingPattyBox && !this.pattyBoxTutorialShown) {
-            this.pattyBoxTutorialShown = true;
-            this.alertSystem.trigger('container_tutorial_1');
-        }
-
         // UI State
         const viewKey = this.settings.getBinding(ACTIONS.VIEW_ORDERS);
         this.isViewingOrders = !!(this.inputManager.keys[viewKey]);
@@ -709,7 +939,7 @@ export class Game {
         this.floatingTexts.forEach(ft => ft.life -= dt / 1000);
 
         if (this.effects) {
-            this.effects = this.effects.filter(e => (Date.now() - e.startTime) < e.duration);
+            this.effects = this.effects.filter(e => (this.getEffectNow(e) - e.startTime) < e.duration);
         }
     }
 
@@ -725,13 +955,13 @@ export class Game {
     }
 
     loop(timestamp) {
-        if (!this.lastTime) this.lastTime = timestamp;
-        const dt = timestamp - this.lastTime;
-        this.lastTime = timestamp;
+        const frameDt = this.clock.beginFrame(timestamp);
 
         if (this.renderer) {
             if (this.gameState === 'TITLE') {
                 this.renderer.renderTitleScreen(this.titleSelection);
+            } else if (this.gameState === 'TUTORIAL_MENU') {
+                this.renderer.renderTutorialMenu(this.tutorialSelection, TUTORIAL_LESSONS);
             } else if (this.gameState === 'SETTINGS') {
                 this.renderer.renderSettingsMenu(this.settingsState, this.settings);
 
@@ -741,14 +971,16 @@ export class Game {
                     if (this.gameState === 'PLAYING') {
                         if (this.alertSystem && this.alertSystem.isVisible) {
                             // Paused for alert - still update alert animation
-                            this.alertSystem.update(dt);
+                            this.alertSystem.update(frameDt);
+                            this.clock.accumulatorMs = 0;
                         } else {
-                            this.update(dt);
+                            const ticksToRun = this.clock.consumeTicks();
+                            for (let i = 0; i < ticksToRun; i++) {
+                                this.simulateTick(this.clock.tickMs);
+                            }
                         }
-                    }
-                    
-                    if (this.gameState !== 'PAUSED') {
-                        this.inputManager.update(dt);
+                    } else {
+                        this.clock.accumulatorMs = 0;
                     }
                 }
                 this.renderer.render(this);
@@ -779,11 +1011,11 @@ export class Game {
             'plates/plate-dirty-part2.png',
             'plates/plate-dirty-part3.png'
         ];
-        const shuffled = [...partPool].sort(() => 0.5 - Math.random());
+        const shuffled = this.shuffle(partPool);
         const chosen = shuffled.slice(0, 2);
         const layers = chosen.map(texture => ({
             texture: texture,
-            rotation: Math.random() * Math.PI * 2
+            rotation: this.randFloat(0, Math.PI * 2)
         }));
 
         for (const spot of spots) {
@@ -870,7 +1102,75 @@ export class Game {
         }
     }
 
+    isSideUnlock(id) {
+        return id === 'sweet_potato_fries' || DEFINITIONS[id]?.orderConfig?.type === 'side';
+    }
+
+    getUnlockAvailability(id) {
+        if (id === 'chicken_patty') {
+            return this.menuSystem.canAddBurger() ? 1 : 0;
+        }
+
+        if (this.isSideUnlock(id)) {
+            return this.menuSystem.canAddSide(id) ? 1 : 0;
+        }
+
+        return this.menuSystem
+            .getActiveBurgerSlots()
+            .filter(slot => this.menuSystem.burgerCanTakeTopping(slot, id))
+            .length;
+    }
+
+    refreshUnlockAvailability() {
+        this.TOPPING_POOL.forEach(id => {
+            this.toppingCharges[id] = this.getUnlockAvailability(id);
+        });
+    }
+
+    hasSupplyBox(boxId) {
+        if (!boxId) return false;
+
+        if (this.player?.heldItem?.definitionId === boxId) {
+            return true;
+        }
+
+        for (const room of Object.values(this.rooms)) {
+            if (!room) continue;
+            for (let y = 0; y < room.height; y++) {
+                for (let x = 0; x < room.width; x++) {
+                    const cell = room.getCell(x, y);
+                    if (cell.object?.definitionId === boxId) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return (this.fallingBoxes || []).some(box => box.item?.definitionId === boxId);
+    }
+
+    getUnlockButtonIcon(id) {
+        if (id === 'fries') return assetUrl('assets/fries-done.png');
+        if (id === 'sweet_potato_fries') return assetUrl('assets/sweet_potato_fries-done.png');
+
+        const boxId = this.TOPPING_BOX_MAP[id];
+        const boxDef = DEFINITIONS[boxId];
+        const unlockDef = DEFINITIONS[id];
+
+        if (unlockDef?.category === 'sauce') {
+            const sauceTexture = boxDef?.texture || unlockDef.texture;
+            return sauceTexture ? assetUrl(`assets/${sauceTexture}`) : null;
+        }
+
+        const producedId = boxDef?.produces || boxDef?.fryContent || id;
+        const producedDef = DEFINITIONS[producedId] || unlockDef;
+        const texture = producedDef?.texture || boxDef?.texture || unlockDef?.texture;
+
+        return texture ? assetUrl(`assets/${texture}`) : null;
+    }
+
     getAvailableToppingPool() {
+        this.refreshUnlockAvailability();
         return this.TOPPING_POOL.filter(toppingId => {
             const charges = this.toppingCharges[toppingId] || 0;
             return charges > 0;
@@ -879,24 +1179,18 @@ export class Game {
 
     getToppingButtonConfig(id) {
         const def = DEFINITIONS[id];
-        const boxId = this.TOPPING_BOX_MAP[id];
-        const boxDef = DEFINITIONS[boxId];
-
-        // Standard box texture logic from ItemInstance.js
-        let boxImg = boxDef ? (boxDef.texture || `${boxId}-closed.png`) : null;
-        if (boxDef && boxDef.textures && boxDef.textures.base) boxImg = boxDef.textures.base;
 
         return {
             label: def ? (def.name || id) : id,
             image: '/assets/ui/button_background-boil.png',
-            boxImage: boxImg ? `/assets/${boxImg}` : null,
+            boxImage: this.getUnlockButtonIcon(id),
             action: { type: 'unlock_topping', toppingId: id }
         };
     }
 
     getRerollToppings(count, excludeIds = []) {
         const pool = this.getAvailableToppingPool().filter(id => !excludeIds.includes(id));
-        const shuffled = [...pool].sort(() => 0.5 - Math.random());
+        const shuffled = this.shuffle(pool);
         return shuffled.slice(0, count);
     }
 
@@ -904,27 +1198,51 @@ export class Game {
         this.level++;
         this.xpToNextLevel = 7;
 
+        if (this.menuSystem.isMenuAtCap()) {
+            this.audioSystem.setMuffled(true);
+            this.alertSystem.trigger('level_up_choice', () => {
+                this.applyTicketSpeedBoost();
+                this.audioSystem.setMuffled(false);
+                this.playNextSong();
+            }, {
+                buttons: [
+                    { label: 'Faster Tickets', subLabel: '+20% speed', image: '/assets/ui/button_background-boil.png', action: 'faster_tickets' }
+                ]
+            });
+            return;
+        }
+
         const availablePool = this.getAvailableToppingPool();
 
         if (availablePool.length === 0) {
-            this.addFloatingText("MAX LEVEL REACHED!", this.player.x, this.player.y, '#ffd700');
+            this.audioSystem.setMuffled(true);
+            this.alertSystem.trigger('level_up_choice', () => {
+                this.applyTicketSpeedBoost();
+                this.audioSystem.setMuffled(false);
+                this.playNextSong();
+            }, {
+                buttons: [
+                    { label: 'Faster Tickets', subLabel: '+20% speed', image: '/assets/ui/button_background-boil.png', action: 'faster_tickets' }
+                ]
+            });
             return;
         }
 
         this.audioSystem.setMuffled(true);
 
         let choice = null;
-        this.alertSystem.trigger('level_up_choice', () => {
+        const showChoiceAlert = () => this.alertSystem.trigger('level_up_choice', () => {
             if (choice === 'faster_tickets') {
                 this.applyTicketSpeedBoost();
                 this.audioSystem.setMuffled(false);
                 this.playNextSong();
             } else {
-                this._showToppingPickerAlert(availablePool);
+                this._showToppingPickerAlert(availablePool, showChoiceAlert);
             }
         }, {
             onChoice: (c) => { choice = c; }
         });
+        showChoiceAlert();
     }
 
     applyTicketSpeedBoost() {
@@ -932,8 +1250,8 @@ export class Game {
         this.addFloatingText("TICKET SPEED ++", this.player.x, this.player.y, '#ffd700');
     }
 
-    _showToppingPickerAlert(availablePool) {
-        const shuffled = [...availablePool].sort(() => 0.5 - Math.random());
+    _showToppingPickerAlert(availablePool, onBack = null) {
+        const shuffled = this.shuffle(availablePool);
         const selected = shuffled.slice(0, 3);
 
         const buttons = [{
@@ -954,41 +1272,88 @@ export class Game {
 
         this.alertSystem.trigger('level_up', () => {
             this.playNextSong();
-        }, { buttons });
+        }, { buttons, onBack });
     }
 
     unlockTopping(toppingId, slotIndex = null) {
         console.log(`[Game] Unlocking Topping: ${toppingId} for slot: ${slotIndex}`);
 
-        if (this.toppingCharges[toppingId] > 0) {
-            this.toppingCharges[toppingId]--;
-        }
-
         const def = DEFINITIONS[toppingId];
         const isTopping = def && (def.isTopping || def.category === 'topping' || toppingId.includes('cheese') || toppingId === 'bacon');
         const isAlt = toppingId === 'chicken_patty' || toppingId === 'sweet_potato_fries';
+        let unlocked = false;
 
         if (toppingId === 'chicken_patty') {
-            this.menuSystem.addChickenBurger();
-            // Refresh charges for all toppings for the new burger
-            this.TOPPING_POOL.forEach(id => {
-                const tDef = DEFINITIONS[id];
-                const tIsTopping = tDef && (tDef.isTopping || tDef.category === 'topping' || id.includes('cheese') || id === 'bacon');
-                if (tIsTopping && id !== 'chicken_patty') {
-                    this.toppingCharges[id] = (this.toppingCharges[id] || 0) + 1;
-                }
-            });
+            unlocked = this.menuSystem.addChickenBurger();
         } else if (isTopping && !isAlt) {
-            this.menuSystem.addToppingToMenu(toppingId, slotIndex);
+            unlocked = this.menuSystem.addToppingToMenu(toppingId, slotIndex);
+        } else if (this.isSideUnlock(toppingId)) {
+            unlocked = this.menuSystem.addSideToMenu(toppingId);
         }
+
+        if (!unlocked) return false;
 
         // Drop the supply box down the chute
         const boxId = this.TOPPING_BOX_MAP[toppingId];
-        if (boxId) {
+        if (boxId && !this.hasSupplyBox(boxId)) {
             this.serviceCycle.dropInChute(new ItemInstance(boxId));
         }
 
+        this.refreshUnlockAvailability();
         this.addFloatingText(`Unlocked: ${toppingId}!`, this.player.x, this.player.y, '#ffd700');
         this.updateCapabilities();
+        return true;
+    }
+
+    resetDeterministicRuntime() {
+        this.clock.reset();
+        this.runSeed = null;
+        this.random = new Random(1);
+        this.orderSystem.setRandom(this.random);
+        ItemInstance.setRandomProvider(this.random);
+        ItemInstance.setTimeProvider(() => this.clock.simTimeMs);
+    }
+
+    initializeRunSeed(seed = null) {
+        const explicitSeed = Number.isFinite(seed) ? seed : null;
+        const nextSeed = explicitSeed ?? Math.floor(Math.random() * 0xFFFFFFFF);
+        this.runSeed = nextSeed >>> 0;
+        this.random = new Random(this.runSeed);
+        this.orderSystem.setRandom(this.random);
+        this.clock.reset();
+        ItemInstance.setRandomProvider(this.random);
+        ItemInstance.setTimeProvider(() => this.clock.simTimeMs);
+    }
+
+    randFloat(min = 0, max = 1) {
+        return this.random.float(min, max);
+    }
+
+    randInt(min, max) {
+        return this.random.int(min, max);
+    }
+
+    randPick(list) {
+        return this.random.pick(list);
+    }
+
+    randChance(probability) {
+        return this.random.chance(probability);
+    }
+
+    shuffle(list) {
+        return shuffleWithRandom(list, this.random);
+    }
+
+    createEffect(effect, authoritative = false) {
+        return {
+            ...effect,
+            authoritativeTime: authoritative,
+            startTime: authoritative ? this.clock.simTimeMs : Date.now()
+        };
+    }
+
+    getEffectNow(effect) {
+        return effect.authoritativeTime ? this.clock.simTimeMs : Date.now();
     }
 }

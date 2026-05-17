@@ -15,6 +15,12 @@ import { ItemType } from '../data/definitions.js';
 import { TILE_TYPES } from '../constants.js';
 
 export class InteractionSystem {
+    static _canPlaceOnGrill(item) {
+        if (!item) return false;
+        if (!item.definition?.cookingTexture) return false;
+        const stage = item.state?.cook_level;
+        return !stage || stage === 'raw';
+    }
 
     static handleInteract(player, grid, game) {
         const cell = player.getTargetCell(grid);
@@ -161,6 +167,9 @@ export class InteractionSystem {
 
             // Standard Place
             if (!cell.object && cell.type.holdsItems) {
+                if (cell.type.id === 'GRILL' && !this._canPlaceOnGrill(player.heldItem)) {
+                    return false;
+                }
                 cell.object = player.heldItem;
                 player.heldItem = null;
                 return true;
@@ -169,21 +178,12 @@ export class InteractionSystem {
             // Sauce Bottle in Hand: apply to burger/bun on counter
             if (player.heldItem.definition?.category === 'sauce_bottle' && cell.object) {
                 const sauceId = player.heldItem.definition.produces;
-                const target = cell.object;
-                const isBurger = target.category === 'burger' || target.definitionId.includes('burger');
-                const isBun = target.category === 'bun';
-                if (sauceId && (isBurger || isBun)) {
-                    let newBurger;
-                    if (isBun) {
-                        newBurger = new ItemInstance('plain_burger');
-                        newBurger.state.bun = target;
-                        newBurger.state.toppings = [];
-                    } else {
-                        newBurger = target.clone();
+                if (sauceId) {
+                    const result = _tryCombine(cell.object, new ItemInstance(sauceId));
+                    if (result) {
+                        cell.object = result;
+                        return true;
                     }
-                    _addIngredientToBurger(newBurger, new ItemInstance(sauceId));
-                    cell.object = newBurger;
-                    return true;
                 }
             }
 

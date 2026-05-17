@@ -88,6 +88,7 @@ export class InputManager {
 
         switch (g.gameState) {
             case 'TITLE':
+            case 'TUTORIAL_MENU':
             case 'SETTINGS':
                 return this.handleMenuInput(event);
             case 'APPLIANCE_SWAP':
@@ -184,19 +185,31 @@ export class InputManager {
         const isSelect = action === ACTIONS.INTERACT || event.code === 'Enter' || event.code === 'Space';
 
         if (g.gameState === 'TITLE') {
-            if (action === ACTIONS.MOVE_UP) g.titleSelection = g.titleSelection === 0 ? 1 : 0;
-            else if (action === ACTIONS.MOVE_DOWN) g.titleSelection = g.titleSelection === 1 ? 0 : 1;
+            const total = 3;
+            if (action === ACTIONS.MOVE_UP) g.titleSelection = (g.titleSelection - 1 + total) % total;
+            else if (action === ACTIONS.MOVE_DOWN) g.titleSelection = (g.titleSelection + 1) % total;
             else if (isSelect) {
                 if (g.titleSelection === 0) {
                     g.startNewGame();
                     g.startDay();
                     g.gameState = 'PLAYING';
-                    g.alertSystem.trigger('welcome_alert');
+                } else if (g.titleSelection === 1) {
+                    g.openTutorialMenu();
                 } else {
                     g.gameState = 'SETTINGS';
                     g.settingsState = { selectedIndex: 0, rebindingAction: null };
                 }
             }
+            return;
+        }
+
+        if (g.gameState === 'TUTORIAL_MENU') {
+            const total = g.getTutorialLessonCount?.() || 0;
+            if (total <= 0) return;
+            if (action === ACTIONS.MOVE_UP) g.tutorialSelection = (g.tutorialSelection - 1 + total) % total;
+            else if (action === ACTIONS.MOVE_DOWN) g.tutorialSelection = (g.tutorialSelection + 1) % total;
+            else if (isSelect) g.startTutorialLesson(g.tutorialSelection);
+            else if (event.code === 'Escape') g.gameState = 'TITLE';
             return;
         }
 
@@ -211,7 +224,7 @@ export class InputManager {
             }
 
             const keyActions = ['MOVE_UP', 'MOVE_DOWN', 'MOVE_LEFT', 'MOVE_RIGHT', 'INTERACT', 'PICK_UP', 'VIEW_ORDERS', 'EQUIP_1', 'EQUIP_2', 'EQUIP_3', 'EQUIP_4'];
-            const totalItems = 2 + keyActions.length;
+            const totalItems = 3 + keyActions.length;
 
             if (action === ACTIONS.MOVE_UP) g.settingsState.selectedIndex = (g.settingsState.selectedIndex - 1 + totalItems) % totalItems;
             else if (action === ACTIONS.MOVE_DOWN) g.settingsState.selectedIndex = (g.settingsState.selectedIndex + 1) % totalItems;
@@ -222,8 +235,10 @@ export class InputManager {
                     g.settings.preferences[pref] = !g.settings.preferences[pref];
                     g.settings.save();
                     g.audioSystem.updateVolumesFromSettings();
+                } else if (idx === 2) {
+                    g.resetHighScore();
                 } else {
-                    g.settingsState.rebindingAction = keyActions[idx - 2];
+                    g.settingsState.rebindingAction = keyActions[idx - 3];
                 }
             } else if (event.code === 'Escape') {
                 g.gameState = 'TITLE';
@@ -246,14 +261,13 @@ export class InputManager {
                 const cell = g.grid.getCell(g.player.x, g.player.y);
                 const isDoor = cell && (cell.type.isDoor || cell.type.id === 'EXIT_DOOR');
                 if (!isDoor) {
-                    g.addEffect({
+                    g.addEffect(g.createEffect({
                         type: 'dust',
                         x: g.player.x - dx,
                         y: g.player.y - dy,
                         rotation: Math.atan2(dy, dx) - Math.PI,
-                        startTime: Date.now(),
                         duration: 300
-                    });
+                    }));
                 }
                 if (cell && cell.type.isDoor) this.handleDoorTraversal(cell);
                 else if (cell?.type.id === 'EXIT_DOOR') g.endDay();
@@ -331,17 +345,28 @@ export class InputManager {
             const startY = g.renderer.canvas.height / 2 + 30;
             const spacing = 60;
 
-            if (mouseX > centerX - 150 && mouseX < centerX + 150 &&
-                mouseY > startY - 30 && mouseY < startY + 30) {
-                g.titleSelection = 0;
-                g.startNewGame();
-                g.startDay();
-                g.gameState = 'PLAYING';
-            } else if (mouseX > centerX - 150 && mouseX < centerX + 150 &&
-                mouseY > startY + spacing - 30 && mouseY < startY + spacing + 30) {
-                g.titleSelection = 1;
-                g.gameState = 'SETTINGS';
-                g.settingsState = { selectedIndex: 0, rebindingAction: null };
+            if (mouseX > centerX - 180 && mouseX < centerX + 180) {
+                const index = Math.round((mouseY - startY) / spacing);
+                const y = startY + index * spacing;
+                if (index >= 0 && index < 3 && mouseY > y - 30 && mouseY < y + 30) {
+                    g.titleSelection = index;
+                    if (index === 0) {
+                        g.startNewGame();
+                        g.startDay();
+                        g.gameState = 'PLAYING';
+                    } else if (index === 1) {
+                        g.openTutorialMenu();
+                    } else {
+                        g.gameState = 'SETTINGS';
+                        g.settingsState = { selectedIndex: 0, rebindingAction: null };
+                    }
+                }
+            }
+        } else if (g.gameState === 'TUTORIAL_MENU') {
+            const idx = this.getTutorialIndexAt(mouseX, mouseY);
+            if (idx !== -1) {
+                g.tutorialSelection = idx;
+                g.startTutorialLesson(idx);
             }
         } else if (g.gameState === 'SETTINGS') {
             const idx = this.getSettingsIndexAt(mouseX, mouseY);
@@ -354,9 +379,11 @@ export class InputManager {
                     g.settings.preferences[pref] = !g.settings.preferences[pref];
                     g.settings.save();
                     g.audioSystem.updateVolumesFromSettings();
+                } else if (idx === 2) {
+                    g.resetHighScore();
                 } else {
                     const keyActions = ['MOVE_UP', 'MOVE_DOWN', 'MOVE_LEFT', 'MOVE_RIGHT', 'INTERACT', 'PICK_UP', 'VIEW_ORDERS', 'EQUIP_1', 'EQUIP_2', 'EQUIP_3', 'EQUIP_4'];
-                    g.settingsState.rebindingAction = keyActions[idx - 2];
+                    g.settingsState.rebindingAction = keyActions[idx - 3];
                 }
             }
         }
@@ -376,19 +403,40 @@ export class InputManager {
             const startY = g.renderer.canvas.height / 2 + 30;
             const spacing = 60;
 
-            if (mouseX > centerX - 150 && mouseX < centerX + 150) {
-                if (mouseY > startY - 30 && mouseY < startY + 30) {
-                    g.titleSelection = 0;
-                } else if (mouseY > startY + spacing - 30 && mouseY < startY + spacing + 30) {
-                    g.titleSelection = 1;
+            if (mouseX > centerX - 180 && mouseX < centerX + 180) {
+                const index = Math.round((mouseY - startY) / spacing);
+                const y = startY + index * spacing;
+                if (index >= 0 && index < 3 && mouseY > y - 30 && mouseY < y + 30) {
+                    g.titleSelection = index;
                 }
             }
+        } else if (g.gameState === 'TUTORIAL_MENU') {
+            const idx = this.getTutorialIndexAt(mouseX, mouseY);
+            if (idx !== -1) g.tutorialSelection = idx;
         } else if (g.gameState === 'SETTINGS') {
             const idx = this.getSettingsIndexAt(mouseX, mouseY);
             if (idx !== -1 && !g.settingsState.rebindingAction) {
                 g.settingsState.selectedIndex = idx;
             }
         }
+    }
+
+    getTutorialIndexAt(mouseX, mouseY) {
+        const g = this.game;
+        if (!g.renderer?.canvas) return -1;
+        const centerX = g.renderer.canvas.width / 2;
+        const startY = g.renderer.canvas.height / 2 - 35;
+        const spacing = 58;
+        const total = g.getTutorialLessonCount?.() || 0;
+
+        if (mouseX < centerX - 180 || mouseX > centerX + 180) return -1;
+
+        const index = Math.round((mouseY - startY) / spacing);
+        const y = startY + index * spacing;
+        if (index >= 0 && index < total && mouseY > y - 28 && mouseY < y + 28) {
+            return index;
+        }
+        return -1;
     }
 
     getSettingsIndexAt(mouseX, mouseY) {
@@ -400,7 +448,7 @@ export class InputManager {
         let currentY = 140;
         const rowHeight = 40;
 
-        for (let i = 0; i < 2; i++) {
+        for (let i = 0; i < 3; i++) {
             if (mouseY > currentY - 25 && mouseY < currentY + 15) return i;
             currentY += rowHeight;
         }
@@ -471,7 +519,7 @@ export class InputManager {
             return;
         }
 
-        const cyclable = ['COUNTER', 'CUTTING_BOARD', 'FRYER', 'GRILL', 'DISHWASHER'];
+        const cyclable = ['COUNTER', 'FRYER', 'GRILL', 'DISHWASHER'];
 
         if (cyclable.includes(cell.type.id)) {
             g.gameState = 'APPLIANCE_SWAP';

@@ -42,7 +42,13 @@ export const DEFAULT_LEVEL = {
         ],
         [
             { "typeId": "CHUTE", "state": {}, "object": null },
-            { "typeId": "COUNTER", "state": {}, "object": null },
+            {
+                "typeId": "COUNTER",
+                "state": {},
+                "object": {
+                    "definitionId": "wrapper_box"
+                }
+            },
             { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_LEFT }, "object": null },
             { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
             { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
@@ -104,7 +110,9 @@ export const DEFAULT_LEVEL = {
                 "state": {
                     "facing": 0
                 },
-                "object": null
+                "object": {
+                    "definitionId": "bag_box"
+                }
             },
             {
                 "typeId": "FLOOR",
@@ -208,7 +216,9 @@ export const DEFAULT_LEVEL = {
             {
                 "typeId": "COUNTER",
                 "state": {},
-                "object": null
+                "object": {
+                    "definitionId": "side_cup_box"
+                }
             },
             {
                 "typeId": "FLOOR",

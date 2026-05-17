@@ -80,7 +80,7 @@ export const handle_container_deal = (player, cell) => {
     }
     // 4. Lettuce Head (Dispense Leaf)
     else if (held.definitionId === 'lettuce_head') {
-        const charges = held.state.charges !== undefined ? held.state.charges : 8;
+        const charges = held.state.charges !== undefined ? held.state.charges : 12;
         if (charges > 0) {
             itemToDispense = new ItemInstance('lettuce_leaf');
             consumeAction = () => {
@@ -228,7 +228,7 @@ export const handle_container_collect = (player, cell) => {
     const isHeldBase = held.category === 'burger' || held.category === 'bun' || held.definitionId.includes('burger');
     const isHeldWrapper = held.definitionId === 'wrapper';
 
-    if (isHeldBase || isHeldWrapper) {
+    if (isHeldBase || isHeldWrapper || held.definitionId === 'plate') {
         // Don't consume burger into a plate stack — stacked_container_interact
         // handles it correctly by taking one plate from the stack.
         if (target.definitionId === 'plate' && (target.state?.count || 1) > 1) return false;
@@ -297,6 +297,20 @@ export const stacked_container_interact = (player, target, cell) => {
                 contents[burgerIdx] = newBurger;
                 target.state.contents = contents;
                 player.heldItem = null;
+                return true;
+            }
+        }
+    }
+
+    // 0b. Rule: Holding single plated burger + targeting ingredient insert -> apply one item
+    if (held && held.definitionId === 'plate' && (held.state.count || 1) === 1 && count === 1 && target.definitionId !== 'plate') {
+        const ingredient = contents[contents.length - 1];
+        if (ingredient) {
+            const result = _tryCombine(held, ingredient);
+            if (result) {
+                player.heldItem = result;
+                contents.pop();
+                target.state.contents = contents;
                 return true;
             }
         }
@@ -411,6 +425,21 @@ export const stacked_container_pickup = (player, target, cell) => {
                     contents[burgerIdx] = newBurger;
                     container.state.contents = contents;
                     player.heldItem = null;
+                    return true;
+                }
+            }
+        }
+
+        // Rule 0b: Holding single plated burger + targeting ingredient insert -> apply one item
+        if (held.definitionId === 'plate' && (held.state.count || 1) === 1 && count === 1 && container.definitionId !== 'plate') {
+            const contents = container.state.contents || [];
+            const ingredient = contents[contents.length - 1];
+            if (ingredient) {
+                const result = _tryCombine(held, ingredient);
+                if (result) {
+                    player.heldItem = result;
+                    contents.pop();
+                    container.state.contents = contents;
                     return true;
                 }
             }

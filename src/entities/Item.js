@@ -1,6 +1,19 @@
 import { DEFINITIONS, ItemType } from '../data/definitions.js';
+import { Random } from '../utils/Random.js';
+import { shuffleWithRandom } from '../utils/Deterministic.js';
 
 export class ItemInstance {
+    static timeProvider = () => Date.now();
+    static randomProvider = new Random(1);
+
+    static setTimeProvider(provider) {
+        ItemInstance.timeProvider = provider || (() => Date.now());
+    }
+
+    static setRandomProvider(random) {
+        ItemInstance.randomProvider = random || new Random(1);
+    }
+
     constructor(definitionId) {
         if (!DEFINITIONS[definitionId]) {
             console.error(`Missing definition for ID: ${definitionId}`);
@@ -11,7 +24,7 @@ export class ItemInstance {
         }
 
         this.state = {};
-        this.timestamp = Date.now();
+        this.timestamp = ItemInstance.timeProvider();
         this._initializeState();
     }
 
@@ -103,11 +116,11 @@ export class ItemInstance {
                 'plates/plate-dirty-part2.png',
                 'plates/plate-dirty-part3.png'
             ];
-            const shuffled = [...partPool].sort(() => 0.5 - Math.random());
+            const shuffled = shuffleWithRandom(partPool, ItemInstance.randomProvider);
             const chosen = shuffled.slice(0, 2);
             this.state.dirtyLayers = chosen.map(texture => ({
                 texture: texture,
-                rotation: Math.random() * Math.PI * 2
+                rotation: ItemInstance.randomProvider.float(0, Math.PI * 2)
             }));
         }
     }

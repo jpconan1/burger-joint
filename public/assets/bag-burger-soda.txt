@@ -1,4 +1,0 @@
-[Bag] with a Burger and a Soda
-A Burger with something to wash it down. Take stuff out with [interact_key]. 
-Interact with: Hands
-Pick up with: Hands

@@ -30,34 +30,23 @@ export const ALERTS = {
             }
         ]
     },
-    'welcome_alert': {
+    'starter_selection': {
         frames: [
             {
-                text: "Welcome to Burger Joint! <br><br>The big green bar is your Enployment Meter.<br> When it hits zero, you're fired! HARHARHAR!<br><br>It fills up when you complete a ticket.<br> The more tickets waiting on the line, the faster it depletes, so keep your butt moving.",
+                text: "PICK STARTERS",
                 position: 'center',
-                size: { width: '700px', height: '400px' },
-                portrait: '/assets/ui/wellington_portrait.png',
-                portraitSide: 'left',
-                portraitVAlign: 'top'
+                size: { width: '860px', height: '520px' },
+                buttons: []
             }
         ]
     },
-    'container_tutorial_1': {
+    'tutorial_recipe': {
         frames: [
             {
-                text: "PRIMARY BUTTON: {PICK_UP}<br><br>Press this to pick things up and put them down.",
+                text: "",
+                recipeRows: [],
                 position: 'center',
-                size: { width: '700px', height: '400px' },
-                next: 'container_tutorial_2'
-            }
-        ]
-    },
-    'container_tutorial_2': {
-        frames: [
-            {
-                text: "SECONDARY BUTTON: {INTERACT}<br><br>Press this to take one thing <br>from a container or stack.",
-                position: 'center',
-                size: { width: '700px', height: '400px' }
+                size: { width: '760px', height: '420px' }
             }
         ]
     },
@@ -85,10 +74,10 @@ export const ALERTS = {
             {
                 text: "LEVEL UP!<br>Pick your reward.",
                 position: 'center',
-                size: { width: '640px', height: '280px' },
+                size: { width: '760px', height: '360px' },
                 buttons: [
-                    { label: 'Faster Tickets', subLabel: '+20% speed', image: '/assets/ui/button_background-boil.png', action: 'faster_tickets' },
-                    { label: 'More Complexity', image: '/assets/ui/button_background-boil.png', action: 'more_complexity' }
+                    { label: 'More Complexity', image: '/assets/ui/button_background-boil.png', action: 'more_complexity' },
+                    { label: 'Faster Tickets', subLabel: '+20% speed', image: '/assets/ui/button_background-boil.png', action: 'faster_tickets' }
                 ]
             }
         ]

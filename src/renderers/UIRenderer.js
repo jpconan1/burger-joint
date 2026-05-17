@@ -50,7 +50,7 @@ export function drawHUD(renderer, gameState) {
 
 export function drawControlsHelp(renderer, gameState) {
     if (!gameState.grid) return;
-    if (gameState.gameState === 'TITLE' || gameState.gameState === 'SETTINGS') return;
+    if (gameState.gameState === 'TITLE' || gameState.gameState === 'TUTORIAL_MENU' || gameState.gameState === 'SETTINGS') return;
 
     const ctx = renderer.ctx;
     const canvas = renderer.canvas;
@@ -360,5 +360,4 @@ export function drawPauseButton(renderer, gameState) {
     ctx.restore();
     renderer.pauseButtonRect = { x: x, y: y, width: size, height: size };
 }
-
 

@@ -231,6 +231,7 @@ export const ASSETS = {
             BACON: 'ticket-assets/bacon-cooked-ticket.png',
             CHEDDAR: 'ticket-assets/cheddar_slice-ticket.png',
             LETTUCE: 'ticket-assets/lettuce-leaf-ticket.png',
+            MUSHROOM: 'ticket-assets/grllled_mushroom-ticket.png',
             ONION: 'ticket-assets/onion-slice-ticket.png',
             PICKLE: 'ticket-assets/pickle-slice-ticket.png',
             SWISS: 'ticket-assets/swiss_slice-ticket.png',
@@ -299,14 +300,6 @@ export const TILE_TYPES = {
         holdsItems: true,
         cooking: true,
         grantedCapabilities: [CAPABILITY.BASIC_BURGER],
-    },
-    CUTTING_BOARD: {
-        id: 'CUTTING_BOARD',
-        texture: ASSETS.TILES.CUTTING_BOARD,
-        walkable: false,
-        holdsItems: false, // We handle items via internal state specific to board logic
-        cutting: true,
-        grantedCapabilities: [CAPABILITY.CUT_TOPPINGS],
     },
     FRYER: {
         id: 'FRYER',
@@ -414,4 +407,3 @@ export const TAG_LAYOUTS = {
     side: { top: 16, bottom: 56 },
     drink: { top: 16, bottom: 56 }
 };
-

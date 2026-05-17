@@ -1,8 +1,37 @@
 import { TILE_SIZE } from '../constants.js';
+import { assetUrl } from '../utils/assets.js';
+
+const ASSET_ALIASES = {
+    'counter-tile.png': 'floor-tile.png',
+    'service_counter.png': 'service_counter/service_counter_centre.png',
+    'shutter_tile-closed.png': 'shutter_tile-open.png',
+    'drink_cup.png': 'side_cup.png',
+    'empty-box.png': 'box-open.png',
+    'whole_wheat_bun_bottom.png': 'whole_wheat_bun.png',
+    'whole_wheat_bun_top.png': 'whole_wheat_bun.png',
+    'bag-old.png': 'bag-empty.png',
+    'bun-old.png': 'bun.png',
+    'burger-old.png': 'burger.png',
+    'fries-old.png': 'fries.png',
+    'patty-old.png': 'patty-raw.png',
+    'soda-old.png': 'soda.png',
+    'tomato-old.png': 'tomato.png',
+    'tomato-wilt1.png': 'tomato.png',
+    'tomato-wilt2.png': 'tomato.png',
+    'lettuce-head-old.png': 'lettuce-head.png',
+    'lettuce-head-wilt1.png': 'lettuce-head.png',
+    'lettuce-head-wilt2.png': 'lettuce-head.png',
+    'soda_fountain-empty.png': 'counter-tile.png',
+    'soda_fountain-full.png': 'counter-tile.png',
+    'soda_fountain-warning.png': 'counter-tile.png',
+    'soda_fountain-filling.png': 'counter-tile.png',
+};
 
 export class AssetLoader {
     constructor() {
         this.assets = new Map();
+        this.failedAssets = new Set();
+        this.pendingAssets = new Set();
     }
 
     async loadAll(assetMap) {
@@ -29,12 +58,53 @@ export class AssetLoader {
         return this.assets;
     }
 
+    resolveFilename(filename) {
+        let resolved = filename;
+        const seen = new Set();
+
+        while (ASSET_ALIASES[resolved] && !seen.has(resolved)) {
+            seen.add(resolved);
+            resolved = ASSET_ALIASES[resolved];
+        }
+
+        return resolved;
+    }
+
+    createPlaceholderImage(label = 'missing') {
+        const canvas = document.createElement('canvas');
+        canvas.width = TILE_SIZE;
+        canvas.height = TILE_SIZE;
+
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.fillStyle = '#2b2020';
+        ctx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#8b2f2f';
+        ctx.fillRect(4, 4, TILE_SIZE - 8, TILE_SIZE - 8);
+        ctx.strokeStyle = '#f4e6d0';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(10, 10);
+        ctx.lineTo(TILE_SIZE - 10, TILE_SIZE - 10);
+        ctx.moveTo(TILE_SIZE - 10, 10);
+        ctx.lineTo(10, TILE_SIZE - 10);
+        ctx.stroke();
+
+        ctx.fillStyle = '#f4e6d0';
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(label.slice(0, 8), TILE_SIZE / 2, TILE_SIZE - 8);
+
+        return canvas;
+    }
+
     loadImage(filename) {
         return new Promise((resolve, reject) => {
+            const resolvedFilename = this.resolveFilename(filename);
             const img = new Image();
-            img.src = `/assets/${filename}`;
+            img.src = assetUrl(`assets/${resolvedFilename}`);
             img.onload = () => {
-                if ((img.width > TILE_SIZE || img.height > TILE_SIZE) && !filename.includes('/')) {
+                if ((img.width > TILE_SIZE || img.height > TILE_SIZE) && !resolvedFilename.includes('/')) {
                     const canvas = document.createElement('canvas');
                     canvas.width = TILE_SIZE;
                     canvas.height = TILE_SIZE;
@@ -53,16 +123,17 @@ export class AssetLoader {
                 }
             };
             img.onerror = () => {
-                console.error(`Failed to load image: ${filename}`);
-                // Resolve anyway to prevent blocking other assets, but with null?
-                // Or reject. Let's reject to surface errors.
-                reject(new Error(`Failed to load asset: ${filename}`));
+                console.warn(`Missing image asset: ${filename}`);
+                const placeholder = this.createPlaceholderImage(filename.split('/').pop() || 'missing');
+                this.assets.set(filename, placeholder);
+                this.failedAssets.add(filename);
+                resolve(placeholder);
             };
         });
     }
 
     loadAudio(filename) {
-        return fetch(`/assets/${filename}`)
+        return fetch(assetUrl(`assets/${filename}`))
             .then(response => {
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 return response.arrayBuffer();
@@ -83,9 +154,6 @@ export class AssetLoader {
 
         // Lazy Load Fallback
         // If we haven't tried to load this yet (and it's not explicitly failed/missing)
-        if (!this.failedAssets) this.failedAssets = new Set();
-        if (!this.pendingAssets) this.pendingAssets = new Set();
-
         if (!this.failedAssets.has(filename) && !this.pendingAssets.has(filename)) {
             console.log(`Lazy loading asset: ${filename}...`);
             this.pendingAssets.add(filename);

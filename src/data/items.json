@@ -168,7 +168,7 @@
                 "category": "ingredient",
                 "texture": "lettuce-head.png",
                 "initialState": {
-                    "charges": 8
+                    "charges": 12
                 },
                 "process": {
                     "tool": "HANDS",
@@ -592,6 +592,30 @@
                     "capability": "CUT_TOPPINGS"
                 },
                 "texture": "mushroom_slice.png",
+                "partTexture": "mushroom-part.png",
+                "initialState": {
+                    "cook_level": "raw",
+                    "cookingProgress": 0
+                },
+                "cookingTexture": "grlll-mushroom-part.png",
+                "cooking": {
+                    "stages": {
+                        "raw": {
+                            "next": "cooked",
+                            "duration": 4000
+                        }
+                    }
+                },
+                "textures": {
+                    "base": "mushroom_slice.png",
+                    "rules": [
+                        {
+                            "stateKey": "cook_level",
+                            "value": "cooked",
+                            "texture": "grilled_mushroom.png"
+                        }
+                    ]
+                },
                 "nudge": 2,
                 "isTopping": true,
                 "modChance": 0.18,

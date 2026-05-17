@@ -13,6 +13,61 @@ export class ServiceCycle {
         this.updateAppliances(dt);
     }
 
+    getServiceCounterTicketIndex(targetX, targetY) {
+        const grid = this.game.grid;
+        let serviceCounterIndex = 0;
+
+        for (let y = 0; y < grid.height; y++) {
+            for (let x = 0; x < grid.width; x++) {
+                const cell = grid.getCell(x, y);
+                if (cell?.type?.id !== 'SERVICE') continue;
+
+                if (x === targetX && y === targetY) {
+                    return serviceCounterIndex;
+                }
+
+                serviceCounterIndex++;
+            }
+        }
+
+        return -1;
+    }
+
+    tryMatchSubmittedItemToTicket(submittedItem, x, y) {
+        const activeTickets = this.game.activeTickets;
+        if (!activeTickets || activeTickets.length === 0) {
+            return { matchedTicketIndex: -1, matchResult: null };
+        }
+
+        if (submittedItem?.definitionId === 'magic_bag') {
+            const targetedIndex = this.getServiceCounterTicketIndex(x, y);
+            if (targetedIndex >= 0 && targetedIndex < activeTickets.length) {
+                const targetedResult = activeTickets[targetedIndex].verifyContainerItem(submittedItem);
+                if (targetedResult.matched) {
+                    return { matchedTicketIndex: targetedIndex, matchResult: targetedResult };
+                }
+            }
+        }
+
+        for (let i = 0; i < activeTickets.length; i++) {
+            if (
+                this.game.isTutorialMode &&
+                this.game.currentTutorialLesson?.requiresInsert &&
+                !this.game.tutorialFlags?.usedInsert &&
+                activeTickets[i].getValidationDetails(submittedItem).isComplete
+            ) {
+                return { matchedTicketIndex: -1, matchResult: null };
+            }
+
+            const result = activeTickets[i].verifyContainerItem(submittedItem);
+            if (result.matched) {
+                return { matchedTicketIndex: i, matchResult: result };
+            }
+        }
+
+        return { matchedTicketIndex: -1, matchResult: null };
+    }
+
     getCurrentTicketInterval(cyclePos) {
         const config = SCORING_CONFIG.GAME_PACING;
         const halfCycle = config.HALF_CYCLE_DURATION;
@@ -35,7 +90,7 @@ export class ServiceCycle {
         if (!g.isDayActive || g.timeFreezeTimer > 0) return;
 
         // Day/Night cycle
-        if (!g.isPrepTime) {
+        if (!g.isPrepTime && !g.isTutorialMode) {
             g.dayTimer += dt / 1000;
             const halfCycle = SCORING_CONFIG.GAME_PACING.HALF_CYCLE_DURATION;
             const fullCycle = halfCycle * 2;
@@ -72,15 +127,10 @@ export class ServiceCycle {
 
             if (g.ticketSpawnTimer >= freq) {
                 g.ticketSpawnTimer = 0;
-                let newTicket;
-                if (g.dayNumber === 1 && g.ticketsGeneratedToday < 5) {
-                    newTicket = g.orderSystem.generateTutorialTicket(g.ticketsGeneratedToday + 1);
-                } else {
-                    newTicket = g.orderSystem.createTicketFromCustomers(
-                        [g.orderSystem.generateCustomerProfile(g.menuSystem.getMenu())],
-                        g.ticketsGeneratedToday + 1
-                    );
-                }
+                const newTicket = g.orderSystem.createTicketFromCustomers(
+                    [g.orderSystem.generateCustomerProfile(g.menuSystem.getMenu())],
+                    g.ticketsGeneratedToday + 1
+                );
                 newTicket.calculateParTime();
                 g.ticketsGeneratedToday++;
                 g.ticketQueue.push(newTicket);
@@ -137,7 +187,9 @@ export class ServiceCycle {
         g.activeTickets.forEach(t => t.elapsedTime += dt / 1000);
 
         // Stability drain
-        if (g.activeTickets.length > 0) {
+        if (g.isTutorialMode) {
+            g.stability = g.maxStability;
+        } else if (g.activeTickets.length > 0) {
             let drainRate = 0;
             const count = g.activeTickets.length;
             if (count <= 1) drainRate = 0.2;
@@ -175,6 +227,32 @@ export class ServiceCycle {
                     // Grill
                     if (cell.type.id === 'GRILL') {
                         const item = cell.object;
+                        if (item?.definitionId === 'insert' && item.state?.isGrillBatch) {
+                            const contents = item.state.contents || [];
+                            const sample = contents[0];
+                            if (sample?.definition?.cooking?.stages) {
+                                const currentStage = sample.state.cook_level || 'raw';
+                                const stageDef = sample.definition.cooking.stages[currentStage];
+                                if (stageDef && g.timeFreezeTimer <= 0) {
+                                    item.state.cookingProgress = (item.state.cookingProgress || 0) + dt;
+                                    const requiredTime = stageDef.duration || cell.state.cookingSpeed || 2000;
+                                    if (item.state.cookingProgress >= requiredTime) {
+                                        contents.forEach(entry => {
+                                            entry.state.cook_level = stageDef.next;
+                                            entry.state.cookingProgress = 0;
+                                        });
+                                        item.state.cook_level = stageDef.next;
+                                        item.state.cookingProgress = 0;
+                                    } else {
+                                        contents.forEach(entry => {
+                                            entry.state.cookingProgress = item.state.cookingProgress;
+                                        });
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+
                         if (item && item.definition.cooking && item.definition.cooking.stages) {
                             const currentStage = item.state.cook_level || 'raw';
                             const stageDef = item.definition.cooking.stages[currentStage];
@@ -280,22 +358,11 @@ export class ServiceCycle {
                         }
 
                         if (g.activeTickets.length > 0) {
-                            let matchedTicketIndex = -1;
-                            let matchResult = null;
-                            for (let i = 0; i < g.activeTickets.length; i++) {
-                                const t = g.activeTickets[i];
-                                const res = t.verifyContainerItem(cell.object);
-                                if (res.matched) {
-                                    matchedTicketIndex = i;
-                                    matchResult = res;
-                                    break;
-                                }
-                            }
+                            const { matchedTicketIndex, matchResult } = this.tryMatchSubmittedItemToTicket(cell.object, x, y);
 
                             if (matchedTicketIndex !== -1) {
                                 const ticket = g.activeTickets[matchedTicketIndex];
                                 g.dailyBagsSold++;
-
                                 if (g.timeFreezeManual) {
                                     cell.object.state.isMatched = true;
                                     ticket.finalizePos = { x, y };
@@ -317,6 +384,13 @@ export class ServiceCycle {
     _finalizeTicket(ticket, index, x, y) {
         const g = this.game;
         g.powerupSystem.resumeTime();
+
+        if (g.isTutorialMode) {
+            g.activeTickets.splice(index, 1);
+            g.orders = g.activeTickets.map(t => t.toDisplayFormat());
+            g.completeTutorialLesson();
+            return;
+        }
 
         const isDineIn = ticket.groups.some(grp => grp.containerType === 'plate');
         if (isDineIn) {
@@ -450,7 +524,7 @@ export class ServiceCycle {
     onClosingTime() {
         const g = this.game;
         console.log('Restaurant Closing (Queue Finished).');
-        g.queueFinishedTime = Date.now();
+        g.queueFinishedTime = g.clock.simTimeMs;
         g.audioSystem.setMuffled(true);
         g.isDayActive = false;
     }

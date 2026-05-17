@@ -1,4 +1,0 @@
-[Bag Box] Closed
-Bagging your order is the last step! Open boxes with [interact_key]. 
-Interact with: Hands
-Pick up with: Hands
