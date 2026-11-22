@@ -42,7 +42,7 @@ export class InputManager {
         const isInteractHeld = this.keys[interactKey];
         if (isInteractHeld) {
             this.interactKeyHeldDuration = (this.interactKeyHeldDuration || 0) + dt;
-            if (this.interactKeyHeldDuration >= 500 && !this.swappingActionTriggered && g.gameState === 'PLAYING') {
+            if (this.interactKeyHeldDuration >= 500 && !this.swappingActionTriggered && g.gameState === 'PLAYING' && !g.isTutorialMode) {
                 this.initiateApplianceSwap();
                 this.swappingActionTriggered = true;
             }
@@ -209,7 +209,10 @@ export class InputManager {
             if (action === ACTIONS.MOVE_UP) g.tutorialSelection = (g.tutorialSelection - 1 + total) % total;
             else if (action === ACTIONS.MOVE_DOWN) g.tutorialSelection = (g.tutorialSelection + 1) % total;
             else if (isSelect) g.startTutorialLesson(g.tutorialSelection);
-            else if (event.code === 'Escape') g.gameState = 'TITLE';
+            else if (event.code === 'Escape') {
+                g.gameState = 'TITLE';
+                g.audioSystem.playMusic(null, ASSETS.AUDIO.TITLE_THEME);
+            }
             return;
         }
 

@@ -208,26 +208,41 @@ export class MenuSystem {
         return activeSlots.every(slot => this.getBurgerToppingCount(slot) >= caps.toppingsPerBurger);
     }
 
-    addChickenBurger() {
+    hasBurgerPatty(pattyId) {
+        return this.getActiveBurgerSlots().some(slot => {
+            const toppings = slot.state?.toppings || [];
+            return toppings.some(t => {
+                const id = typeof t === 'string' ? t : (t.definitionId || (t.definition && t.definition.id));
+                return id === pattyId;
+            });
+        });
+    }
+
+    addPattyBurger(pattyId) {
         if (!this.canAddBurger()) return false;
+        if (this.hasBurgerPatty(pattyId)) return false;
         const targetIndex = this.menuSlots.findIndex(slot => slot === null);
         if (targetIndex === -1) return false;
 
         this.menuSlots[targetIndex] = {
             type: 'Composite',
             definitionId: 'burger',
-            name: 'Chicken',
+            name: this.getBurgerNameForPatty(pattyId),
             state: {
                 bun: new ItemInstance('plain_bun'),
                 toppings: [(() => {
-                    const p = new ItemInstance('chicken_patty');
+                    const p = new ItemInstance(pattyId);
                     p.state.cook_level = 'cooked';
                     return p;
                 })()]
             }
         };
-        console.log(`[MenuSystem] Added Chicken Burger to slot ${targetIndex}`);
+        console.log(`[MenuSystem] Added ${pattyId} burger to slot ${targetIndex}`);
         return true;
+    }
+
+    addChickenBurger() {
+        return this.addPattyBurger('chicken_patty');
     }
 
     /**

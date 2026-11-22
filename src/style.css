@@ -537,6 +537,7 @@ canvas {
     width: 100%;
     align-items: center;
     justify-content: center;
+    text-shadow: none;
 }
 
 .alert-recipe-row {
@@ -552,7 +553,40 @@ canvas {
     height: 64px;
     object-fit: contain;
     image-rendering: pixelated;
-    filter: drop-shadow(3px 3px 0 #000);
+}
+
+.alert-recipe-canvas {
+    width: 64px;
+    height: 64px;
+    image-rendering: pixelated;
+    box-shadow: none;
+    position: relative;
+    top: auto;
+    left: auto;
+    z-index: auto;
+    background: transparent;
+}
+
+.alert-recipe-tile {
+    display: inline-block;
+    width: 64px;
+    height: 64px;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+}
+
+.alert-recipe-stack {
+    position: relative;
+    display: inline-block;
+    width: 64px;
+    height: 64px;
+}
+
+.alert-recipe-stack .alert-recipe-img,
+.alert-recipe-stack .alert-recipe-tile {
+    position: absolute;
+    left: 0;
+    top: 0;
 }
 
 .alert-recipe-symbol {
@@ -560,9 +594,34 @@ canvas {
     font-size: 42px;
     line-height: 1;
     color: #fff;
-    text-shadow:
-        3px 3px 0 #000, -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000,
-        3px 0 0 #000, -3px 0 0 #000, 0 3px 0 #000, 0 -3px 0 #000;
+    text-shadow: none;
+}
+
+.alert-recipe-symbol-sprite {
+    --recipe-symbol-size: 64px;
+    --recipe-symbol-sheet-width: 320px;
+    --recipe-symbol-duration: 650ms;
+    --recipe-symbol-delay: 0ms;
+    display: inline-block;
+    width: var(--recipe-symbol-size);
+    height: var(--recipe-symbol-size);
+    flex: 0 0 var(--recipe-symbol-size);
+    background-image: var(--recipe-symbol-sheet);
+    background-repeat: no-repeat;
+    background-size: var(--recipe-symbol-sheet-width) var(--recipe-symbol-size);
+    image-rendering: pixelated;
+    animation: recipe-symbol-boil var(--recipe-symbol-duration) steps(5) infinite;
+    animation-delay: var(--recipe-symbol-delay);
+}
+
+@keyframes recipe-symbol-boil {
+    from {
+        background-position: 0 0;
+    }
+
+    to {
+        background-position: calc(var(--recipe-symbol-sheet-width) * -1) 0;
+    }
 }
 
 .alert-next-btn {

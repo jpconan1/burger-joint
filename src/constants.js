@@ -258,6 +258,9 @@ export const ASSETS = {
         SONG5_LOOP: 'audio/song5.wav',
         SONG6_INTRO: 'audio/song6-intro.wav',
         SONG6_LOOP: 'audio/song6.wav',
+        TUTORIAL_MENU_INTRO: 'audio/tutorial_menu_loop-intro.wav',
+        TUTORIAL_MENU_LOOP: 'audio/tutorial_menu_loop.wav',
+        TUTORIAL_SONG: 'audio/tutorial_song.wav',
         DEATH_JINGLE: 'audio/death_jingle.wav',
     },
     TUTORIAL: {

@@ -42,24 +42,26 @@ export class PowerupSystem {
             }
         }
 
-        this.powerupConfigs.forEach(config => {
-            // Pause powerup spawn timers while time is frozen
-            if (timeFrozen) return;
+        if (!this.game.isTutorialMode) {
+            this.powerupConfigs.forEach(config => {
+                // Pause powerup spawn timers while time is frozen
+                if (timeFrozen) return;
 
-            if (this.isPowerupPresent(config.id)) {
-                config.timer = 0; // Reset and wait while present
-            } else {
-                config.timer += dt;
-                if (config.timer >= config.interval) {
-                    this.spawnPowerup(config);
+                if (this.isPowerupPresent(config.id)) {
+                    config.timer = 0; // Reset and wait while present
+                } else {
+                    config.timer += dt;
+                    if (config.timer >= config.interval) {
+                        this.spawnPowerup(config);
+                    }
                 }
-            }
-        });
+            });
+        }
 
         // Bomb spawns once per run, on the first transition into the red zone.
         const stabilityPct = Math.max(0, this.game.stability / this.game.maxStability);
         const isStabilityRed = stabilityPct <= this.BOMB_STABILITY_THRESHOLD;
-        if (!this.bombSpawned && !this.wasStabilityRed && isStabilityRed) {
+        if (!this.game.isTutorialMode && !this.bombSpawned && !this.wasStabilityRed && isStabilityRed) {
             this.bombSpawned = this.spawnPowerup({ id: 'bomb' });
         }
         this.wasStabilityRed = isStabilityRed;
@@ -190,9 +192,9 @@ export class PowerupSystem {
         for (let y = 0; y < grid.height; y++) {
             for (let x = 0; x < grid.width; x++) {
                 const cell = grid.getCell(x, y);
-                // Check items on counters/appliances
-                if (cell.object) {
-                    if (this._finishCooking(cell.object)) {
+                // Finish only items that are actively cooking on an appliance.
+                if (cell.type.id === 'GRILL' && cell.object) {
+                    if (this._finishGrillItem(cell.object)) {
                         count++;
                         effectLocations.push({ x, y });
                     }
@@ -200,8 +202,8 @@ export class PowerupSystem {
 
                 // Check Fryer Tile (fill bar completely)
                 if (cell.type.id === 'FRYER' && cell.state && cell.state.status === 'down') {
-                    const max = cell.state.cookingSpeed || 2000;
-                    cell.state.timer = max; // Force "done" threshold on next frame
+                    if (cell.object) this._finishCooking(cell.object);
+                    cell.state.timer = 0;
                     cell.state.status = 'done';
                     count++;
                     effectLocations.push({ x, y });
@@ -213,14 +215,6 @@ export class PowerupSystem {
                     count++;
                     effectLocations.push({ x, y });
                 }
-            }
-        }
-
-        // Also finish cooking for held items
-        if (this.game.player && this.game.player.heldItem) {
-            if (this._finishCooking(this.game.player.heldItem)) {
-                count++;
-                effectLocations.push({ x: this.game.player.x, y: this.game.player.y });
             }
         }
 
@@ -241,6 +235,28 @@ export class PowerupSystem {
         } else {
             this.game.addFloatingText("Powerup Used", this.game.player.x, this.game.player.y, '#aaaaaa');
         }
+    }
+
+    _finishGrillItem(item) {
+        if (item?.definitionId === 'insert' && item.state?.isGrillBatch) {
+            const contents = item.state.contents || [];
+            const sample = contents[0];
+            if (!sample) return false;
+
+            const modified = this._finishCooking(sample);
+            if (!modified) return false;
+
+            const cookedLevel = sample.state.cook_level;
+            contents.forEach(entry => {
+                entry.state.cook_level = cookedLevel;
+                entry.state.cookingProgress = 0;
+            });
+            item.state.cook_level = cookedLevel;
+            item.state.cookingProgress = 0;
+            return true;
+        }
+
+        return this._finishCooking(item);
     }
 
     _activateFreezeClock(item) {

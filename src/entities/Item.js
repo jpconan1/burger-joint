@@ -242,7 +242,10 @@ export class ItemInstance {
             return newObj;
         };
 
-        item.state = restore(data.state || {});
+        item.state = {
+            ...item.state,
+            ...restore(data.state || {})
+        };
 
         // MIGRATION: Move old 'patty' state to 'toppings'
         if (item.state.patty) {

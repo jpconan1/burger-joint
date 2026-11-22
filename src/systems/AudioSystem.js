@@ -13,6 +13,7 @@ export class AudioSystem {
         // State
         this.currentMusicData = null; // { introSource, loopSource, musicId }
         this.audioBufferCache = new Map();
+        this.musicRequestId = 0;
         this.isMuffled = false;
         this.initialized = false;
     }
@@ -77,6 +78,7 @@ export class AudioSystem {
         if (!this.ctx) return;
 
         this.stopMusic();
+        const requestId = ++this.musicRequestId;
 
         let introBuffer = null;
         if (introKey) {
@@ -84,6 +86,7 @@ export class AudioSystem {
         }
         const loopBuffer = await this.decode(loopKey);
 
+        if (requestId !== this.musicRequestId) return;
         if (!loopBuffer) return; // Must have loop at least
 
         // Create Sources
@@ -114,12 +117,98 @@ export class AudioSystem {
             introSource,
             loopSource,
             introKey,
-            loopKey
+            loopKey,
+            introBuffer,
+            loopBuffer,
+            introStartTime: introSource ? startTime : null,
+            loopStartTime: introSource && introBuffer ? startTime + introBuffer.duration : startTime
         };
     }
 
+    async playMusicAfterCurrentLoop(loopKey) {
+        if (!this.ctx) return;
+        if (this.currentMusicData?.loopKey === loopKey) return;
+        if (this.currentMusicData?.pendingLoopKey === loopKey) return;
+
+        const current = this.currentMusicData;
+        if (!current?.loopBuffer || current.loopStartTime === undefined) {
+            this.playMusic(null, loopKey);
+            return;
+        }
+
+        const requestId = ++this.musicRequestId;
+        current.pendingLoopKey = loopKey;
+        const nextBuffer = await this.decode(loopKey);
+        if (requestId !== this.musicRequestId || !nextBuffer) return;
+
+        const now = this.ctx.currentTime;
+        const loopDuration = current.loopBuffer.duration;
+        let startTime;
+
+        if (now < current.loopStartTime) {
+            startTime = current.loopStartTime + loopDuration;
+        } else {
+            const elapsed = now - current.loopStartTime;
+            const loopsElapsed = Math.floor(elapsed / loopDuration) + 1;
+            startTime = current.loopStartTime + loopsElapsed * loopDuration;
+            if (startTime - now < 0.03) startTime += loopDuration;
+        }
+
+        const nextSource = this.ctx.createBufferSource();
+        nextSource.buffer = nextBuffer;
+        nextSource.loop = true;
+        nextSource.connect(this.musicGain);
+        nextSource.start(startTime);
+
+        if (current.introSource) {
+            try {
+                current.introSource.stop(startTime);
+            } catch (e) {
+                // Ignore already-stopped sources.
+            }
+        }
+        if (current.loopSource) {
+            try {
+                current.loopSource.stop(startTime);
+            } catch (e) {
+                // Ignore already-stopped sources.
+            }
+        }
+
+        current.pendingSource = nextSource;
+        current.pendingLoopKey = loopKey;
+        current.pendingLoopBuffer = nextBuffer;
+        current.pendingLoopStartTime = startTime;
+        current.pendingTimeout = globalThis.setTimeout(() => {
+            if (this.musicRequestId !== requestId || this.currentMusicData !== current || current.pendingSource !== nextSource) {
+                return;
+            }
+            this.currentMusicData = {
+                introSource: null,
+                loopSource: nextSource,
+                introKey: null,
+                loopKey,
+                introBuffer: null,
+                loopBuffer: nextBuffer,
+                introStartTime: null,
+                loopStartTime: startTime
+            };
+        }, Math.max(0, (startTime - this.ctx.currentTime) * 1000));
+    }
+
     stopMusic() {
+        this.musicRequestId++;
         if (this.currentMusicData) {
+            if (this.currentMusicData.pendingTimeout) {
+                globalThis.clearTimeout(this.currentMusicData.pendingTimeout);
+            }
+            if (this.currentMusicData.pendingSource) {
+                try {
+                    this.currentMusicData.pendingSource.stop();
+                } catch (e) {
+                    // Ignore errors
+                }
+            }
             if (this.currentMusicData.introSource) {
                 try {
                     this.currentMusicData.introSource.stop();
@@ -136,6 +225,10 @@ export class AudioSystem {
             }
             this.currentMusicData = null;
         }
+    }
+
+    isPlayingMusic(loopKey) {
+        return this.currentMusicData?.loopKey === loopKey || this.currentMusicData?.pendingLoopKey === loopKey;
     }
 
     async playSFX(key) {

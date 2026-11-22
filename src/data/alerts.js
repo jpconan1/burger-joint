@@ -40,16 +40,6 @@ export const ALERTS = {
             }
         ]
     },
-    'tutorial_recipe': {
-        frames: [
-            {
-                text: "",
-                recipeRows: [],
-                position: 'center',
-                size: { width: '760px', height: '420px' }
-            }
-        ]
-    },
     'tickets_reminder': {
         frames: [
             {

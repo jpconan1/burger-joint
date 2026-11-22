@@ -45,9 +45,7 @@ export const DEFAULT_LEVEL = {
             {
                 "typeId": "COUNTER",
                 "state": {},
-                "object": {
-                    "definitionId": "wrapper_box"
-                }
+                "object": null
             },
             { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_LEFT }, "object": null },
             { "typeId": "SERVICE", "state": { "texture": ASSETS.TILES.SERVICE_COUNTER_CENTRE }, "object": null },
@@ -110,6 +108,276 @@ export const DEFAULT_LEVEL = {
                 "state": {
                     "facing": 0
                 },
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "GRILL",
+                "state": {
+                    "isOn": false,
+                    "cookingSpeed": 2000,
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "GRILL",
+                "state": {
+                    "isOn": false,
+                    "cookingSpeed": 2000,
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "GRILL",
+                "state": {
+                    "isOn": false,
+                    "cookingSpeed": 2000,
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "GRILL",
+                "state": {
+                    "isOn": false,
+                    "cookingSpeed": 2000,
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "FRYER",
+                "state": {
+                    "status": "empty",
+                    "cookingSpeed": 2000,
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "FRYER",
+                "state": {
+                    "status": "empty",
+                    "cookingSpeed": 2000,
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        [
+            { "typeId": "CHUTE", "state": {}, "object": null },
+            {
+                "typeId": "COUNTER",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {},
+                "object": null
+            },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        [
+            { "typeId": "CHUTE", "state": {}, "object": null },
+            {
+                "typeId": "COUNTER",
+                "state": {},
+                "object": {
+                    "definitionId": "wrapper_box"
+                }
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {
+                    "facing": 0
+                },
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "FLOOR",
+                "state": {},
+                "object": null
+            },
+            {
+                "typeId": "COUNTER",
+                "state": {},
+                "object": null
+            },
+            { "typeId": "WALL", "state": {}, "object": null }
+        ],
+        [
+            { "typeId": "CHUTE", "state": {}, "object": null },
+            {
+                "typeId": "COUNTER",
+                "state": {},
                 "object": {
                     "definitionId": "bag_box"
                 }
@@ -125,71 +393,43 @@ export const DEFAULT_LEVEL = {
                 "object": null
             },
             {
-                "typeId": "GRILL",
-                "state": {
-                    "isOn": false,
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "FLOOR",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "GRILL",
-                "state": {
-                    "isOn": false,
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "FLOOR",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "GRILL",
-                "state": {
-                    "isOn": false,
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "FLOOR",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "GRILL",
-                "state": {
-                    "isOn": false,
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "FLOOR",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
+                "typeId": "FLOOR",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "FRYER",
-                "state": {
-                    "status": "empty",
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "FLOOR",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "FRYER",
-                "state": {
-                    "status": "empty",
-                    "cookingSpeed": 2000,
-                    "facing": 0
-                },
+                "typeId": "FLOOR",
+                "state": {},
                 "object": null
             },
             {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
+                "typeId": "FLOOR",
+                "state": {},
                 "object": null
             },
             {
@@ -219,246 +459,6 @@ export const DEFAULT_LEVEL = {
                 "object": {
                     "definitionId": "side_cup_box"
                 }
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {},
-                "object": null
-            },
-            { "typeId": "WALL", "state": {}, "object": null }
-        ],
-        [
-            { "typeId": "CHUTE", "state": {}, "object": null },
-            {
-                "typeId": "COUNTER",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {},
-                "object": null
-            },
-            { "typeId": "WALL", "state": {}, "object": null }
-        ],
-        [
-            { "typeId": "CHUTE", "state": {}, "object": null },
-            {
-                "typeId": "COUNTER",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "FLOOR",
-                "state": {},
-                "object": null
-            },
-            {
-                "typeId": "COUNTER",
-                "state": {
-                    "facing": 0
-                },
-                "object": null
-            },
-            { "typeId": "WALL", "state": {}, "object": null }
-        ],
-        [
-            { "typeId": "CHUTE", "state": {}, "object": null },
-            {
-                "typeId": "COUNTER",
-                "state": {},
-                "object": null
             },
             {
                 "typeId": "FLOOR",

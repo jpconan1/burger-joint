@@ -16,6 +16,11 @@ function resolveUiAsset(path) {
     return assetUrl(`assets/ui/${path}`);
 }
 
+const BOILING_RECIPE_SYMBOLS = {
+    '+': { src: 'assets/sheets/plus_boil_sheet.png', label: 'plus' },
+    '=': { src: 'assets/sheets/equal_boil_sheet.png', label: 'equals' }
+};
+
 export class AlertSystem {
     constructor(game) {
         this.game = game;
@@ -229,7 +234,10 @@ export class AlertSystem {
             if (onComplete) onComplete();
             return;
         }
+        this.triggerConfig(alertId, config, onComplete, data);
+    }
 
+    triggerConfig(alertId, config, onComplete = null, data = {}) {
         // If onComplete is provided, store it. 
         if (onComplete) {
             this.onComplete = onComplete;
@@ -288,6 +296,7 @@ export class AlertSystem {
         const recipeRows = this.activeAlert.data?.recipeRows || step.recipeRows;
         if (recipeRows && recipeRows.length > 0) {
             this.contentText.innerHTML = this.renderRecipeRows(recipeRows);
+            this.renderRecipeCanvases();
         } else {
             this.contentText.innerHTML = text;
         }
@@ -530,10 +539,32 @@ export class AlertSystem {
     }
 
     renderRecipeRows(rows) {
+        let symbolIndex = 0;
         const renderToken = (token) => {
             if (!token) return '';
             if (token.type === 'image') {
                 return `<img class="alert-recipe-img" src="${resolveUiAsset(token.src)}" alt="">`;
+            }
+            if (token.type === 'tile') {
+                const x = Number.isFinite(token.x) ? token.x : 0;
+                const y = Number.isFinite(token.y) ? token.y : 0;
+                return `<span class="alert-recipe-tile" style="background-image: url('${resolveUiAsset(token.src)}'); background-position: -${x * 64}px -${y * 64}px;"></span>`;
+            }
+            if (token.type === 'stack') {
+                return `<span class="alert-recipe-stack">${(token.layers || []).map(renderToken).join('')}</span>`;
+            }
+            if (token.type === 'plateBurger') {
+                return '<canvas class="alert-recipe-canvas alert-recipe-plate-burger" width="64" height="64" aria-hidden="true"></canvas>';
+            }
+            if (token.type === 'boilSymbol' || (token.type === 'symbol' && token.boil !== false && BOILING_RECIPE_SYMBOLS[token.value])) {
+                const symbolConfig = BOILING_RECIPE_SYMBOLS[token.value] || token;
+                const frameCount = token.frames || symbolConfig.frames || 5;
+                const frameSize = token.frameSize || symbolConfig.frameSize || 64;
+                const sheetWidth = frameSize * frameCount;
+                const duration = token.duration || symbolConfig.duration || 650;
+                const offset = token.offset ?? ((symbolIndex * 137) % duration);
+                symbolIndex += 1;
+                return `<span class="alert-recipe-symbol-sprite" role="img" aria-label="${symbolConfig.label || token.value || 'symbol'}" style="--recipe-symbol-sheet: url('${resolveUiAsset(token.src || symbolConfig.src)}'); --recipe-symbol-size: ${frameSize}px; --recipe-symbol-sheet-width: ${sheetWidth}px; --recipe-symbol-duration: ${duration}ms; --recipe-symbol-delay: -${offset}ms;"></span>`;
             }
             if (token.type === 'symbol') {
                 return `<span class="alert-recipe-symbol">${token.value || ''}</span>`;
@@ -544,6 +575,36 @@ export class AlertSystem {
         return `<div class="alert-recipe">${rows.map(tokens => `
             <div class="alert-recipe-row">${tokens.map(renderToken).join('')}</div>
         `).join('')}</div>`;
+    }
+
+    renderRecipeCanvases() {
+        this.contentText.querySelectorAll('.alert-recipe-plate-burger').forEach(canvas => {
+            const ctx = canvas.getContext('2d');
+            const renderer = this.game.renderer;
+            const assetLoader = renderer?.assetLoader || this.game.assetLoader;
+            if (!ctx || !renderer || !assetLoader) return;
+
+            ctx.clearRect(0, 0, 64, 64);
+            ctx.imageSmoothingEnabled = false;
+
+            const plateDef = DEFINITIONS.plate;
+            const plateImg = assetLoader.get(plateDef.texture);
+            if (plateImg) ctx.drawImage(plateImg, 0, 0, 64, 64);
+
+            const burger = new ItemInstance('plain_burger');
+            burger.state.bun = new ItemInstance('plain_bun');
+            const patty = new ItemInstance('beef_patty');
+            patty.state.cook_level = 'cooked';
+            burger.state.toppings = [patty];
+
+            const innerScale = 0.7;
+            const burgerX = 32 - (64 * innerScale) / 2;
+            const burgerY = 32 - 32 - (plateDef.contentNudge || 12) + 15;
+            drawBurgerPixels(renderer, burger, burgerX, burgerY, innerScale, ctx);
+
+            const partImg = assetLoader.get(plateDef.partTexture);
+            if (partImg) ctx.drawImage(partImg, 0, 0, 64, 64);
+        });
     }
 
     updateButtonSelection() {
@@ -641,8 +702,8 @@ export class AlertSystem {
             if (this.activeAlert.data.unlockedToppings === undefined) this.activeAlert.data.unlockedToppings = new Set();
             if (this.activeAlert.data.unlockedToppings.has(action.toppingId)) return;
 
-            // SPECIAL CASE: Chicken Patty immediately unlocks the burger
-            if (action.toppingId === 'chicken_patty') {
+            // Patty unlocks add a new burger type immediately.
+            if (this.game.isPattyUnlock(action.toppingId)) {
                 if (this.game.unlockTopping(action.toppingId)) {
                     this.finalizeToppingPick(action);
                 } else {

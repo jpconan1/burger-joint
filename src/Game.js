@@ -42,7 +42,6 @@ export class Game {
             'mayo',
             'bbq',
             'burger_sauce',
-            'chicken_patty',
             'sweet_potato_fries'
         ];
 
@@ -212,7 +211,7 @@ export class Game {
 
             this.renderer = new Renderer('game-canvas', this.assetLoader);
 
-            this.startNewGame();
+            this.startNewGame({ muffleTitle: false });
 
             this.loop();
         } catch (error) {
@@ -221,7 +220,7 @@ export class Game {
         }
     }
 
-    startNewGame() {
+    startNewGame(options = {}) {
         console.log('Starting new game with default layout.');
         this.isTutorialMode = false;
         this.currentTutorialIndex = -1;
@@ -235,8 +234,8 @@ export class Game {
         this.resetDeterministicRuntime();
         this.powerupSystem.resetRunState();
 
-        // Continue Title Theme (Muffled) for Day 0 Setup
-        this.audioSystem.setMuffled(true);
+        // Keep title/menu music clear unless entering hidden day-0 setup from gameplay.
+        this.audioSystem.setMuffled(options.muffleTitle === true);
 
         // Reset Session Score
         this.score = 0;
@@ -294,13 +293,17 @@ export class Game {
 
     }
 
-    openTutorialMenu() {
+    openTutorialMenu(playIntro = true) {
         this.isTutorialMode = false;
         this.currentTutorialIndex = -1;
         this.currentTutorialLesson = null;
         this.tutorialFlags = {};
         this.alertSystem?.close();
         this.audioSystem.setMuffled(false);
+        if (!this.audioSystem.isPlayingMusic(ASSETS.AUDIO.TUTORIAL_MENU_LOOP)) {
+            const intro = playIntro ? ASSETS.AUDIO.TUTORIAL_MENU_INTRO : null;
+            this.audioSystem.playMusic(intro, ASSETS.AUDIO.TUTORIAL_MENU_LOOP);
+        }
         this.gameState = 'TUTORIAL_MENU';
         this.tutorialSelection = Math.max(0, Math.min(this.tutorialSelection || 0, TUTORIAL_LESSONS.length - 1));
     }
@@ -312,7 +315,7 @@ export class Game {
     startTutorialLesson(index = 0) {
         const lesson = TUTORIAL_LESSONS[index];
         if (!lesson) {
-            this.openTutorialMenu();
+            this.openTutorialMenu(false);
             return;
         }
 
@@ -323,6 +326,9 @@ export class Game {
         this.resetDeterministicRuntime();
         this.powerupSystem.resetRunState();
         this.audioSystem.setMuffled(false);
+        if (!this.audioSystem.isPlayingMusic(ASSETS.AUDIO.TUTORIAL_SONG)) {
+            this.audioSystem.playMusicAfterCurrentLoop(ASSETS.AUDIO.TUTORIAL_SONG);
+        }
 
         this.rooms = {};
         const tutorialGrid = new Grid(lesson.level.width, lesson.level.height);
@@ -367,9 +373,7 @@ export class Game {
         this.gameState = 'PLAYING';
         this.updateCapabilities();
 
-        this.alertSystem.trigger('tutorial_recipe', null, {
-            recipeRows: lesson.recipeRows
-        });
+        this.alertSystem.triggerConfig(`tutorial_${lesson.id}`, lesson.alert);
     }
 
     completeTutorialLesson() {
@@ -387,7 +391,7 @@ export class Game {
         this.tutorialFlags = {};
         this.activeTickets = [];
         this.orders = [];
-        this.openTutorialMenu();
+        this.openTutorialMenu(false);
     }
 
     resetHighScore() {
@@ -1106,8 +1110,26 @@ export class Game {
         return id === 'sweet_potato_fries' || DEFINITIONS[id]?.orderConfig?.type === 'side';
     }
 
+    isPattyUnlock(id) {
+        return DEFINITIONS[id]?.category === 'patty';
+    }
+
+    getPattyUnlockPool() {
+        const starterPattyId = this.starterSelection?.burgerId;
+        return this.menuSystem
+            .getStarterBurgerOptions()
+            .map(option => option.id)
+            .filter(id => id !== starterPattyId);
+    }
+
+    getLevelUpPoolIds() {
+        return [...this.TOPPING_POOL, ...this.getPattyUnlockPool()];
+    }
+
     getUnlockAvailability(id) {
-        if (id === 'chicken_patty') {
+        if (this.isPattyUnlock(id)) {
+            if (id === this.starterSelection?.burgerId) return 0;
+            if (this.menuSystem.hasBurgerPatty(id)) return 0;
             return this.menuSystem.canAddBurger() ? 1 : 0;
         }
 
@@ -1122,7 +1144,7 @@ export class Game {
     }
 
     refreshUnlockAvailability() {
-        this.TOPPING_POOL.forEach(id => {
+        this.getLevelUpPoolIds().forEach(id => {
             this.toppingCharges[id] = this.getUnlockAvailability(id);
         });
     }
@@ -1152,8 +1174,12 @@ export class Game {
     getUnlockButtonIcon(id) {
         if (id === 'fries') return assetUrl('assets/fries-done.png');
         if (id === 'sweet_potato_fries') return assetUrl('assets/sweet_potato_fries-done.png');
+        if (this.isPattyUnlock(id)) {
+            const option = this.menuSystem.getStarterBurgerOptions().find(entry => entry.id === id);
+            return option?.icon ? assetUrl(`assets/${option.icon}`) : null;
+        }
 
-        const boxId = this.TOPPING_BOX_MAP[id];
+        const boxId = this.TOPPING_BOX_MAP[id] || this.findSupplyBoxForItem(id);
         const boxDef = DEFINITIONS[boxId];
         const unlockDef = DEFINITIONS[id];
 
@@ -1171,7 +1197,7 @@ export class Game {
 
     getAvailableToppingPool() {
         this.refreshUnlockAvailability();
-        return this.TOPPING_POOL.filter(toppingId => {
+        return this.getLevelUpPoolIds().filter(toppingId => {
             const charges = this.toppingCharges[toppingId] || 0;
             return charges > 0;
         });
@@ -1179,9 +1205,12 @@ export class Game {
 
     getToppingButtonConfig(id) {
         const def = DEFINITIONS[id];
+        const label = this.isPattyUnlock(id)
+            ? this.menuSystem.getBurgerNameForPatty(id)
+            : (def ? (def.name || id) : id);
 
         return {
-            label: def ? (def.name || id) : id,
+            label,
             image: '/assets/ui/button_background-boil.png',
             boxImage: this.getUnlockButtonIcon(id),
             action: { type: 'unlock_topping', toppingId: id }
@@ -1280,11 +1309,12 @@ export class Game {
 
         const def = DEFINITIONS[toppingId];
         const isTopping = def && (def.isTopping || def.category === 'topping' || toppingId.includes('cheese') || toppingId === 'bacon');
-        const isAlt = toppingId === 'chicken_patty' || toppingId === 'sweet_potato_fries';
+        const isPatty = this.isPattyUnlock(toppingId);
+        const isAlt = isPatty || toppingId === 'sweet_potato_fries';
         let unlocked = false;
 
-        if (toppingId === 'chicken_patty') {
-            unlocked = this.menuSystem.addChickenBurger();
+        if (isPatty) {
+            unlocked = this.menuSystem.addPattyBurger(toppingId);
         } else if (isTopping && !isAlt) {
             unlocked = this.menuSystem.addToppingToMenu(toppingId, slotIndex);
         } else if (this.isSideUnlock(toppingId)) {
@@ -1294,7 +1324,7 @@ export class Game {
         if (!unlocked) return false;
 
         // Drop the supply box down the chute
-        const boxId = this.TOPPING_BOX_MAP[toppingId];
+        const boxId = this.TOPPING_BOX_MAP[toppingId] || this.findSupplyBoxForItem(toppingId);
         if (boxId && !this.hasSupplyBox(boxId)) {
             this.serviceCycle.dropInChute(new ItemInstance(boxId));
         }
