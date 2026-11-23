@@ -30,16 +30,6 @@ export const ALERTS = {
             }
         ]
     },
-    'starter_selection': {
-        frames: [
-            {
-                text: "PICK STARTERS",
-                position: 'center',
-                size: { width: '860px', height: '520px' },
-                buttons: []
-            }
-        ]
-    },
     'tickets_reminder': {
         frames: [
             {
@@ -52,23 +42,10 @@ export const ALERTS = {
     'level_up': {
         frames: [
             {
-                text: "LEVEL UP! <br> Pick a topping to unlock!",
+                text: "{upgradeLabel}",
                 position: 'center',
                 size: { width: '956px', height: '656px' },
                 buttons: [] // Dynamically populated
-            }
-        ]
-    },
-    'level_up_choice': {
-        frames: [
-            {
-                text: "LEVEL UP!<br>Pick your reward.",
-                position: 'center',
-                size: { width: '760px', height: '360px' },
-                buttons: [
-                    { label: 'More Complexity', image: '/assets/ui/button_background-boil.png', action: 'more_complexity' },
-                    { label: 'Faster Tickets', subLabel: '+20% speed', image: '/assets/ui/button_background-boil.png', action: 'faster_tickets' }
-                ]
             }
         ]
     }

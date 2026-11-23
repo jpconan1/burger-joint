@@ -1,16 +1,20 @@
 {
   "base_burger": 5,
+  "base_chicken_burger": 7,
   "fries": 3.50,
-  "sweet_potato_fries": 5.50,
+  "sweet_potato_fries": 3.50,
   "take_out_bonus": 4,
   "toppings": {
-    "tomato_slice": 1.5,
+    "tomato_slice": 2.00,
     "lettuce_leaf": 1.5,
-    "pickle_slice": 1.5,
-    "onion_slice": 1.5,
-    "mushroom_slice": 1.5,
+    "pickle_slice": 2.00,
+    "onion_slice": 1.75,
+    "mushroom_slice": 3.00,
     "cheddar_cheese": 1.5,
     "swiss_cheese": 1.5,
-    "bacon": 4
+    "bacon": 4.00,
+    "mayo": 1.00,
+    "burger_sauce": 1.00,
+    "bbq": 1.00
   }
 }

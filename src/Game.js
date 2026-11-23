@@ -2,6 +2,7 @@ import { ASSETS, TILE_TYPES, GRID_WIDTH, GRID_HEIGHT } from './constants.js';
 import { CAPABILITY, DEFINITIONS } from './data/definitions.js';
 
 import { SCORING_CONFIG } from './data/scoringConfig.js';
+import SCORE_CONFIG from './data/scoreConfig.json' with { type: 'json' };
 import { AssetLoader } from './systems/AssetLoader.js';
 import { Renderer } from './systems/Renderer.js';
 import { Grid } from './systems/Grid.js';
@@ -76,8 +77,7 @@ export class Game {
 
         this.menuCaps = {
             burgers: 2,
-            sides: 2,
-            toppingsPerBurger: 3
+            sides: 2
         };
 
         this.toppingCharges = {};
@@ -148,6 +148,8 @@ export class Game {
         this.level = 1;
         this.xpToNextLevel = 7;
         this.ticketSpeedBonus = 0;
+        this.runTimeMs = 0;
+        this.lastRunTimerTimestamp = null;
         
         // Bomb Breakdown Logic
         this.bombEffectActive = false;
@@ -228,9 +230,9 @@ export class Game {
         this.tutorialFlags = {};
         this.pattyBoxTutorialShown = false;
         this.unlockMiniGameShown = false;
-        this.starterSelectionComplete = false;
-        this.starterSelection = null;
-        this.menuSystem.resetMenu();
+        this.starterSelection = { burgerId: 'beef_patty', sideId: 'fries' };
+        this.menuSystem.setStarterMenu('beef_patty', 'fries');
+        this.pendingOrders = this.getStarterSupplyOrders('beef_patty', 'fries');
         this.resetDeterministicRuntime();
         this.powerupSystem.resetRunState();
 
@@ -283,6 +285,8 @@ export class Game {
 
         this.dayNumber = 0;
         this.ticketSpeedBonus = 0;
+        this.runTimeMs = 0;
+        this.lastRunTimerTimestamp = null;
 
         this.queueFinishedTime = null;
         this.isDayActive = false;
@@ -349,6 +353,8 @@ export class Game {
         this.level = 1;
         this.xpToNextLevel = 7;
         this.ticketSpeedBonus = 0;
+        this.runTimeMs = 0;
+        this.lastRunTimerTimestamp = null;
         this.stability = 100;
         this.timeoutAlertShown = false;
         this.currentDayPerfect = true;
@@ -643,12 +649,8 @@ export class Game {
 
 
 
-        const needsStarterSelection = this.dayNumber === 1 && !this.starterSelectionComplete;
-
         // 1. Handle Morning Orders via Trigger System
-        if (!needsStarterSelection) {
-            this.serviceCycle.triggerChute('START_DAY');
-        }
+        this.serviceCycle.triggerChute('START_DAY');
 
         // 2. Update Capabilities (Now that supplies are in the world/truck)
         this.updateCapabilities();
@@ -666,7 +668,7 @@ export class Game {
         this.activeTickets = [];
         this.orders = [];
         this.gameState = 'PLAYING';
-        this.isDayActive = !needsStarterSelection;
+        this.isDayActive = true;
         this.isPrepTime = false;
         this.prepTime = 0;
         this.maxPrepTime = 0;
@@ -720,79 +722,11 @@ export class Game {
         this.dayTimer = 0; // Starts at 0 (Morning)
         this.currentShift = 'DAY';
         this.shiftCount = 0;
-        this.ticketSpawnTimer = needsStarterSelection ? 0 : 9999; // Force immediate ticket after starter selection
+        this.ticketSpawnTimer = 9999;
         this.lightingIntensity = 0;
 
         console.log(`Starting Continuous Service Loop. Complexity: ${complexity})`);
 
-        if (needsStarterSelection) {
-            this.showStarterSelectionAlert();
-        }
-    }
-
-    showStarterSelectionAlert() {
-        const burgerOptions = this.getStarterBurgerOptions();
-        const sideOptions = this.getStarterSideOptions();
-
-        const selectedBurgerId = burgerOptions[0]?.id || 'beef_patty';
-        const selectedSideId = sideOptions[0]?.id || 'fries';
-
-        this.audioSystem.setMuffled(true);
-        this.alertSystem.trigger('starter_selection', null, {
-            selectedBurgerId,
-            selectedSideId,
-            buttons: this.getStarterSelectionButtonConfigs(burgerOptions, sideOptions),
-            onStarterConfirm: ({ burgerId, sideId }) => {
-                this.applyStarterSelection(burgerId, sideId);
-            }
-        });
-    }
-
-    getStarterBurgerOptions() {
-        return this.menuSystem.getStarterBurgerOptions();
-    }
-
-    getStarterSideOptions() {
-        return this.menuSystem.getStarterSideOptions();
-    }
-
-    getStarterSelectionButtonConfigs(burgerOptions = this.getStarterBurgerOptions(), sideOptions = this.getStarterSideOptions()) {
-        const makeIcon = (texture) => texture ? assetUrl(`assets/${texture}`) : null;
-
-        return [
-            ...burgerOptions.map(option => ({
-                label: option.name,
-                image: '/assets/ui/button_background-boil.png',
-                boxImage: makeIcon(option.icon),
-                action: { type: 'starter_select', group: 'burger', id: option.id }
-            })),
-            ...sideOptions.map(option => ({
-                label: option.name,
-                image: '/assets/ui/button_background-boil.png',
-                boxImage: makeIcon(option.icon),
-                action: { type: 'starter_select', group: 'side', id: option.id }
-            })),
-            {
-                label: 'Next',
-                image: '/assets/ui/button_background-boil.png',
-                action: { type: 'starter_confirm' }
-            }
-        ];
-    }
-
-    applyStarterSelection(burgerId, sideId) {
-        this.starterSelection = { burgerId, sideId };
-        this.starterSelectionComplete = true;
-        this.menuSystem.setStarterMenu(burgerId, sideId);
-
-        this.pendingOrders = this.getStarterSupplyOrders(burgerId, sideId);
-        this.serviceCycle.triggerChute('START_DAY');
-        this.updateCapabilities();
-
-        this.isDayActive = true;
-        this.ticketSpawnTimer = 9999;
-        this.audioSystem.setMuffled(false);
-        this.playNextSong();
     }
 
     findSupplyBoxForItem(itemId) {
@@ -959,6 +893,11 @@ export class Game {
     }
 
     loop(timestamp) {
+        if (this.lastRunTimerTimestamp !== null && this.isDayActive &&
+            (this.gameState === 'PLAYING' || this.gameState === 'APPLIANCE_SWAP')) {
+            this.runTimeMs += Math.max(0, timestamp - this.lastRunTimerTimestamp);
+        }
+        this.lastRunTimerTimestamp = timestamp;
         const frameDt = this.clock.beginFrame(timestamp);
 
         if (this.renderer) {
@@ -1208,9 +1147,17 @@ export class Game {
         const label = this.isPattyUnlock(id)
             ? this.menuSystem.getBurgerNameForPatty(id)
             : (def ? (def.name || id) : id);
+        const earnsBaseScore = this.isPattyUnlock(id) || this.isSideUnlock(id);
+        const scoreAmount = this.isPattyUnlock(id)
+            ? SCORE_CONFIG.base_chicken_burger
+            : this.isSideUnlock(id)
+                ? SCORE_CONFIG[id]
+                : SCORE_CONFIG.toppings[id];
 
         return {
             label,
+            scoreAmount,
+            scoreVerb: earnsBaseScore ? 'Earns' : 'Adds',
             image: '/assets/ui/button_background-boil.png',
             boxImage: this.getUnlockButtonIcon(id),
             action: { type: 'unlock_topping', toppingId: id }
@@ -1226,57 +1173,12 @@ export class Game {
     levelUp() {
         this.level++;
         this.xpToNextLevel = 7;
-
-        if (this.menuSystem.isMenuAtCap()) {
-            this.audioSystem.setMuffled(true);
-            this.alertSystem.trigger('level_up_choice', () => {
-                this.applyTicketSpeedBoost();
-                this.audioSystem.setMuffled(false);
-                this.playNextSong();
-            }, {
-                buttons: [
-                    { label: 'Faster Tickets', subLabel: '+20% speed', image: '/assets/ui/button_background-boil.png', action: 'faster_tickets' }
-                ]
-            });
-            return;
-        }
+        this.ticketSpeedBonus += SCORING_CONFIG.GAME_PACING.TICKET_SPEED_INCREMENT;
+        if (this.level > 6) return;
 
         const availablePool = this.getAvailableToppingPool();
-
-        if (availablePool.length === 0) {
-            this.audioSystem.setMuffled(true);
-            this.alertSystem.trigger('level_up_choice', () => {
-                this.applyTicketSpeedBoost();
-                this.audioSystem.setMuffled(false);
-                this.playNextSong();
-            }, {
-                buttons: [
-                    { label: 'Faster Tickets', subLabel: '+20% speed', image: '/assets/ui/button_background-boil.png', action: 'faster_tickets' }
-                ]
-            });
-            return;
-        }
-
         this.audioSystem.setMuffled(true);
-
-        let choice = null;
-        const showChoiceAlert = () => this.alertSystem.trigger('level_up_choice', () => {
-            if (choice === 'faster_tickets') {
-                this.applyTicketSpeedBoost();
-                this.audioSystem.setMuffled(false);
-                this.playNextSong();
-            } else {
-                this._showToppingPickerAlert(availablePool, showChoiceAlert);
-            }
-        }, {
-            onChoice: (c) => { choice = c; }
-        });
-        showChoiceAlert();
-    }
-
-    applyTicketSpeedBoost() {
-        this.ticketSpeedBonus += SCORING_CONFIG.GAME_PACING.TICKET_SPEED_INCREMENT;
-        this.addFloatingText("TICKET SPEED ++", this.player.x, this.player.y, '#ffd700');
+        this._showToppingPickerAlert(availablePool);
     }
 
     _showToppingPickerAlert(availablePool, onBack = null) {
@@ -1301,7 +1203,11 @@ export class Game {
 
         this.alertSystem.trigger('level_up', () => {
             this.playNextSong();
-        }, { buttons, onBack });
+        }, {
+            buttons,
+            onBack,
+            upgradeLabel: this.level === 6 ? 'Final Upgrade!!' : `Upgrade ${this.level - 1}/5`
+        });
     }
 
     unlockTopping(toppingId, slotIndex = null) {

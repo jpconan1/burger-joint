@@ -31,7 +31,8 @@ export function drawPlayer(renderer, gameState) {
         if (player.heldItem) {
             renderer.ctx.save();
             const nudge = 12;
-            renderer.ctx.translate(player.facing.x * nudge, player.facing.y * nudge);
+            const facingLength = Math.hypot(player.facing.x, player.facing.y) || 1;
+            renderer.ctx.translate(player.facing.x * nudge / facingLength, player.facing.y * nudge / facingLength);
             drawEntity(renderer, player.heldItem, vx, vy);
             renderer.ctx.restore();
         }
@@ -72,7 +73,7 @@ export function isLargeCounterObject(object) {
  * Draws a large counter object that spans multiple tiles.
  *
  * Positioning: the bottom of the image aligns with the bottom of a standard 64px counter
- * item. yOffset is the counter item lift (typically -29). For each extra tile of height
+ * item. yOffset is the counter item lift (typically -23). For each extra tile of height
  * beyond the first, we shift up by one TILE_SIZE so the image grows upward from the
  * counter surface, not downward through the floor.
  *

@@ -104,7 +104,9 @@ export class AssetLoader {
             const img = new Image();
             img.src = assetUrl(`assets/${resolvedFilename}`);
             img.onload = () => {
-                if ((img.width > TILE_SIZE || img.height > TILE_SIZE) && !resolvedFilename.includes('/')) {
+                const isTargetSheet = resolvedFilename === 'target-sheet.png'
+                    || resolvedFilename === 'target-red-sheet.png';
+                if ((img.width > TILE_SIZE || img.height > TILE_SIZE) && !resolvedFilename.includes('/') && !isTargetSheet) {
                     const canvas = document.createElement('canvas');
                     canvas.width = TILE_SIZE;
                     canvas.height = TILE_SIZE;

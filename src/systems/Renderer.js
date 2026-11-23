@@ -9,6 +9,7 @@ import * as TicketRenderer from '../renderers/TicketRenderer.js';
 import * as ObjectRenderer from '../renderers/ObjectRenderer.js';
 import * as UIRenderer from '../renderers/UIRenderer.js';
 import * as EffectRenderer from '../renderers/EffectRenderer.js';
+import { canTargetCell } from './TargetEligibility.js';
 
 
 
@@ -480,7 +481,7 @@ export class Renderer {
                         const flatOnCounter = cell.object.definition?.flatOnCounter;
                         let yOffset = 0;
                         if (cell.type.id === 'COUNTER' || cell.type.id === 'SERVICE') {
-                            yOffset = flatOnCounter ? -9 : -29;
+                            yOffset = flatOnCounter ? -9 : -23;
                         }
 
                         let alpha = 1.0;
@@ -594,7 +595,7 @@ export class Renderer {
                 // 2.8 Draw Service Counter Active Ticket Hints
                 if (cell.type.id === 'SERVICE') {
                     // For service counters, we use the same offset as normal counters
-                    this.drawServiceHint(x, y, gameState, cell.object, -29, serviceCounterIndex);
+                    this.drawServiceHint(x, y, gameState, cell.object, -23, serviceCounterIndex);
                     serviceCounterIndex++;
                 }
 
@@ -660,6 +661,27 @@ export class Renderer {
         EffectRenderer.drawEffects(this, gameState);
 
         TicketRenderer.drawHangingTickets(this, gameState);
+
+        if (gameState.gameState === 'PLAYING' && !gameState.isViewingOrders && !gameState.alertSystem?.isVisible) {
+            const player = gameState.player;
+            const x = player.x + player.facing.x;
+            const y = player.y + player.facing.y;
+            const targetCell = gameState.grid.getCell(x, y);
+            if (targetCell) {
+                const sheet = canTargetCell(player, gameState.grid, gameState)
+                    ? ASSETS.UI.TARGET_SHEET : ASSETS.UI.TARGET_RED_SHEET;
+                const img = this.assetLoader.get(sheet);
+                if (img) {
+                    const frameSize = img.height / 3;
+                    const frame = Math.floor(Date.now() / 150) % 3;
+                    const counterOffset = isCounter(targetCell.type.id) ? -23 : 0;
+                    this.ctx.drawImage(img, 0, frame * frameSize, img.width, frameSize,
+                        player.targetX * TILE_SIZE + (TILE_SIZE - img.width) / 2,
+                        player.targetY * TILE_SIZE + (TILE_SIZE - frameSize) / 2 + counterOffset,
+                        img.width, frameSize);
+                }
+            }
+        }
 
 
         // --- END WORLD RENDERING ---

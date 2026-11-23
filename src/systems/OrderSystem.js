@@ -140,14 +140,7 @@ export class OrderSystem {
         // 4. Sides (50% chance for a side)
         if (menuConfig.sides && menuConfig.sides.length > 0) {
             if (this.random.chance(0.50)) {
-                const newestSide = menuConfig.sides[menuConfig.sides.length - 1];
-                let choice;
-                if (this.random.chance(0.5)) {
-                    choice = newestSide;
-                } else {
-                    choice = this.random.pick(menuConfig.sides);
-                }
-                order.items.push(choice);
+                order.items.push(this.random.pick(menuConfig.sides));
             }
         }
 
@@ -276,32 +269,28 @@ export class OrderSystem {
 
             // Burgers
             group.burgers.forEach(burger => {
-                totalScore += SCORE_CONFIG.base_burger;
-                if (burger.modifications) {
-                    burger.modifications.forEach(mod => {
-                        // Check if it's a topping in the config
-                        if (SCORE_CONFIG.toppings[mod]) {
-                            totalScore += SCORE_CONFIG.toppings[mod];
-                        } else {
-                            // Fallback: If it's a common topping but not in config explicitly, check for base form
-                            let baseMod = mod.replace(/_slice|_leaf|_cheese/g, '');
-                            // (Though the user provided the exact IDs they care about for now)
-                        }
-                    });
-                }
+                totalScore += this.calculateBurgerScore(burger);
             });
 
             // Items
             group.items.forEach(itemId => {
-                if (itemId === 'fries') totalScore += SCORE_CONFIG.fries;
-                else if (itemId === 'sweet_potato_fries') totalScore += SCORE_CONFIG.sweet_potato_fries;
-                else if (SCORE_CONFIG[itemId]) {
-                   totalScore += SCORE_CONFIG[itemId];
-                }
+                totalScore += this.calculateItemScore(itemId);
             });
         });
 
         return totalScore;
+    }
+
+    calculateBurgerScore(burger) {
+        const modifications = burger.modifications || [];
+        const base = modifications.includes('chicken_patty')
+            ? SCORE_CONFIG.base_chicken_burger
+            : SCORE_CONFIG.base_burger;
+        return modifications.reduce((score, id) => score + (SCORE_CONFIG.toppings[id] || 0), base);
+    }
+
+    calculateItemScore(itemId) {
+        return SCORE_CONFIG[itemId] || 0;
     }
 }
 

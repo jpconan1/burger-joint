@@ -8,13 +8,17 @@ export class InputManager {
     constructor(game) {
         this.game = game;
         this.keys = {};
+        this.blockedDirectionKeys = new Set();
         this.pickupKeyHeldDuration = 0;
         this.pickupActionTriggered = false;
         this.interactKeyHeldDuration = 0;
         this.swappingActionTriggered = false;
 
         window.addEventListener('keydown', this.handleInput.bind(this));
-        window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
+        window.addEventListener('keyup', (e) => {
+            this.keys[e.code] = false;
+            this.blockedDirectionKeys.delete(e.code);
+        });
         window.addEventListener('mousedown', this.handleMouseDown.bind(this));
         window.addEventListener('mousemove', this.handleMouseMove.bind(this));
     }
@@ -260,7 +264,21 @@ export class InputManager {
         else if (action === ACTIONS.MOVE_RIGHT) dx = 1;
 
         if (dx !== 0 || dy !== 0) {
+            this.blockedDirectionKeys ??= new Set();
+            if (!g.grid.isWalkable(g.player.x + dx, g.player.y + dy)) {
+                const perpendicular = this.getHeldPerpendicularDirection(event.code, dx, dy);
+                this.blockedDirectionKeys.add(event.code);
+                if (perpendicular) {
+                    g.player.facing = { x: dx + perpendicular.x, y: dy + perpendicular.y };
+                    return;
+                }
+            } else {
+                this.blockedDirectionKeys.delete(event.code);
+            }
+
+            const oldX = g.player.x, oldY = g.player.y;
             if (g.player.move(dx, dy, g.grid)) {
+                if (g.player.x !== oldX || g.player.y !== oldY) this.blockedDirectionKeys.clear();
                 const cell = g.grid.getCell(g.player.x, g.player.y);
                 const isDoor = cell && (cell.type.isDoor || cell.type.id === 'EXIT_DOOR');
                 if (!isDoor) {
@@ -316,6 +334,22 @@ export class InputManager {
                 g.player.actionInteract(g.grid, g);
             }
         }
+    }
+
+    getHeldPerpendicularDirection(currentCode, dx, dy) {
+        const directions = new Map();
+        for (const [code, held] of Object.entries(this.keys)) {
+            if (!held || code === currentCode || !this.blockedDirectionKeys.has(code)) continue;
+            const action = this.game.settings.getAction(code);
+            if (dy !== 0) {
+                if (action === ACTIONS.MOVE_LEFT) directions.set('left', { x: -1, y: 0 });
+                if (action === ACTIONS.MOVE_RIGHT) directions.set('right', { x: 1, y: 0 });
+            } else {
+                if (action === ACTIONS.MOVE_UP) directions.set('up', { x: 0, y: -1 });
+                if (action === ACTIONS.MOVE_DOWN) directions.set('down', { x: 0, y: 1 });
+            }
+        }
+        return directions.size === 1 ? directions.values().next().value : null;
     }
 
     handleMouseDown(event) {

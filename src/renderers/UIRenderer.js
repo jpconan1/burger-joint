@@ -37,11 +37,21 @@ export function drawHUD(renderer, gameState) {
         ctx.strokeText(nextTicketText, canvas.width - 20, 70);
         ctx.fillStyle = '#00ff00';
         ctx.fillText(nextTicketText, canvas.width - 20, 70);
+    }
 
+    if (gameState.isDayActive) {
         const xpText = `LEVEL ${gameState.level} (${gameState.xp}/${gameState.xpToNextLevel} XP)`;
         ctx.strokeText(xpText, canvas.width - 20, 100);
         ctx.fillStyle = '#ffd700';
         ctx.fillText(xpText, canvas.width - 20, 100);
+
+        const elapsedSeconds = Math.floor((gameState.runTimeMs || 0) / 1000);
+        const minutes = Math.floor(elapsedSeconds / 60);
+        const seconds = String(elapsedSeconds % 60).padStart(2, '0');
+        const timerText = `${minutes}:${seconds}`;
+        ctx.strokeText(timerText, canvas.width - 20, 130);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(timerText, canvas.width - 20, 130);
     }
 
     ctx.restore();

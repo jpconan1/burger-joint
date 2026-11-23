@@ -68,7 +68,7 @@ export const SCORING_CONFIG = {
         // Width of the bell curve (Standard Deviation in seconds)
         PEAK_WIDTH: 20,
 
-        // Increment for speed boost when menu is locked (20% faster)
-        TICKET_SPEED_INCREMENT: 0.2
+        // Additive ticket arrival rate increase per level-up
+        TICKET_SPEED_INCREMENT: 0.05
     }
 };

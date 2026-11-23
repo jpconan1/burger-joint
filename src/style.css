@@ -530,6 +530,25 @@ canvas {
     text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.4);
 }
 
+.upgrade-score-tag {
+    position: absolute;
+    right: -25px;
+    bottom: -18px;
+    z-index: 3;
+    min-width: 108px;
+    padding: 6px 9px;
+    box-sizing: border-box;
+    border: 3px solid #111;
+    background: #e3a16f;
+    color: #fff;
+    font: 900 15px 'Inter', sans-serif;
+    white-space: nowrap;
+    text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000,
+        2px 0 0 #000, -2px 0 0 #000, 0 2px 0 #000, 0 -2px 0 #000;
+    transform: rotate(-7deg);
+    pointer-events: none;
+}
+
 .alert-recipe {
     display: flex;
     flex-direction: column;

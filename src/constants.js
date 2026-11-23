@@ -179,6 +179,8 @@ export const ASSETS = {
         HANDS: 'hands.png',
     },
     UI: {
+        TARGET_SHEET: 'target-sheet.png',
+        TARGET_RED_SHEET: 'target-red-sheet.png',
         INSERT_LABEL: 'insert-label.png',
         ORDER_TICKET: 'ui/order_ticket.png',
         SELECTOR: 'ui/selector.png',

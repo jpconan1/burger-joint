@@ -718,6 +718,26 @@ export const DEFAULT_LEVEL = {
     ]
 };
 
+// Kitchen arrangement exported from the in-game layout editor.
+// Only fixtures belong in the starting layout; supplies and powerups are spawned by the game.
+const kitchenFixtureRows = {
+    2: { 1: 'FLOOR' },
+    4: { 4: 'COUNTER', 5: 'COUNTER', 6: 'COUNTER', 7: 'COUNTER', 9: 'COUNTER', 10: 'FLOOR', 11: 'FLOOR', 12: 'COUNTER', 13: 'COUNTER' },
+    6: { 4: 'GRILL', 5: 'GRILL', 6: 'GRILL', 7: 'GRILL', 8: 'COUNTER', 9: 'FRYER', 10: 'FRYER', 11: 'FLOOR', 12: 'COUNTER', 13: 'COUNTER' },
+    8: { 11: 'FLOOR', 12: 'COUNTER', 13: 'COUNTER' }
+};
+
+for (const [row, columns] of Object.entries(kitchenFixtureRows)) {
+    for (const [column, typeId] of Object.entries(columns)) {
+        const state = typeId === 'GRILL'
+            ? { isOn: false, cookingSpeed: 2000, facing: 0, cookingProgress: 0 }
+            : typeId === 'FRYER'
+                ? { status: 'empty', cookingSpeed: 2000, facing: 0, timer: 0 }
+                : typeId === 'COUNTER' ? { facing: 0 } : {};
+        DEFAULT_LEVEL.cells[row][column] = { typeId, state, object: null };
+    }
+}
+
 export const DEFAULT_STORE_ROOM = {
     "width": 5,
     "height": 8,

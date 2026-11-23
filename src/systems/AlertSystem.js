@@ -304,7 +304,12 @@ export class AlertSystem {
         // Level-up Alert Special Logic: Show Burger Preview
         const isLevelUp = this.activeAlert.id === 'level_up';
         if (isLevelUp) {
-            this.contentText.style.display = 'none';
+            this.contentText.style.display = 'block';
+            this.contentText.style.position = 'absolute';
+            this.contentText.style.top = '24px';
+            this.contentText.style.left = '0';
+            this.contentText.style.width = '100%';
+            this.contentText.style.pointerEvents = 'none';
             this.burgerPreviewContainer.style.display = 'flex';
             
             // Ensure preview burger exists in data
@@ -326,6 +331,11 @@ export class AlertSystem {
             }
         } else {
             this.contentText.style.display = 'block';
+            this.contentText.style.position = '';
+            this.contentText.style.top = '';
+            this.contentText.style.left = '';
+            this.contentText.style.width = '';
+            this.contentText.style.pointerEvents = '';
             this.burgerPreviewContainer.style.display = 'none';
         }
 
@@ -477,6 +487,9 @@ export class AlertSystem {
                             ${subLabel ? `<span style="font-size: 14px; opacity: 0.9; margin-top: 4px; pointer-events: none;">${subLabel}</span>` : ''}
                         ` : ''}
                     </div>
+                    ${isLevelUp && btnConfig.action?.type === 'unlock_topping' && Number.isFinite(btnConfig.scoreAmount) ? `
+                        <div class="upgrade-score-tag">${btnConfig.scoreVerb} $${btnConfig.scoreAmount.toFixed(2)}</div>
+                    ` : ''}
                 `;
 
                 btn.onclick = () => {
@@ -486,13 +499,6 @@ export class AlertSystem {
 
                 this.buttonsContainer.appendChild(btn);
                 this.buttons.push({ element: btn, config: btnConfig });
-
-                // Level-up alert special: the OK/Lock Menu button is always enabled now
-                if (this.activeAlert.id === 'level_up' && btnConfig.action === 'dismiss') {
-                    btn.style.opacity = '1.0';
-                    btn.style.filter = 'none';
-                    btn.style.cursor = 'pointer';
-                }
 
                 // If this topping was already picked, hide it
                 if (this.activeAlert.id === 'level_up' && btnConfig.action && btnConfig.action.type === 'unlock_topping') {
@@ -610,7 +616,9 @@ export class AlertSystem {
     updateButtonSelection() {
         this.buttons.forEach((b, i) => {
             const img = b.element.querySelector('img');
-            const isLevelUpOKDisabled = false; // Always enabled now
+            const isLevelUpOKDisabled = this.activeAlert?.id === 'level_up' &&
+                b.config.action === 'dismiss' && this.game.level <= 6 &&
+                !this.activeAlert.data.pickedCount;
             const starterData = this.activeAlert?.id === 'starter_selection' ? this.activeAlert.data : null;
             const isStarterConfirm = b.config.action?.type === 'starter_confirm';
             const isStarterPicked = this.isStarterSelectionButtonPicked(b.config);
@@ -692,6 +700,7 @@ export class AlertSystem {
             }
             this.close();
         } else if (action === 'dismiss') {
+            if (this.activeAlert.id === 'level_up' && this.game.level <= 6 && !this.activeAlert.data.pickedCount) return;
             this.advance();
         } else if (action === 'reroll') {
             this.rerollToppings();
@@ -844,6 +853,7 @@ export class AlertSystem {
 
     advance() {
         if (!this.activeAlert) return;
+        if (this.activeAlert.id === 'level_up' && this.game.level <= 6 && !this.activeAlert.data.pickedCount) return;
 
         const config = this.activeAlert.config;
         const currentIndex = this.activeAlert.currentStepIndex;
@@ -889,7 +899,7 @@ export class AlertSystem {
         const activeSlots = this.game.menuSystem.getActiveBurgerSlots();
         const displayBurgerSlots = Array.from({ length: caps.burgers }, (_, i) => this.game.menuSystem.menuSlots[i] || null);
         const cardWidth = 160;
-        const gutter = 20;
+        const gutter = 56;
         const totalWidth = displayBurgerSlots.length * cardWidth + Math.max(0, displayBurgerSlots.length - 1) * gutter;
 
         const activeSides = this.game.menuSystem.sides || [];
@@ -956,7 +966,9 @@ export class AlertSystem {
         if (this.buttonBoilLoaded) {
             this.buttons.forEach((b, i) => {
                 const isSelected = i === this.selectedButtonIndex;
-                const isLevelUpOKDisabled = false;
+                const isLevelUpOKDisabled = this.activeAlert?.id === 'level_up' &&
+                    b.config.action === 'dismiss' && this.game.level <= 6 &&
+                    !this.activeAlert.data.pickedCount;
                 const starterData = this.activeAlert?.id === 'starter_selection' ? this.activeAlert.data : null;
                 const isStarterConfirmDisabled = starterData &&
                     b.config.action?.type === 'starter_confirm' &&
@@ -1000,7 +1012,7 @@ export class AlertSystem {
 
         const { displayBurgerSlots, cardWidth, gutter, totalWidth, startX, sideX, displaySideSlots } = layout;
         const cardHeight = 220;
-        const startY = 60;
+        const startY = 85;
 
         displayBurgerSlots.forEach((slot, i) => {
             const cardX = startX + i * (cardWidth + gutter);
@@ -1069,15 +1081,15 @@ export class AlertSystem {
                 const bX = cardX + (cardWidth - 64 * scale) / 2;
                 const bY = startY + 60;
                 drawBurgerPixels(renderer, burger, bX, bY, scale, ctx);
+
+                const modifications = burger.state.toppings.map(t =>
+                    typeof t === 'string' ? t : t.definitionId || t.definition?.id
+                );
+                const price = this.game.orderSystem.calculateBurgerScore({ modifications });
+                this.drawMenuPriceTag(ctx, cardX + cardWidth - 112, startY + cardHeight - 13, `Price: $${price.toFixed(2)}`);
             } else {
-                ctx.fillText('EMPTY', cardX + cardWidth / 2, startY + 34);
-                ctx.fillText('BURGER SLOT', cardX + cardWidth / 2, startY + 56);
-                ctx.font = '900 46px "Inter", sans-serif';
-                ctx.fillStyle = '#c9b89c';
-                ctx.fillText('+', cardX + cardWidth / 2, startY + 148);
-                ctx.font = '900 18px "Inter", sans-serif';
-                ctx.fillStyle = '#7a6a50';
-                ctx.fillText('COMPLEXITY PICK', cardX + cardWidth / 2, startY + 188);
+                ctx.fillText('EMPTY', cardX + cardWidth / 2, startY + 104);
+                ctx.fillText('BURGER SLOT', cardX + cardWidth / 2, startY + 128);
             }
 
             // Allocation Hover Check (simple)
@@ -1099,7 +1111,7 @@ export class AlertSystem {
         // DRAW SIDE SLOTS
         displaySideSlots.forEach((sideId, index) => {
             const slotSize = 88;
-            const slotY = startY + index * (slotSize + 18);
+            const slotY = startY + index * (cardHeight - slotSize);
 
             ctx.fillStyle = '#fff9f0';
             ctx.strokeStyle = '#d4c4a8';
@@ -1113,6 +1125,8 @@ export class AlertSystem {
                 if (img) {
                     ctx.drawImage(img, sideX + 12, slotY + 12, 64, 64);
                 }
+                const price = this.game.orderSystem.calculateItemScore(sideId);
+                this.drawMenuPriceTag(ctx, sideX + slotSize - 65, slotY + slotSize - 10, `$${price.toFixed(2)}`, 80, 30, 14);
             } else {
                 ctx.fillStyle = '#c9b89c';
                 ctx.font = '900 38px "Inter", sans-serif';
@@ -1120,6 +1134,28 @@ export class AlertSystem {
                 ctx.fillText('+', sideX + slotSize / 2, slotY + 56);
             }
         });
+    }
+
+    drawMenuPriceTag(ctx, x, y, label, width = 132, height = 36, fontSize = 15) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(-7 * Math.PI / 180);
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#e3a16f';
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 3;
+        ctx.fillRect(0, 0, width, height);
+        ctx.strokeRect(0, 0, width, height);
+        ctx.font = `900 ${fontSize}px "Inter", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#000';
+        ctx.fillStyle = '#fff';
+        ctx.strokeText(label, width / 2, height / 2);
+        ctx.fillText(label, width / 2, height / 2);
+        ctx.restore();
     }
 
     // Input handling

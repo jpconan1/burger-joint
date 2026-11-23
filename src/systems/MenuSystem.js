@@ -154,20 +154,11 @@ export class MenuSystem {
     }
 
     getCaps() {
-        return this.game?.menuCaps || { burgers: 2, sides: 2, toppingsPerBurger: 4 };
+        return this.game?.menuCaps || { burgers: 2, sides: 2 };
     }
 
     getActiveBurgerSlots() {
         return this.menuSlots.filter(slot => slot !== null);
-    }
-
-    getBurgerToppingCount(slot) {
-        if (!slot?.state?.toppings) return 0;
-        return slot.state.toppings.filter(t => {
-            const id = typeof t === 'string' ? t : (t.definitionId || (t.definition && t.definition.id));
-            const def = id ? DEFINITIONS[id] : null;
-            return def && def.category !== 'patty';
-        }).length;
     }
 
     burgerHasTopping(slot, toppingId) {
@@ -181,7 +172,7 @@ export class MenuSystem {
     burgerCanTakeTopping(slot, toppingId) {
         if (!slot) return false;
         if (this.burgerHasTopping(slot, toppingId)) return false;
-        return this.getBurgerToppingCount(slot) < this.getCaps().toppingsPerBurger;
+        return true;
     }
 
     canAddBurger() {
@@ -198,14 +189,6 @@ export class MenuSystem {
         this.sides.push({ definitionId: sideId });
         console.log(`[MenuSystem] Added side '${sideId}' to menu`);
         return true;
-    }
-
-    isMenuAtCap() {
-        const activeSlots = this.getActiveBurgerSlots();
-        const caps = this.getCaps();
-        if (activeSlots.length < caps.burgers) return false;
-        if (this.sides.length < caps.sides) return false;
-        return activeSlots.every(slot => this.getBurgerToppingCount(slot) >= caps.toppingsPerBurger);
     }
 
     hasBurgerPatty(pattyId) {

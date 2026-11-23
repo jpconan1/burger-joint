@@ -25,8 +25,8 @@ export class Player {
         // Visual position for interpolation/animation
         this.visualX = x;
         this.visualY = y;
-        this.targetX = x;
-        this.targetY = y;
+        this.targetX = x + this.facing.x;
+        this.targetY = y + this.facing.y;
 
         // Juice
         this.tilt = 0;
@@ -54,6 +54,13 @@ export class Player {
             this.visualY = this.y;
         }
 
+        const targetX = this.x + this.facing.x;
+        const targetY = this.y + this.facing.y;
+        const targetDistance = Math.hypot(targetX - this.targetX, targetY - this.targetY);
+        const targetStep = step * (targetDistance > 1 ? 1.25 : 1);
+        this.targetX += Math.sign(targetX - this.targetX) * Math.min(Math.abs(targetX - this.targetX), targetStep);
+        this.targetY += Math.sign(targetY - this.targetY) * Math.min(Math.abs(targetY - this.targetY), targetStep);
+
         // Juice: Tilt and Bob while moving
         const isMoving = this.visualX !== this.x || this.visualY !== this.y;
         if (isMoving) {
@@ -70,6 +77,8 @@ export class Player {
     snap() {
         this.visualX = this.x;
         this.visualY = this.y;
+        this.targetX = this.x + this.facing.x;
+        this.targetY = this.y + this.facing.y;
         this.tilt = 0;
         this.walkBob = 0;
     }
@@ -77,7 +86,8 @@ export class Player {
     move(dx, dy, grid) {
         // Feature: Turn before Move when holding appliance
         if (this.heldAppliance) {
-            if (this.facing.x !== dx || this.facing.y !== dy) {
+            const wasFacingCardinal = Math.abs(this.facing.x) + Math.abs(this.facing.y) === 1;
+            if (wasFacingCardinal && (this.facing.x !== dx || this.facing.y !== dy)) {
                 this.facing = { x: dx, y: dy };
                 return true; // We "moved" (turned)
             }
